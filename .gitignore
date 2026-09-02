@@ -1,0 +1,26 @@
+# dependencies
+node_modules/
+.pnpm-store/
+
+# builds and local runtime state
+dist/
+.next/
+.vinext/
+.wrangler/
+out/
+
+# TypeScript build info
+*.tsbuildinfo
+
+# local environment and logs
+.env*
+!.env.example
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# editor files
+.idea/
+.vscode/
