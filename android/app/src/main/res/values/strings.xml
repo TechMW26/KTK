@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">KILL THE KING</string>
+    <string name="title_activity_main">KILL THE KING</string>
+    <string name="package_name">com.kushagrapandey.killtheking</string>
+    <string name="custom_url_scheme">com.kushagrapandey.killtheking</string>
+</resources>

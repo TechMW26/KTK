@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
@@ -19,6 +19,18 @@ export const metadata: Metadata = {
     icon: "/favicon.svg",
     shortcut: "/favicon.svg",
   },
+};
+
+// viewportFit: cover lets the WebView draw edge-to-edge on notched/gesture-nav
+// devices so the app can honor env(safe-area-inset-*). Applies to the APK and
+// mobile browsers alike; no functional regression for the web build.
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  viewportFit: "cover",
+  themeColor: "#050403",
 };
 
 export default function RootLayout({

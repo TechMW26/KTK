@@ -43,6 +43,7 @@ button:disabled { cursor: not-allowed; opacity: .42; }
   display: grid;
   place-items: center;
   padding: 18px;
+  padding: max(env(safe-area-inset-top), 18px) max(env(safe-area-inset-right), 18px) max(env(safe-area-inset-bottom), 18px) max(env(safe-area-inset-left), 18px);
   background:
     radial-gradient(circle at 50% 18%, rgba(151, 94, 14, .14), transparent 34%),
     linear-gradient(125deg, #050403, #0c0905 46%, #030303);

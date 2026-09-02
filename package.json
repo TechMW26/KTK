@@ -11,14 +11,22 @@
     "build": "vite build",
     "build:node": "cross-env NITRO_PRESET=node vite build",
     "preview:node": "node .output/server/index.mjs",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "app:build": "node scripts/build-capacitor-web.mjs",
+    "app:sync": "cap sync android",
+    "app:apk": "cd android && gradlew.bat assembleDebug",
+    "app:build-run": "node scripts/build-capacitor-web.mjs && cap sync android"
   },
   "dependencies": {
+    "@capacitor/android": "^8.5.1",
+    "@capacitor/cli": "^8.5.1",
+    "@capacitor/core": "^8.5.1",
     "nitro": "3.0.260610-beta",
     "react": "19.2.8",
     "react-dom": "19.2.8"
   },
   "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
     "@cloudflare/vite-plugin": "^1.53.1",
     "@eslint/js": "9.39.4",
     "@next/eslint-plugin-next": "16.2.6",
