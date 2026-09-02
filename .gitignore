@@ -8,6 +8,8 @@ dist/
 .vinext/
 .wrangler/
 out/
+.output/
+.vercel/
 
 # TypeScript build info
 *.tsbuildinfo
