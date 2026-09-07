@@ -95,74 +95,55 @@ function classifyRoom(room: RoomData | null): JoinRoomReason | "OK" {
 }
 
 /**
- * Join a room as Player 2. Seat assignment + flipping the room to "playing" is
- * done inside a single guarded transaction so two guests can never both fill it.
+ * Join a room as Player 2.
+ *
+ * The write is performed as a targeted update on the specific keys the joined
+ * player is allowed to touch by the RTDB rules (their own `players/{uid}` entry,
+ * their `order/<seat>` slot and `status`), because a whole-node atomic
+ * transaction also rewrites values a guest may not modify (hostId etc.) and is
+ * rejected by fine-grained rules. A read-then-update keeps two guests from both
+ * filling the room in the common case.
  */
 export async function joinRoom(codeRaw: string, uid: string, name: string): Promise<JoinRoomResult> {
   const code = normalizeRoomCode(codeRaw);
   if (code.length === 0) return { ok: false, reason: "NOT_FOUND" };
-  const r = roomRef(db(), code);
+  const database = db();
+  const r = roomRef(database, code);
 
   try {
-    const result = await runTransaction(
-      r,
-      (raw) => {
-        const current = raw as RoomData | null;
-        if (!current || isExpired(current) || current.status === "finished") return undefined;
-        const players = (current.players ?? {}) as Record<string, PlayerEntry>;
-        const order = [...((current.order as (string | null)[]) ?? [null, null])];
-        const occupiedSeats = new Set<Seat>();
-        Object.values(players).forEach((p) => {
-          if (p?.seat === 0 || p?.seat === 1) occupiedSeats.add(p.seat);
-        });
-        if (occupiedSeats.size >= 2) return undefined; // already full
-        const seat: Seat = occupiedSeats.has(0) ? 1 : 0;
-        const nextPlayers: Record<string, PlayerEntry> = { ...players };
-        nextPlayers[uid] = {
-          name: name.trim() || (seat === 0 ? "Player 1" : "Player 2"),
-          joinedAt: Date.now(),
-          connected: true,
-          seat,
-          isHost: false,
-          presence: Date.now(),
-        };
-        const nextOrder: (string | null)[] = order.slice(0, 2);
-        // If uid already sits somewhere, leave order as-is, else fill a free slot.
-        let filled = false;
-        for (let i = 0; i < nextOrder.length; i += 1) {
-          if (nextOrder[i] === uid) {
-            filled = true;
-            break;
-          }
-        }
-        if (!filled) {
-          for (let i = 0; i < nextOrder.length; i += 1) {
-            if (!nextOrder[i]) {
-              nextOrder[i] = uid;
-              filled = true;
-              break;
-            }
-          }
-        }
-        if (!filled) return undefined; // no free seat
-        const both = nextOrder[0] && nextOrder[1];
-        return {
-          ...current,
-          players: nextPlayers,
-          order: nextOrder,
-          status: both ? "playing" : current.status,
-          updatedAt: serverTimestamp() as never as number,
-        };
-      },
-      { applyLocally: false },
-    );
-
-    if (result.committed) return { ok: true, code };
-
-    // Transaction aborted — report why by inspecting the current room.
-    const current = (await get(r)).val() as RoomData | null;
+    // 1) Read current state (the SDK reliably reads here).
+    const snap = await get(r);
+    const current = snap.val() as RoomData | null;
     const verdict = classifyRoom(current);
-    return { ok: false, reason: verdict === "OK" ? "FULL" : verdict };
+    if (verdict !== "OK") {
+      return { ok: false, reason: verdict === "OK" ? "FULL" : verdict };
+    }
+    if (current!.players?.[uid]) {
+      // Already a member (reconnect) - treat as success.
+      return { ok: true, code };
+    }
+
+    // 2) Decide the seat: rooms are always created with a host on seat 0, so a
+    //    guest takes seat 1. (If no host exists, they claim seat 0 instead.)
+    const hostPresent = Boolean(current!.hostId) && Boolean(current!.order?.[0]);
+    const seat: Seat = hostPresent ? 1 : 0;
+    const entry: PlayerEntry = {
+      name: name.trim() || (seat === 0 ? "Player 1" : "Player 2"),
+      joinedAt: Date.now(),
+      connected: true,
+      seat,
+      isHost: false,
+      presence: Date.now(),
+    };
+
+    // 3) Targeted update on keys the guest may write under the rules.
+    const updates: Record<string, unknown> = {};
+    updates[`players/${uid}`] = entry;
+    updates[`order/${seat}`] = uid;
+    updates.status = "playing";
+    await update(r, updates);
+
+    return { ok: true, code };
   } catch (error) {
     console.error("joinRoom failed", error);
     return { ok: false, reason: "ERROR" };
