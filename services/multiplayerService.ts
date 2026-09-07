@@ -38,8 +38,10 @@ function db(): Database {
   return instance;
 }
 
+/** Stable key for a seat's per-round secret room (underscore, not dot: RTDB
+ * child keys cannot contain "."). Read and write must use the same key. */
 export function secretKey(level: number, round: number): string {
-  return `${level}.${round}`;
+  return `${level}_${round}`;
 }
 
 export function emptyGame(): GameState {

@@ -13,8 +13,9 @@ import {
   type DataSnapshot,
 } from "firebase/database";
 import { getRTDatabase } from "@/lib/firebase/database";
-import { roomRef, playersRef, playerRef } from "@/lib/multiplayer/paths";
+import { roomRef, playersRef, playerRef, gameRef } from "@/lib/multiplayer/paths";
 import { generateRoomCode, normalizeRoomCode } from "@/lib/multiplayer/roomCode";
+import { emptyGame } from "@/services/multiplayerService";
 import { MATCH_TIMEOUT_MS, type RoomData, type PlayerEntry, type Seat } from "@/lib/multiplayer/types";
 
 /**
@@ -76,7 +77,12 @@ export async function createRoom(uid: string, name: string): Promise<CreateRoomR
         (raw) => (raw ? undefined : room),
         { applyLocally: false },
       );
-      if (result.committed) return { ok: true, code };
+      if (result.committed) {
+        // Initialise the authoritative game state so the match can start as
+        // soon as the second player joins.
+        await set(gameRef(db(), code), emptyGame()).catch(() => {});
+        return { ok: true, code };
+      }
     } catch {
       return { ok: false, reason: "ERROR" };
     }
@@ -142,6 +148,12 @@ export async function joinRoom(codeRaw: string, uid: string, name: string): Prom
     updates[`order/${seat}`] = uid;
     updates.status = "playing";
     await update(r, updates);
+
+    // 4) Ensure the authoritative game node exists so play can begin (rooms
+    //    created by older code may not have one yet).
+    if (!(current as { game?: unknown } | null)?.game) {
+      await set(gameRef(database, code), emptyGame()).catch(() => {});
+    }
 
     return { ok: true, code };
   } catch (error) {
