@@ -1,0 +1,25 @@
+{
+  "//": "DEV/EMULATOR rules. Open-ish so the two-window playtest works without Cloud Functions.",
+  "//": "Never deploy to production as-is.",
+  "rules": {
+    ".read": false,
+    ".write": false,
+    ".info": {
+      "connected": { ".read": true }
+    },
+    "rooms": {
+      "$code": {
+        ".read": "auth != null",
+        ".write": "auth != null && (!data.exists() || root.child('rooms').child($code).child('players').child(auth.uid).exists())",
+        "secrets": {
+          ".read": "auth != null",
+          ".write": "auth != null",
+          "$uid": {
+            ".read": "auth != null && root.child('rooms').child($code).child('order').val() != null",
+            ".write": "auth != null"
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,56 @@
+{
+  "//": "PRODUCTION-ish RTDB rules. Multiplayer state lives under /rooms.",
+  "//note1": "Secret-hiding (dealer King) and room-authoring are the ONLY things rules can purely enforce.",
+  "//note2": "Authoritative seat assignment, room status transitions, score updates, turn arbitration",
+  "//note3": "and round timeouts are NOT fully expressible/trustable with client RTDB writes alone.",
+  "//note4": "For a hardened deployment move create/join/advance into Firebase Cloud Functions",
+  "//note5": "and call them from the client (see docs/FIREBASE_MULTIPLAYER.md). Use database.dev.rules.json",
+  "//note6": "only for the local emulator / trusted testing.",
+  "rules": {
+    ".read": false,
+    ".write": false,
+    ".info": {
+      "connected": { ".read": true }
+    },
+    "rooms": {
+      "$code": {
+        ".read": "auth != null",
+        ".write": "auth != null && (
+                    !data.exists() ||
+                    data.child('hostId').val() === auth.uid ||
+                    data.child('players').child(auth.uid).exists())",
+
+        "hostId": { ".write": "!data.exists() || data.val() === auth.uid" },
+        "code": { ".validate": "newData.isString() && newData.val().length >= 4 && newData.val().length <= 8" },
+
+        "players": {
+          "$uid": {
+            ".read": "auth != null",
+            ".write": "auth.uid === $uid && (
+                         !data.exists() ||
+                         !newData.hasChild('isHost') ||
+                         newData.child('isHost').val() === data.child('isHost').val())"
+          }
+        },
+
+        "secrets": {
+          ".read": false,
+          ".write": false,
+          "$uid": {
+            ".read": "auth.uid === $uid",
+            ".write": "auth.uid === $uid",
+            "$k": {
+              ".read": "auth.uid === $uid",
+              ".write": "auth.uid === $uid"
+            }
+          }
+        },
+
+        "game": {
+          ".read": "auth != null && root.child('rooms').child($code).child('players').child(auth.uid).exists()",
+          ".write": "auth != null && root.child('rooms').child($code).child('players').child(auth.uid).exists()"
+        }
+      }
+    }
+  }
+}

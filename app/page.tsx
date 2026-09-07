@@ -899,6 +899,14 @@ function HomeScreen({
           </>
         )}
         <button className="gold-button" onClick={startMatch}>START MATCH</button>
+        <button
+          className="outline-button"
+          onClick={() => {
+            if (typeof window !== "undefined") window.location.assign("/multiplayer");
+          }}
+        >
+          ONLINE MULTIPLAYER
+        </button>
         <button className="outline-button" onClick={openRules}>HOW TO PLAY</button>
       </div>
       <div className="level-route"><span>5 CARDS</span><i>→</i><span>3 CARDS</span><i>→</i><span>2 CARDS</span></div>
