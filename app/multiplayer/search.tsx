@@ -6,7 +6,9 @@ import { ensureSignedIn } from "@/lib/firebase/auth";
 import {
   announceSearch,
   cancelSearch,
+  pingSearch,
   readInviteFor,
+  readMyReadyMatch,
   claimPair,
   hostCreatesInvite,
   acceptInvite,
@@ -88,6 +90,7 @@ export default function SearchOnline({
     let cancelled = false;
     let myUid: string | null = null;
     let interval: number | undefined;
+    let heartbeat: number | undefined;
     if (!configured) return undefined;
 
     const actHost = async (target: { uid: string; name: string }) => {
@@ -123,26 +126,37 @@ export default function SearchOnline({
       }
     };
 
+    const joinIfReady = async (roomCode: string, pairKey: string): Promise<boolean> => {
+      const res = await joinRoom(roomCode, myUid!, name).catch(() => ({
+        ok: false as const,
+        reason: "ERROR" as const,
+      }));
+      if (res.ok) {
+        await enterRoom(roomCode, pairKey);
+        return true;
+      }
+      return false;
+    };
+
     const poll = async () => {
       if (pollBusyRef.current) return; // single flight: never two concurrent polls
       if (stoppedRef.current || cancelled || enteredRef.current || !myUid) return;
       pollBusyRef.current = true;
       try {
-        // Guest path: detect an invite that has already been created.
+        // Guest path 1: a host has already invited us under their own host node.
         const invite = await readInviteFor(myUid).catch(() => null);
         if (invite) {
-          const pairKey = [myUid, invite.hostUid].sort().join("_");
           await acceptInvite(myUid).catch(() => {});
-          const res = await joinRoom(invite.roomCode, myUid, name).catch(() => ({
-            ok: false as const,
-            reason: "ERROR" as const,
-          }));
-          if (res.ok) {
-            await enterRoom(invite.roomCode, pairKey);
-            return;
-          }
+          const pk = [myUid, invite.hostUid].sort().join("_");
+          if (await joinIfReady(invite.roomCode, pk)) return;
         }
-        // Pick the earliest searcher we haven't already engaged and try a claim.
+        // Guest path 2: the shared pair claim for me already has a room (robust
+        // discovery that covers invite-scan ordering races).
+        const ready = !enteredRef.current ? await readMyReadyMatch(myUid).catch(() => null) : null;
+        if (ready) {
+          if (await joinIfReady(ready.roomCode, [myUid, ready.peer].sort().join("_"))) return;
+        }
+        // Host path: claim an un-engaged searcher; if we win, create the room.
         const others = await listSearchers(myUid).catch(() => []);
         const target = others.find((o) => !engagedRef.current.has(o.uid));
         if (target && !enteredRef.current) {
@@ -162,6 +176,12 @@ export default function SearchOnline({
       }
       if (cancelled) return;
       await announceSearch(myUid, name);
+      // Heartbeat so this searcher never looks stale to other devices.
+      heartbeat = window.setInterval(() => {
+        if (!stoppedRef.current && !enteredRef.current && !cancelled) {
+          void pingSearch(myUid).catch(() => {});
+        }
+      }, 5000);
       await poll();
       interval = window.setInterval(poll, 1200);
     })();
@@ -177,6 +197,7 @@ export default function SearchOnline({
       cancelled = true;
       stoppedRef.current = true;
       if (interval) window.clearInterval(interval);
+      if (heartbeat) window.clearInterval(heartbeat);
       window.clearTimeout(timeout);
       if (myUid) void cancelSearch(myUid);
     };

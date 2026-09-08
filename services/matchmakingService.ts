@@ -94,6 +94,20 @@ export async function announceSearch(uid: string, name: string): Promise<boolean
   }
 }
 
+/**
+ * Heartbeat while searching: refreshes `updatedAt` so other searchers never treat
+ * a still-searching player as stale (staleness drives the reachability filter in
+ * listSearchers/watchPool), which would otherwise break cross-device detection.
+ */
+export async function pingSearch(uid: string): Promise<void> {
+  const database = db();
+  try {
+    await update(matchmakingRef(database, uid), { updatedAt: Date.now() });
+  } catch {
+    /* ignore */
+  }
+}
+
 /** Stop searching / cancel. Removes only our own search + host nodes. */
 export async function cancelSearch(uid: string): Promise<void> {
   const database = db();
@@ -289,6 +303,28 @@ export async function readInviteFor(
     ([, e]) => e?.status === "inviting" && e.invitedUid === uid && !!e.roomCode,
   );
   return mine ? { hostUid: mine[0], roomCode: mine[1].roomCode! } : null;
+}
+
+/**
+ * If a pair claim referencing this uid already carries a roomCode (the host wrote
+ * it there), return the room + the OTHER member's uid so a guest can join with the
+ * correct pairKey. More robust than scanning host invites (covers ordering races).
+ */
+export async function readMyReadyMatch(
+  uid: string,
+): Promise<{ roomCode: string; peer: string } | null> {
+  const database = db();
+  try {
+    const mine = await findMyPair(database, uid);
+    if (mine && mine.entry.roomCode) {
+      const entry = mine.entry;
+      const peer = entry.members?.find((m) => m !== uid);
+      if (peer) return { roomCode: entry.roomCode, peer };
+    }
+  } catch {
+    /* ignore */
+  }
+  return null;
 }
 
 // ---------------------------------------------------------------------------
