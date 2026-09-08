@@ -193,6 +193,12 @@ export const MATCH_TIMEOUT_MS = 1000 * 60 * 60; // rooms expire after 1h idle
 export const MATCHMAKING_TIMEOUT_MS = 30 * 1000;
 /** How long a stale matchmaking/host entry is considered alive. */
 export const MATCHMAKING_STALE_MS = 10 * 1000;
+/**
+ * How long we keep waiting on an opponent whose presence has dropped before we
+ * treat them as permanently gone (and re-enter matchmaking). Prevents a brief
+ * network blip from kicking the remaining player out of a good match.
+ */
+export const OPPONENT_GRACE_MS = 8 * 1000;
 
 /** A player's live entry under `matchmaking/{uid}` while they search. */
 export interface MatchmakingEntry {
@@ -200,6 +206,24 @@ export interface MatchmakingEntry {
   status: "searching" | "matched" | "cancelled";
   joinedAt: number;
   updatedAt: number;
+  /** Sorted pairKey of the pair once matched (populated by the claim winner). */
+  pairKey?: string;
+  /** The other uid in the matched pair (populated by the claim winner). */
+  opponentUid?: string;
+}
+
+/** Atomic pair-claim record under `matchmakingPairs/{pairKey}`. */
+export interface MatchmakingPairEntry {
+  /** The SINGLE host who wins the claim and creates the room. */
+  hostUid: string;
+  /** The invitee (guest). */
+  invitedUid: string;
+  /** When the claim was made. */
+  claimedAt: number;
+  /** Room code created by the host after claiming. */
+  roomCode?: string;
+  /** UIDs of both members (kept for safe cleanup ownership checks). */
+  members: string[];
 }
 
 /** Host's pairing invitation under `matchmakingHost/{uid}`. */

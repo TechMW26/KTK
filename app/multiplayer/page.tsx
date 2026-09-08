@@ -1,8 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import useMultiplayer from "@/hooks/useMultiplayer";
 import { normalizeRoomCode } from "@/lib/multiplayer/roomCode";
+import { RESULT_COPY } from "@/lib/game/rules";
+import { OPPONENT_GRACE_MS } from "@/lib/multiplayer/types";
 import GameView from "./game";
 import SearchOnline from "./search";
 import { MpEyebrow, MpLogo, MpOrnament } from "./ui";
@@ -22,6 +24,10 @@ export default function MultiplayerPage() {
   const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState("");
   const [searching, setSearching] = useState(false);
+  // Incrementing key forces a FRESH SearchOnline (fresh 30s timer + clean refs)
+  // every time we (re)enter search — including after an opponent disconnect.
+  const [searchKey, setSearchKey] = useState(0);
+  const [notice, setNotice] = useState<string | null>(null);
 
   // ------------------------------------------------------------------ states
   const inMatch =
@@ -58,34 +64,112 @@ export default function MultiplayerPage() {
 
   const leaveToMenu = async () => {
     setSearching(false);
+    setNotice(null);
     await mp.leave();
     setJoinDraft("");
   };
 
-  /** Host enters a room the matchmaker created for us. */
-  const enterRoomFromSearch = async (code: string) => {
-    await mp.attach(code);
+  /** Enter the room the matchmaker created (host pair claim or guest join). */
+  const enterRoomFromSearch = async (code: string, pairKey: string) => {
+    setSearching(false);
+    setNotice(null);
+    await mp.attach(code, pairKey);
   };
 
-  const startSearch = () => {
-    if (!name.trim()) {
-      // fall through: name defaults inside the service
-    }
+  /** Open the "Search Online Players" screen (fresh instance each call). */
+  const startSearch = (msg: string | null = null) => {
+    setNotice(msg);
     setSearching(true);
+    setSearchKey((k) => k + 1);
   };
 
   const cancelSearch = async () => {
     setSearching(false);
+    setNotice(null);
   };
+
+  // ------------------------------------------------------------------
+  // Opponent disconnect -> auto re-search (online search games ONLY).
+  // A durable (grace-period) opponent absence while a live, UNFINISHED
+  // search-origin match is active drops the old room and puts us straight back
+  // into a fresh 30s search with "{opponent} left" feedback.
+  // ------------------------------------------------------------------
+  const oppGraceTimer = useRef<number | undefined>(undefined);
+  const rematchFired = useRef(false);
+
+  useEffect(() => {
+    if (!mp.searchOrigin) return; // only matchmade games auto re-search
+    if (!inMatch || !mp.room) return; // not actively in this room
+    // Natural completion / inactive room: NEVER rematch (keep the result flow).
+    if (mp.game?.status === "finished" || mp.room.status !== "playing") {
+      if (oppGraceTimer.current !== undefined) {
+        window.clearTimeout(oppGraceTimer.current);
+        oppGraceTimer.current = undefined;
+      }
+      return;
+    }
+    // Our own connection is down — give ourselves a reconnect window.
+    if (mp.meConnected === false) {
+      if (oppGraceTimer.current !== undefined) {
+        window.clearTimeout(oppGraceTimer.current);
+        oppGraceTimer.current = undefined;
+      }
+      return;
+    }
+    if (mp.opponentConnected) {
+      rematchFired.current = false;
+      return;
+    }
+    if (rematchFired.current) return; // already scheduled one rematch
+    if (oppGraceTimer.current !== undefined) return; // a grace timer is running
+
+    const oppName = mp.opponent ?? "Opponent";
+    oppGraceTimer.current = window.setTimeout(() => {
+      oppGraceTimer.current = undefined;
+      if (rematchFired.current) return;
+      rematchFired.current = true;
+      // Show the transition + fresh search immediately, then drop the old room.
+      setSearching(true);
+      setNotice(`${oppName} left… Finding a new player…`);
+      setSearchKey((k) => k + 1);
+      void mp.discardMatch().catch(() => {});
+    }, OPPONENT_GRACE_MS);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    mp.searchOrigin,
+    inMatch,
+    mp.room,
+    mp.game,
+    mp.meConnected,
+    mp.opponentConnected,
+    mp.opponent,
+    mp.discardMatch,
+  ]);
+
+  // Clear any dangling grace timer on unmount.
+  useEffect(
+    () => () => {
+      if (oppGraceTimer.current !== undefined) window.clearTimeout(oppGraceTimer.current);
+    },
+    [],
+  );
+
+  // Single-player parity: tint the whole screen with the round result tone while
+  // a reveal is on screen (danger/victory), exactly like the solo/2P reveal.
+  const revealTone =
+    inMatch && mp.game?.phase === "reveal" && mp.game.lastResult
+      ? RESULT_COPY[mp.game.lastResult.kind].tone
+      : "";
 
   // ------------------------------------------------------------------ body
   return (
     <main className="game-shell mp">
-      <section className="game-screen mp-screen">
+      <section className={["game-screen", "mp-screen", revealTone].filter(Boolean).join(" ")}>
         <div className="corner corner-tl" />
         <div className="corner corner-tr" />
         <div className="corner corner-bl" />
         <div className="corner corner-br" />
+        {revealTone ? <div className="impact-vignette" /> : null}
 
         {/* temporary full-screen busy / entrance veil */}
         {busy && (
@@ -117,9 +201,11 @@ export default function MultiplayerPage() {
           />
         ) : searching ? (
           <SearchOnline
+            key={searchKey}
             name={name}
             settings={mp.draftSettings}
-            onEnterRoom={(code) => void enterRoomFromSearch(code)}
+            notice={notice}
+            onEnterRoom={(code, pairKey) => void enterRoomFromSearch(code, pairKey)}
             onBack={cancelSearch}
           />
         ) : noRoom ? (

@@ -78,3 +78,29 @@ export function matchmakingHostRef(db: Database, uid: string): DatabaseReference
 export function matchmakingHostAllRef(db: Database): DatabaseReference {
   return ref(db, "matchmakingHost");
 }
+
+// ---------------------------------------------------------------------------
+// Atomic pair claims ("Search Online Players" race fix)
+// Layout:
+//   matchmakingPairs/{pairKey}: { hostUid, invitedUid, claimedAt, ... }
+//     pairKey = [uidA, uidB].sort().join("_"). A runTransaction on this SINGLE
+//     shared node is the one true "who is host" lock: only the transaction that
+//     commits first creates it; every later txn re-runs, sees it exists and yields
+//     the SAME hostUid. Guests never create a duplicate pair or duplicate room.
+// ---------------------------------------------------------------------------
+
+/** Reference to the whole pair-claim index. */
+export function matchmakingPairsAllRef(db: Database): DatabaseReference {
+  return ref(db, "matchmakingPairs");
+}
+
+/** Reference to the atomic claim for ONE pair (sorted pairKey). */
+export function pairClaimRef(db: Database, uidA: string, uidB: string): DatabaseReference {
+  const pairKey = [uidA, uidB].sort().join("_");
+  return ref(db, `matchmakingPairs/${pairKey}`);
+}
+
+/** Pair claim child reference from a precomputed sorted pairKey. */
+export function pairClaimByKeyRef(db: Database, pairKey: string): DatabaseReference {
+  return ref(db, `matchmakingPairs/${pairKey}`);
+}

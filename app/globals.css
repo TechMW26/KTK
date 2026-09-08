@@ -788,6 +788,14 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .selection-hand-img.roaming { animation: opponent-roam 1.9s cubic-bezier(.45,0,.55,1) infinite alternate; }
 .dealer-choice .selection-hand-img { top: 68px; width: 48px; }
 .result-stage .selection-hand-img { top: 72px; width: 44px; }
+
+/* Multiplayer reveal hand: wraps the reveal card row so the single-player
+   guesser-hand can be absolutely positioned over the picked card. */
+.reveal-hand-wrap {
+  position: relative;
+  width: 100%;
+}
+.reveal-hand-wrap .selection-hand-img { top: 70px; width: 44px; }
 @keyframes hand-hover {
   0%,100% { transform: translateX(-50%) translateY(3px) rotate(-7deg); }
   50% { transform: translateX(-50%) translateY(-3px) rotate(-5.5deg); }
@@ -1268,6 +1276,17 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 }
 .mp-rule-opt.active b { color: var(--gold-bright); }
 .mp-note { color: #756346; font-size: 8px; margin: 4px 0 0; }
+
+/* Inline banner shown on the search screen (e.g. opponent disconnect/rematch). */
+.mp-notice {
+  color: var(--gold-bright);
+  font-size: 11px;
+  letter-spacing: .06em;
+  text-align: center;
+  max-width: 300px;
+  line-height: 1.4;
+  animation: page-switch-in .4s cubic-bezier(.2,.78,.24,1) both;
+}
 
 /* lives pill row (used under names / header) */
 .lives-row {

@@ -7,9 +7,10 @@ import {
   announceSearch,
   cancelSearch,
   readInviteFor,
-  listSearchers,
-  hostPair,
+  claimPair,
+  hostCreatesInvite,
   acceptInvite,
+  listSearchers,
 } from "@/services/matchmakingService";
 import { joinRoom } from "@/services/roomService";
 import { MATCHMAKING_TIMEOUT_MS } from "@/lib/multiplayer/types";
@@ -23,29 +24,31 @@ type SearchState =
   | { kind: "error"; message: string };
 
 /**
- * "Search Online Players" screen + matcher (Feature 1 & 2).
+ * "Search Online Players" screen + matcher (race-fixed, disconnect-aware).
  *
- * Flow:
- *  1. Announce this player as searching.
- *  2. Run for MATCHMAKING_TIMEOUT_MS (30s), re-evaluating the pool.
- *  3. Whoever has the LEXICOGRAPHICALLY SMALLER uid is the HOST of a pair and
- *     creates a real room (hostPair). The larger-uid peer is invited and joins.
- *  4. Never matches with yourself; stale/crashed entries are filtered by the
- *     service; cancelling or timeout removes us from the pool.
- *  5. After the timeout we show a "No player online" state with a PLAY VS BOT
- *     action (routed into the single-player bot game) and a back option.
+ * Host selection is decided ONCE, atomically, on the shared
+ * `matchmakingPairs/{pairKey}` node (see matchmakingService.claimPair). Only one
+ * side wins as host and creates one room; the other waits as guest for the host's
+ * invitation and joins it. A `pollBusyRef` + started/entered guards keep multiple
+ * peers from double-claiming, double-joining or spawning multiple timers.
+ *
+ * A fresh `key` from the parent resets this component (and the 30s timer) so an
+ * opponent-disconnect auto re-search restarts cleanly.
  */
 export default function SearchOnline({
   name,
   settings,
   onEnterRoom,
   onBack,
+  notice,
 }: {
   name: string;
   settings: MatchSettings;
-  /** Called once a live room is ready (we are its member) to switch to the game. */
-  onEnterRoom: (code: string) => void;
+  /** Room ready (host <= pairKey from the atomic claim OR guest after joining). */
+  onEnterRoom: (code: string, pairKey: string) => void;
   onBack: () => void;
+  /** Optional banner shown while searching (e.g. "<Name> left… finding a new player…"). */
+  notice?: string | null;
 }) {
   const configured = isFirebaseConfigured();
   const [state, setState] = useState<SearchState>(
@@ -56,19 +59,23 @@ export default function SearchOnline({
   const [left, setLeft] = useState(Math.round(MATCHMAKING_TIMEOUT_MS / 1000));
   const stoppedRef = useRef(false);
   const enteredRef = useRef(false);
+  const pollBusyRef = useRef(false);
+  // Opponent uids we have already started a pair claim with (prevents re-claim /
+  // duplicate host calls while waiting for that same invite).
+  const engagedRef = useRef<Set<string>>(new Set());
 
   const enterRoom = useCallback(
-    async (code: string) => {
+    async (code: string, pairKey: string) => {
       if (enteredRef.current) return;
       enteredRef.current = true;
       stoppedRef.current = true;
       setState({ kind: "found" });
-      onEnterRoom(code);
+      onEnterRoom(code, pairKey);
     },
     [onEnterRoom],
   );
 
-  // Countdown timer.
+  // Countdown timer (component mount = fresh 30s).
   useEffect(() => {
     const id = window.setInterval(() => {
       setLeft((v) => Math.max(0, v - 1));
@@ -83,31 +90,66 @@ export default function SearchOnline({
     let interval: number | undefined;
     if (!configured) return undefined;
 
-    const poll = async () => {
-      if (stoppedRef.current || cancelled || !myUid) return;
+    const actHost = async (target: { uid: string; name: string }) => {
+      if (enteredRef.current || stoppedRef.current || cancelled || !myUid) return;
+      if (engagedRef.current.has(target.uid)) return; // already tried this peer
+      engagedRef.current.add(target.uid);
 
-      // 1) Guest path: someone invited me into their room.
+      // GUEST path first: they may already be inviting us this tick.
       const invite = await readInviteFor(myUid).catch(() => null);
       if (invite) {
         await acceptInvite(myUid).catch(() => {});
-        const res = await joinRoom(invite.roomCode, myUid, name).catch(() => ({ ok: false as const, reason: "ERROR" as const }));
+        const res = await joinRoom(invite.roomCode, myUid, name).catch(() => ({
+          ok: false as const,
+          reason: "ERROR" as const,
+        }));
         if (res.ok) {
-          await enterRoom(invite.roomCode);
+          await enterRoom(invite.roomCode, [myUid, target.uid].sort().join("_"));
           return;
         }
-        // Fall back: keep searching rather than stall.
       }
 
-      // 2) Host path: decide whether I should pair up. Deterministic tie-break:
-      //    the smaller uid hosts. We only host toward the earliest searcher.
-      const others = await listSearchers(myUid).catch(() => []);
-      const target = others[0];
-      if (target && myUid < target.uid) {
-        const code = await hostPair(myUid, name, target.uid, target.name, settings).catch(() => null);
-        if (code) {
-          await enterRoom(code);
-          return;
+      // ATOMIC host selection: exactly one of us wins the shared pair claim.
+      const claim = await claimPair(myUid, target.uid).catch(() => null);
+      if (!claim || stoppedRef.current || cancelled) return;
+      if (!claim.host) {
+        // We are the guest: the host will publish an invite which readInviteFor
+        // will pick up on the next tick. Do NOT re-claim this peer.
+        return;
+      }
+      const code = await hostCreatesInvite(claim.myUid, name, claim.invitedUid, claim.pairKey, settings).catch(() => null);
+      if (code) {
+        await enterRoom(code, claim.pairKey);
+      }
+    };
+
+    const poll = async () => {
+      if (pollBusyRef.current) return; // single flight: never two concurrent polls
+      if (stoppedRef.current || cancelled || enteredRef.current || !myUid) return;
+      pollBusyRef.current = true;
+      try {
+        // Guest path: detect an invite that has already been created.
+        const invite = await readInviteFor(myUid).catch(() => null);
+        if (invite) {
+          const pairKey = [myUid, invite.hostUid].sort().join("_");
+          await acceptInvite(myUid).catch(() => {});
+          const res = await joinRoom(invite.roomCode, myUid, name).catch(() => ({
+            ok: false as const,
+            reason: "ERROR" as const,
+          }));
+          if (res.ok) {
+            await enterRoom(invite.roomCode, pairKey);
+            return;
+          }
         }
+        // Pick the earliest searcher we haven't already engaged and try a claim.
+        const others = await listSearchers(myUid).catch(() => []);
+        const target = others.find((o) => !engagedRef.current.has(o.uid));
+        if (target && !enteredRef.current) {
+          await actHost(target);
+        }
+      } finally {
+        pollBusyRef.current = false;
       }
     };
 
@@ -121,13 +163,11 @@ export default function SearchOnline({
       if (cancelled) return;
       await announceSearch(myUid, name);
       await poll();
-      // Re-evaluate a few times per second to catch invitations promptly.
       interval = window.setInterval(poll, 1200);
     })();
 
     const timeout = window.setTimeout(async () => {
       if (stoppedRef.current || cancelled || enteredRef.current) return;
-      // No opponent joined within the window.
       stoppedRef.current = true;
       if (myUid) await cancelSearch(myUid).catch(() => {});
       setState({ kind: "no-player" });
@@ -141,7 +181,7 @@ export default function SearchOnline({
       if (myUid) void cancelSearch(myUid);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [name, settings]);
+  }, [name, settings, configured]);
 
   const stopAndBack = async () => {
     stoppedRef.current = true;
@@ -209,6 +249,11 @@ export default function SearchOnline({
       <div className="mp-menu-brand">
         <MpLogo />
       </div>
+      {notice ? (
+        <p className="mp-notice" role="status">
+          {notice}
+        </p>
+      ) : null}
       <div className="stage-title">
         <MpEyebrow>RONDEZVOUS</MpEyebrow>
         <h2 className="mp-title">SEARCHING FOR OPPONENT</h2>

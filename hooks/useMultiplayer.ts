@@ -18,6 +18,7 @@ import {
   rematchGame,
 } from "@/services/multiplayerService";
 import { normalizeRoomCode } from "@/lib/multiplayer/roomCode";
+import { cleanupMatchmaking } from "@/services/matchmakingService";
 import { levelConfig } from "@/lib/game/rules";
 import {
   DEFAULT_SETTINGS,
@@ -53,6 +54,12 @@ export default function useMultiplayer() {
   const [meConnected, setMeConnected] = useState(true);
 
   const code = session?.code ?? null;
+
+  /** Where the current session began: online search or a code/create room. */
+  const originRef = useRef<"search" | "room" | null>(null);
+  const [searchOrigin, setSearchOrigin] = useState(false);
+  /** Sorted pairKey of the current match (kept for safe post-match cleanup). */
+  const pairKeyRef = useRef<string | null>(null);
 
   // ------------------------------------------------------------------
   // 1) Anonymous sign-in
@@ -117,6 +124,9 @@ export default function useMultiplayer() {
         return { ok: false };
       }
       setRoomError(null);
+      originRef.current = "room";
+      setSearchOrigin(false);
+      pairKeyRef.current = null;
       setSession({ code: res.code, uid: got });
       return { ok: true };
     },
@@ -140,6 +150,9 @@ export default function useMultiplayer() {
         return { ok: false };
       }
       setRoomError(null);
+      originRef.current = "room";
+      setSearchOrigin(false);
+      pairKeyRef.current = null;
       setSession({ code: res.code, uid: got });
       return { ok: true };
     },
@@ -154,6 +167,8 @@ export default function useMultiplayer() {
     setRoom(null);
     setGame(null);
     setRoomError(null);
+    originRef.current = null;
+    setSearchOrigin(false);
   }, [session, room]);
 
   /**
@@ -161,18 +176,40 @@ export default function useMultiplayer() {
    * joined as an invitee). The room + game subscriptions then take over.
    */
   const attach = useCallback(
-    async (code: string): Promise<boolean> => {
+    async (code: string, pairKey?: string): Promise<boolean> => {
       const got = uid ?? (await login());
       if (!got) {
         setRoomError("AUTH_ERROR");
         return false;
       }
       setRoomError(null);
+      originRef.current = "search";
+      setSearchOrigin(true);
+      pairKeyRef.current = pairKey ?? null;
       setSession({ code: normalizeRoomCode(code), uid: got });
       return true;
     },
     [uid, login],
   );
+
+  /** Leave the current match and clean up the matchmaking records tied to it. */
+  const discardMatch = useCallback(async () => {
+    if (!session) return;
+    const isHost = room?.hostId === session.uid;
+    await leaveRoom(session.code, session.uid, isHost).catch(() => {});
+    if (pairKeyRef.current) {
+      await cleanupMatchmaking(session.uid, pairKeyRef.current).catch(() => {});
+    } else {
+      await cleanupMatchmaking(session.uid).catch(() => {});
+    }
+    setSession(null);
+    setRoom(null);
+    setGame(null);
+    setRoomError(null);
+    originRef.current = null;
+    setSearchOrigin(false);
+    pairKeyRef.current = null;
+  }, [session, room]);
 
   // ------------------------------------------------------------------
   // 4) Derived facts
@@ -364,6 +401,7 @@ export default function useMultiplayer() {
     create,
     join,
     attach,
+    discardMatch,
     leave,
     hideCard,
     guess,
@@ -371,5 +409,7 @@ export default function useMultiplayer() {
     rematch,
     copyCode,
     shareInvite,
+    // --- disconnection / auto re-search ---
+    searchOrigin,
   };
 }

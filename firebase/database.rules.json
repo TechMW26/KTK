@@ -59,6 +59,13 @@
         ".read": "auth != null",
         ".write": "auth.uid === $uid"
       }
+    },
+    "matchmakingPairs": {
+      ".read": "auth != null",
+      "$pair": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      }
     }
   }
 }

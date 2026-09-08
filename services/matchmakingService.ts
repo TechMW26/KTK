@@ -15,32 +15,34 @@ import {
   matchmakingAllRef,
   matchmakingHostRef,
   matchmakingHostAllRef,
+  matchmakingPairsAllRef,
+  pairClaimByKeyRef,
 } from "@/lib/multiplayer/paths";
 import { createRoom } from "@/services/roomService";
 import {
   MATCHMAKING_STALE_MS,
   type MatchmakingEntry,
   type MatchmakingHostEntry,
+  type MatchmakingPairEntry,
   type MatchSettings,
 } from "@/lib/multiplayer/types";
 
 /**
- * "Search Online Players" matchmaking service.
+ * "Search Online Players" matchmaking service — RACE-FIXED.
  *
- * Pairing model (self-ownership only, so the RTDB rules stay tight):
- *  - Every searcher writes ONLY its own `matchmaking/{uid}` node ({"searching"}).
- *  - To avoid two players matching each other at once, the LEXICONGRAPHICALLY
- *    SMALLER uid is the designated HOST of a pair. The host creates a real room,
- *    then records the invitation on its own `matchmakingHost/{uid}` node
- *    ({ status:"inviting", roomCode, invitedUid }). The invitee reads that node
- *    (read-allowed) and joins the normal room via the existing joinRoom path.
- *  - Same player can never match itself (we only consider other uids).
- *  - Stale entries (crashed clients) are ignored via age-based filtering and by
- *    an onDisconnect cleanup that removes the search entry.
+ * WHO IS HOST is decided by ONE shared, atomic lock at
+ * `matchmakingPairs/{pairKey}` where `pairKey = [uidA,uidB].sort().join("_")`.
+ * Only the client whose `runTransaction` first commits claims the pair as host;
+ * every other client re-reads that same committed host and becomes the guest,
+ * so a pair NEVER gets two hosts, two rooms or two invites.
  *
- * All writes target the caller's own uid so no cross-player write permission is
- * required. This intentionally mirrors the existing "friends-only, code-shared"
- * trust model documented in docs/FIREBASE_MULTIPLAYER.md.
+ * Flow: guest+host both call `claimPair()`. The winner (`host === true`) calls
+ * `hostCreatesInvite()` -> creates ONE room and leaves `{roomCode, invitedUid}`
+ * on its own `matchmakingHost/{uid}`. The guest finds it via `readInviteFor()`
+ * and `joinRoom`s normally.
+ *
+ * Cleanup (`cleanupMatchmaking`) is ownership-scoped so it never deletes another
+ * live match's records. Dev logging traces each pairing; no secrets are logged.
  */
 
 function db(): Database {
@@ -49,8 +51,17 @@ function db(): Database {
   return instance;
 }
 
+function log(...args: unknown[]): void {
+  console.warn("[matchmaking]", ...args);
+}
+
 const fresh = (updatedAt: number | undefined): boolean =>
   typeof updatedAt !== "number" || Date.now() - updatedAt < MATCHMAKING_STALE_MS;
+
+/** Sorted, deterministic key for a pair of uids. */
+export function pairKeyOf(uidA: string, uidB: string): string {
+  return [uidA, uidB].sort().join("_");
+}
 
 // ---------------------------------------------------------------------------
 // Lifecycle
@@ -69,7 +80,8 @@ export async function announceSearch(uid: string, name: string): Promise<boolean
   };
   try {
     await set(node, entry);
-    // If this client drops, remove the search entry so we never linger as a ghost.
+    log("announceSearch", uid);
+    // Remove this search entry the instant this client's socket drops.
     const { onDisconnect } = await import("firebase/database");
     try {
       onDisconnect(node).remove();
@@ -82,88 +94,129 @@ export async function announceSearch(uid: string, name: string): Promise<boolean
   }
 }
 
-/** Stop searching (cancel). Removes own search node. */
+/** Stop searching / cancel. Removes only our own search + host nodes. */
 export async function cancelSearch(uid: string): Promise<void> {
   const database = db();
   try {
     await remove(matchmakingRef(database, uid));
+    await remove(matchmakingHostRef(database, uid));
   } catch {
     /* ignore */
   }
 }
 
 /**
- * Create a room and, if we are the designated host of a pair, atomically claim the
- * hosting slot with the invite. Returns the room code on success or null.
+ * ATOMIC host selection. Both players call this for a trial.
+ * Exactly one commits (`host === true`); the other becomes the guest.
  */
-export async function hostPair(
+export async function claimPair(
   uid: string,
-  myName: string,
-  invitedUid: string,
-  invitedName: string,
-  settings: MatchSettings,
-): Promise<string | null> {
+  targetUid: string,
+): Promise<{
+  host: boolean;
+  hostUid: string;
+  myUid: string;
+  invitedUid: string;
+  pairKey: string;
+}> {
   const database = db();
-  const hostNode = matchmakingHostRef(database, uid);
-  const now = Date.now();
+  const pairKey = pairKeyOf(uid, targetUid);
+  const pairRef = pairClaimByKeyRef(database, pairKey);
+  const [first] = [uid, targetUid].sort();
+  const intendedHost = first;
 
-  // 1) Try to claim the hosting slot first (dedupe). Only proceeds if we aren't
-  //    already hosting or matched.
   try {
-    const claim = await runTransaction(
-      hostNode,
+    log("claim attempt", { me: uid, target: targetUid, pairKey });
+    const res = await runTransaction(
+      pairRef,
       (raw) => {
-        const cur = (raw as MatchmakingHostEntry | null) ?? null;
-        if (cur && (cur.status === "inviting" || cur.status === "matched")) {
-          return undefined; // already claimed elsewhere
-        }
-        const name = myName.trim() || "Player";
-        const entry: MatchmakingHostEntry = {
-          name,
-          status: "inviting",
-          joinedAt: now,
-          updatedAt: now,
-          invitedUid,
+        const cur = (raw as MatchmakingPairEntry | null) ?? null;
+        if (cur && cur.hostUid) return undefined; // someone already claimed
+        const entry: MatchmakingPairEntry = {
+          hostUid: intendedHost,
+          invitedUid: intendedHost === uid ? targetUid : uid,
+          claimedAt: Date.now(),
+          members: [uid, targetUid],
         };
         return entry;
       },
       { applyLocally: false },
     );
-    if (!claim.committed) return null;
-  } catch {
-    return null;
-  }
 
-  // 2) Building the actual room is best-effort + collision-retried inside createRoom.
-  const res = await createRoom(uid, myName, settings).catch(() => ({ ok: false as const, reason: "ERROR" }));
-  if (!res.ok) {
-    // roll back the host claim so another player may try
-    try {
-      await remove(hostNode);
-    } catch {
-      /* ignore */
-    }
-    return null;
-  }
+    // If this transcript of my role is host, but a competing claim already won,
+    // res.committed is false and res.snapshot holds the existing host:
+    const inferred = (() => {
+      const val = res.snapshot.val() as MatchmakingPairEntry | null;
+      return val?.hostUid ?? intendedHost;
+    })();
+    const hostUid = res.committed ? intendedHost : inferred;
 
-  // 3) Publish the room code under our own host node, then stop advertising self
-  //    as a "searching" candidate.
-  try {
-    await update(hostNode, {
-      status: "inviting",
-      updatedAt: Date.now(),
-      roomCode: res.code,
-      invitedUid,
+    log(res.committed ? "claim COMMITTED -> host" : "claim NOT committed -> guest", {
+      me: uid,
+      target: targetUid,
+      pairKey,
+      hostUid,
     });
-    await update(matchmakingRef(database, uid), { status: "matched", updatedAt: Date.now() });
-  } catch {
-    /* ignore */
+    return {
+      host: hostUid === uid,
+      hostUid,
+      myUid: uid,
+      invitedUid: hostUid === uid ? targetUid : uid,
+      pairKey,
+    };
+  } catch (error) {
+    log("claim error", String((error as Error)?.message ?? error));
+    return { host: false, hostUid: intendedHost, myUid: uid, invitedUid: targetUid, pairKey };
   }
-  void invitedName;
-  return res.code;
 }
 
-/** A guest that has been invited clears their own search advertisement. */
+/**
+ * HOST ONLY: create ONE room and publish the invitation under our own host node.
+ * Also mirrors the room code onto the shared pair claim so the guest has a stable
+ * source to join.
+ */
+export async function hostCreatesInvite(
+  uid: string,
+  myName: string,
+  invitedUid: string,
+  pairKey: string,
+  settings: MatchSettings,
+): Promise<string | null> {
+  const database = db();
+  const hostNode = matchmakingHostRef(database, uid);
+  const res = await createRoom(uid, myName, settings).catch(() => ({ ok: false as const, reason: "ERROR" }));
+  if (!res.ok) {
+    log("host createRoom FAILED", res.reason);
+    return null;
+  }
+  log("host created room", { code: res.code, pairKey });
+  try {
+    const now = Date.now();
+    const invite: MatchmakingHostEntry = {
+      name: myName.trim() || "Player 1",
+      status: "inviting",
+      joinedAt: now,
+      updatedAt: now,
+      roomCode: res.code,
+      invitedUid,
+    };
+    await set(hostNode, invite);
+    await update(matchmakingRef(database, uid), {
+      status: "matched",
+      pairKey,
+      opponentUid: invitedUid,
+      updatedAt: Date.now(),
+    });
+    await update(pairClaimByKeyRef(database, pairKey), { roomCode: res.code, updatedAt: Date.now() });
+    log("host published invite", { pairKey, roomCode: res.code });
+    return res.code;
+  } catch (error) {
+    log("host publish failed", String((error as Error)?.message ?? error));
+    return null;
+  }
+}
+
+/** Guest that was invited clears its own search advertisement. */
 export async function acceptInvite(uid: string): Promise<void> {
   const database = db();
   try {
@@ -178,17 +231,11 @@ export async function acceptInvite(uid: string): Promise<void> {
 // ---------------------------------------------------------------------------
 
 export interface SearchCandidate {
-  /** A "searching" player (not self) this uid could invite (as host). */
   others: { uid: string; name: string; joinedAt: number }[];
-  /** A host invitation aimed at this uid (as guest) to join. */
   forMe: { hostUid: string; roomCode?: string } | null;
 }
 
-/** Watch all searching players + host invitations and derive candidates. */
-export function watchPool(
-  uid: string,
-  cb: (c: SearchCandidate) => void,
-): Unsubscribe {
+export function watchPool(uid: string, cb: (c: SearchCandidate) => void): Unsubscribe {
   const database = db();
   const offSelfHost = onValue(matchmakingHostRef(database, uid), () => {
     /* keep self host node warm for re-render */
@@ -196,7 +243,6 @@ export function watchPool(
 
   let others: { uid: string; name: string; joinedAt: number }[] = [];
   let forMe: { hostUid: string; roomCode?: string } | null = null;
-
   const push = () => cb({ others, forMe });
 
   const offAll = onValue(matchmakingAllRef(database), (snap: DataSnapshot) => {
@@ -224,7 +270,6 @@ export function watchPool(
   };
 }
 
-/** Convenience: list everyone currently searching (excluding uid). */
 export async function listSearchers(uid: string): Promise<{ uid: string; name: string }[]> {
   const database = db();
   const snap = await get(matchmakingAllRef(database));
@@ -234,8 +279,9 @@ export async function listSearchers(uid: string): Promise<{ uid: string; name: s
     .map(([u, e]) => ({ uid: u, name: e.name }));
 }
 
-/** Read an incoming guest-facing host invitation for this uid, if any. */
-export async function readInviteFor(uid: string): Promise<{ hostUid: string; roomCode: string } | null> {
+export async function readInviteFor(
+  uid: string,
+): Promise<{ hostUid: string; roomCode: string } | null> {
   const database = db();
   const snap = await get(matchmakingHostAllRef(database));
   const all = (snap.val() as Record<string, MatchmakingHostEntry> | null) ?? {};
@@ -244,3 +290,56 @@ export async function readInviteFor(uid: string): Promise<{ hostUid: string; roo
   );
   return mine ? { hostUid: mine[0], roomCode: mine[1].roomCode! } : null;
 }
+
+// ---------------------------------------------------------------------------
+// Cleanup (membership/ownership-scoped)
+// ---------------------------------------------------------------------------
+
+/** The pair claim a uid is a member of, if any. */
+export async function findMyPair(dbInst: Database, uid: string): Promise<{ pairKey: string; entry: MatchmakingPairEntry } | null> {
+  const snap = await get(matchmakingPairsAllRef(dbInst));
+  const all = (snap.val() as Record<string, MatchmakingPairEntry> | null) ?? {};
+  for (const [k, e] of Object.entries(all)) {
+    if (e && Array.isArray(e.members) && e.members.includes(uid)) return { pairKey: k, entry: e };
+  }
+  return null;
+}
+
+/** Read a single pair claim entry. */
+export async function readPair(pairKey: string): Promise<MatchmakingPairEntry | null> {
+  const snap = await get(pairClaimByKeyRef(db(), pairKey));
+  return (snap.val() as MatchmakingPairEntry | null) ?? null;
+}
+
+/** Remove the whole pair claim (both seats abandoned the match). */
+export async function deletePair(pairKey: string): Promise<void> {
+  try {
+    await remove(pairClaimByKeyRef(db(), pairKey));
+  } catch {
+    /* ignore */
+  }
+}
+
+/**
+ * Remove THIS uid's own `matchmaking/{uid}` + `matchmakingHost/{uid}` records and
+ * (when provided or auto-found) the pair node it belongs to. Will never touch a
+ * pair the uid is not a member of.
+ */
+export async function cleanupMatchmaking(uid: string, pairKey?: string): Promise<void> {
+  const database = db();
+  try {
+    await remove(matchmakingRef(database, uid));
+    await remove(matchmakingHostRef(database, uid));
+    const target = pairKey ?? (await findMyPair(database, uid))?.pairKey;
+    if (target) {
+      const entry = await readPair(target);
+      if (entry && Array.isArray(entry.members) && entry.members.includes(uid)) {
+        await remove(pairClaimByKeyRef(database, target));
+        log("cleanup removed pair", { pairKey: target });
+      }
+    }
+  } catch {
+    /* best-effort */
+  }
+}
+

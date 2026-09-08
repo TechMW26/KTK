@@ -379,19 +379,26 @@ function Reveal({ mp }: { mp: MP }) {
           <MpOrnament />
           <p>{copy.subtitle}</p>
         </div>
-        <div className="cards-row reveal-row mp-reveal">
-          {Array.from({ length: cfg.cards }, (_, i) => (
-            <MpCard
-              key={i}
-              index={i}
-              faceUp
-              blank={result.wasBluff}
-              king={!result.wasBluff && i === result.kingIndex}
-              chosen={i === result.pick}
-              wrong={(result.kind === "wrong" || result.kind === "bluff-worked") && i === result.pick}
-              disabled
-            />
-          ))}
+        <div className="reveal-hand-wrap">
+          <div className="cards-row reveal-row mp-reveal">
+            {Array.from({ length: cfg.cards }, (_, i) => (
+              <MpCard
+                key={i}
+                index={i}
+                faceUp
+                blank={result.wasBluff}
+                king={!result.wasBluff && i === result.kingIndex}
+                chosen={i === result.pick}
+                wrong={(result.kind === "wrong" || result.kind === "bluff-worked") && i === result.pick}
+                disabled
+              />
+            ))}
+          </div>
+          <MpRevealHand
+            pick={result.pick}
+            cards={cfg.cards}
+            self={result.guesserSeat === mp.mySeat}
+          />
         </div>
         <div className="round-verdict">
           <b>{meWon ? "YOU WIN THE ROUND" : `${mp.opponent ?? "Opponent"} WINS THE ROUND`}</b>
@@ -411,6 +418,35 @@ function Reveal({ mp }: { mp: MP }) {
   );
 }
 
+/**
+ * Guesser-hand shown over the picked card in the reveal — mirrors the single
+ * player / 2‑player SelectionHand so reveal screens look identical everywhere.
+ * `faint` is used when the pick belongs to the opponent.
+ */
+function MpRevealHand({
+  pick,
+  cards,
+  self,
+}: {
+  pick: number | null;
+  cards: number;
+  self: boolean;
+}) {
+  if (pick === null || cards <= 0) return null;
+  const offset = pick - (cards - 1) / 2;
+  const style = { "--hand-x": `${offset * 76}px` } as React.CSSProperties;
+  return (
+    /* eslint-disable-next-line @next/next/no-img-element */
+    <img
+      className={["selection-hand-img", self ? "" : "faint"].filter(Boolean).join(" ")}
+      style={style}
+      src="/guesser-hand.png"
+      alt=""
+      aria-hidden="true"
+    />
+  );
+}
+
 function LevelEnd({ mp }: { mp: MP }) {
   const g = mp.game!;
   const me = mp.mySeat ?? 0;
@@ -422,9 +458,7 @@ function LevelEnd({ mp }: { mp: MP }) {
     setBusy(true);
     await mp.advance();
     setBusy(false);
-  };
-
-  return (
+  };  return (
     <MpFrame>
       <button className="quit-button" onClick={() => void mp.leave()} aria-label="Leave match">
         ↪
