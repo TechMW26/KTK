@@ -19,6 +19,18 @@ import {
   type GuessInput,
 } from "@/lib/game/rules";
 import {
+  isClassic,
+  dealerForHidingRound,
+  guesserForHidingRound,
+  courtForHidingRound,
+  applyLivesChange,
+  livesVerdict,
+  RULESET_ROUNDS,
+  START_LIVES,
+  DEFAULT_SETTINGS,
+  type MatchSettings,
+} from "@/lib/game/flow";
+import {
   type Seat,
   type GameState,
   type RoomPlayerSecret,
@@ -44,22 +56,32 @@ export function secretKey(level: number, round: number): string {
   return `${level}_${round}`;
 }
 
-export function emptyGame(): GameState {
-  return {
+export function emptyGame(settings: MatchSettings = DEFAULT_SETTINGS): GameState {
+  const classic = isClassic(settings);
+  const livesMode = settings.winMode === "lives";
+  const round = 1;
+  const level = classic ? 0 : courtForHidingRound(1);
+  const dealer = classic ? dealerSeatFor(1) : dealerForHidingRound(1, settings.turnOrder);
+  const guesser = classic ? guesserSeatFor(1) : guesserForHidingRound(1, settings.turnOrder);
+  const base: GameState = {
     status: "in-progress",
-    level: 0,
-    round: 1,
+    level,
+    round,
     scores: [0, 0],
     bluffsUsed: [false, false],
     phase: "dealer-hide",
-    actingSeat: 0,
-    dealerSeat: 0,
+    actingSeat: classic ? dealer : dealer,
+    dealerSeat: dealer,
     pendingGuess: null,
     lastResult: null,
     awaitingNext: false,
     winnerSeat: null,
     seq: 0,
+    settings,
   };
+  if (livesMode) base.lives = [START_LIVES, START_LIVES];
+  void guesser;
+  return base;
 }
 
 export async function readGame(code: string): Promise<GameState | null> {
@@ -148,14 +170,20 @@ export async function dealerPlaces(
       cur.round === args.round &&
       cur.level === args.level &&
       (args.isBluff ? !cur.bluffsUsed[args.seat] : true),
-    (cur) => ({
-      ...cur,
-      bluffsUsed: args.isBluff
-        ? (cur.bluffsUsed.map((v, i) => (i === args.seat ? true : v)) as [boolean, boolean])
-        : cur.bluffsUsed,
-      phase: "guess",
-      actingSeat: guesserSeatFor(args.round),
-    }),
+    (cur) => {
+      const classic = isClassic(cur.settings ?? DEFAULT_SETTINGS);
+      const actingGuess = classic
+        ? guesserSeatFor(args.round)
+        : guesserForHidingRound(args.round, (cur.settings ?? DEFAULT_SETTINGS).turnOrder);
+      return {
+        ...cur,
+        bluffsUsed: args.isBluff
+          ? (cur.bluffsUsed.map((v, i) => (i === args.seat ? true : v)) as [boolean, boolean])
+          : cur.bluffsUsed,
+        phase: "guess",
+        actingSeat: actingGuess,
+      };
+    },
   );
 }
 
@@ -187,17 +215,23 @@ export async function guesserMoves(
       cur.round === args.round &&
       cur.level === args.level &&
       !cur.pendingGuess,
-    (cur) => ({
-      ...cur,
-      pendingGuess: {
-        fromUid: uid,
-        cardIndex: args.guess.cardIndex,
-        calledBluff: args.guess.calledBluff,
-        guesserSeat: args.guesserSeat,
-      },
-      phase: "reveal",
-      actingSeat: dealerSeatFor(args.round),
-    }),
+    (cur) => {
+      const classic = isClassic(cur.settings ?? DEFAULT_SETTINGS);
+      const dealer = classic
+        ? dealerSeatFor(args.round)
+        : dealerForHidingRound(args.round, (cur.settings ?? DEFAULT_SETTINGS).turnOrder);
+      return {
+        ...cur,
+        pendingGuess: {
+          fromUid: uid,
+          cardIndex: args.guess.cardIndex,
+          calledBluff: args.guess.calledBluff,
+          guesserSeat: args.guesserSeat,
+        },
+        phase: "reveal",
+        actingSeat: dealer,
+      };
+    },
   );
 }
 
@@ -227,6 +261,8 @@ export async function dealerReveals(
       !cur.lastResult,
     (cur) => {
       const pending = cur.pendingGuess!;
+      const settings = cur.settings ?? DEFAULT_SETTINGS;
+      const livesMode = settings.winMode === "lives";
       const points = levelConfig(args.level).points;
       const result = resolveGuess({
         level: args.level,
@@ -236,7 +272,14 @@ export async function dealerReveals(
         secret: { isBluff: secret.isBluff, kingIndex: secret.kingIndex },
         guess: { cardIndex: pending.cardIndex, calledBluff: pending.calledBluff },
       });
-      return {
+      // 5-lives rule: a successfully FOUND hidden King costs its DEALER one life.
+      // Deducted exactly once here (guarded reveal commits only a single time).
+      let lives: [number, number] | undefined = cur.lives;
+      if (livesMode && result.kind === "king") {
+        const from = (cur.lives ?? [START_LIVES, START_LIVES]) as [number, number];
+        lives = applyLivesChange(from, { kind: result.kind, dealer: result.dealerSeat });
+      }
+      const next: GameState = {
         ...cur,
         scores: cur.scores.map((v, i) => (i === result.winnerSeat ? v + result.points : v)) as [number, number],
         lastResult: result,
@@ -244,6 +287,8 @@ export async function dealerReveals(
         awaitingNext: true,
         phase: "reveal",
       };
+      if (lives) next.lives = lives;
+      return next;
     },
   );
 }
@@ -264,58 +309,147 @@ export async function advanceNext(code: string): Promise<boolean> {
       (cur.phase === "reveal" || cur.phase === "level-end") &&
       (cur.phase === "level-end" || cur.awaitingNext),
     (cur) => {
-      if (cur.phase === "level-end") {
-        return {
-          ...cur,
-          round: 1,
-          level: cur.level + 1,
-          lastResult: null,
-          pendingGuess: null,
-          awaitingNext: false,
-          bluffsUsed: [false, false],
-          phase: "dealer-hide",
-          dealerSeat: dealerSeatFor(1),
-          actingSeat: dealerSeatFor(1),
-        };
-      }
-      const isLastRoundOfLevel = cur.round >= ROUNDS_PER_LEVEL;
-      if (isLastRoundOfLevel && cur.level >= LEVEL_COUNT - 1) {
-        const s = cur.scores;
-        return {
-          ...cur,
-          phase: "match-end",
-          status: "finished",
-          pendingGuess: null,
-          awaitingNext: false,
-          lastResult: null,
-          winnerSeat: s[0] === s[1] ? null : ((s[0] > s[1] ? 0 : 1) as Seat),
-        };
-      }
-      if (isLastRoundOfLevel) {
-        return {
-          ...cur,
-          phase: "level-end",
-          pendingGuess: null,
-          awaitingNext: true,
-          lastResult: null,
-        };
-      }
-      const nextRound = cur.round + 1;
-      return {
-        ...cur,
-        round: nextRound,
-        lastResult: null,
-        pendingGuess: null,
-        awaitingNext: false,
-        phase: "dealer-hide",
-        dealerSeat: dealerSeatFor(nextRound),
-        actingSeat: dealerSeatFor(nextRound),
-      };
+      const settings = cur.settings ?? DEFAULT_SETTINGS;
+      if (isClassic(settings)) return advanceClassic(cur);
+      return advanceOptional(cur, settings);
     },
   );
 }
 
-/** Reset the game to a fresh match (used from the match-end rematch screen). */
+/** Classic (unchanged) scored 3-court progression. */
+function advanceClassic(cur: GameState): GameState {
+  if (cur.phase === "level-end") {
+    return {
+      ...cur,
+      round: 1,
+      level: cur.level + 1,
+      lastResult: null,
+      pendingGuess: null,
+      awaitingNext: false,
+      bluffsUsed: [false, false],
+      phase: "dealer-hide",
+      dealerSeat: dealerSeatFor(1),
+      actingSeat: dealerSeatFor(1),
+    };
+  }
+  const isLastRoundOfLevel = cur.round >= ROUNDS_PER_LEVEL;
+  if (isLastRoundOfLevel && cur.level >= LEVEL_COUNT - 1) {
+    const s = cur.scores;
+    return {
+      ...cur,
+      phase: "match-end",
+      status: "finished",
+      pendingGuess: null,
+      awaitingNext: false,
+      lastResult: null,
+      winnerSeat: s[0] === s[1] ? null : ((s[0] > s[1] ? 0 : 1) as Seat),
+    };
+  }
+  if (isLastRoundOfLevel) {
+    return {
+      ...cur,
+      phase: "level-end",
+      pendingGuess: null,
+      awaitingNext: true,
+      lastResult: null,
+    };
+  }
+  const nextRound = cur.round + 1;
+  return {
+    ...cur,
+    round: nextRound,
+    lastResult: null,
+    pendingGuess: null,
+    awaitingNext: false,
+    phase: "dealer-hide",
+    dealerSeat: dealerSeatFor(nextRound),
+    actingSeat: dealerSeatFor(nextRound),
+  };
+}
+
+/**
+ * Optional rules engine (5-lives and/or Complete Turns).
+ *
+ * Runs a continuous sequence of RULESET_ROUNDS hides (round 1..N, never resetting
+ * per court — courts are presentation only, derived via courtForHidingRound).
+ * The dealer is decided purely by the turnOrder. When lives mode is on and a life
+ * reaches 0 the match ends immediately with that seat the loser. When the sequence
+ * is exhausted, lives (or failing that scores) decide the winner.
+ */
+function advanceOptional(cur: GameState, settings: MatchSettings): GameState {
+  const livesMode = settings.winMode === "lives";
+  const lives = (cur.lives ?? [START_LIVES, START_LIVES]) as [number, number];
+  // Because we only advance right after a reveal, may already be decided:
+  if (livesMode) {
+    const verdict = livesVerdict(lives, 0);
+    if (verdict.over) {
+      return {
+        ...cur,
+        phase: "match-end",
+        status: "finished",
+        pendingGuess: null,
+        awaitingNext: false,
+        lastResult: null,
+        winnerSeat: verdict.winner,
+      };
+    }
+  }
+
+  const nextRound = cur.round + 1;
+  const lastRoundDone = cur.round >= RULESET_ROUNDS;
+  // Determine the winner when the whole sequence is complete.
+  const finalVerdict = livesMode
+    ? livesVerdict(lives, 0)
+    : null;
+
+  if (lastRoundDone) {
+    let winnerSeat: Seat | null;
+    if (finalVerdict?.over) {
+      winnerSeat = finalVerdict.winner;
+    } else {
+      const s = cur.scores;
+      winnerSeat = livesMode
+        ? lives[0] === lives[1]
+          ? null
+          : ((lives[0] > lives[1] ? 0 : 1) as Seat)
+        : s[0] === s[1]
+          ? null
+          : ((s[0] > s[1] ? 0 : 1) as Seat);
+    }
+    return {
+      ...cur,
+      phase: "match-end",
+      status: "finished",
+      pendingGuess: null,
+      awaitingNext: false,
+      lastResult: null,
+      winnerSeat,
+    };
+  }
+
+  const dealer = dealerForHidingRound(nextRound, settings.turnOrder);
+  const nextLevel = courtForHidingRound(nextRound);
+  const resetBluffs = nextLevel !== cur.level;
+  return {
+    ...cur,
+    level: nextLevel,
+    round: nextRound,
+    bluffsUsed: resetBluffs ? [false, false] : cur.bluffsUsed,
+    lastResult: null,
+    pendingGuess: null,
+    awaitingNext: false,
+    phase: "dealer-hide",
+    dealerSeat: dealer,
+    actingSeat: dealer,
+  };
+}
+
+/** Reset the game to a fresh match (used from the match-end rematch screen).
+ * The rematch keeps the room's locked settings so rules are preserved. */
 export async function rematchGame(code: string): Promise<boolean> {
-  return commit(code, (cur) => cur.status === "finished", () => emptyGame());
+  return commit(code, (cur) => cur.status === "finished", (cur) => {
+    // Rebuild a fresh game that honours the locked config of the room.
+    const settings = cur.settings ?? DEFAULT_SETTINGS;
+    return emptyGame(settings);
+  });
 }

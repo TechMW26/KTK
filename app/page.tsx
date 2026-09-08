@@ -203,6 +203,11 @@ export default function Home() {
   const [kingPosition, setKingPosition] = useState<number | null>(null);
   const [isBluff, setIsBluff] = useState(false);
   const [bluffsAvailable, setBluffsAvailable] = useState<[boolean, boolean]>([true, true]);
+  // Local 2-Player optional 5-Lives rule (Feature: "5 Lives"). Only read when
+  // mode === "local" && livesOn; VS Bot stays untouched.
+  const [livesOn, setLivesOn] = useState(false);
+  const [lives, setLives] = useState<[number, number]>([5, 5]);
+  const [lifeWinner, setLifeWinner] = useState<0 | 1 | null>(null);
   const [result, setResult] = useState<RoundResult | null>(null);
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [timeLeft, setTimeLeft] = useState(LEVELS[0].seconds);
@@ -247,6 +252,10 @@ export default function Home() {
     setRound(1);
     setBluffsAvailable([true, true]);
     setHistory([]);
+    if (mode === "local") {
+      setLives([5, 5]);
+      setLifeWinner(null);
+    }
     resetRoundState(0);
     setPhase("dealer");
   };
@@ -259,6 +268,10 @@ export default function Home() {
     setRound(1);
     setBluffsAvailable([true, true]);
     setHistory([]);
+    if (mode === "local") {
+      setLives([5, 5]);
+      setLifeWinner(null);
+    }
     resetRoundState(0);
     setPhase("home");
   };
@@ -283,6 +296,13 @@ export default function Home() {
       else playSoundCue("wrong");
     }
     setOverlay(null);
+    // Local 2-Player 5-Lives: a found hidden King costs its DEALER one life.
+    if (mode === "local" && livesOn && kind === "king") {
+      const newLives: [number, number] =
+        dealer === 0 ? [lives[0] - 1, lives[1]] : [lives[0], lives[1] - 1];
+      setLives(newLives);
+      if (newLives[dealer] <= 0) setLifeWinner(dealer === 0 ? 1 : 0);
+    }
     setPhase("result");
   };
 
@@ -307,6 +327,10 @@ export default function Home() {
   };
 
   const nextRound = () => {
+    if (mode === "local" && livesOn && lifeWinner !== null) {
+      setPhase("match-end");
+      return;
+    }
     if (round === 10) {
       setPhase("level-end");
       return;
@@ -441,6 +465,20 @@ export default function Home() {
     if (sound && timedTurn && timeLeft > 0 && timeLeft <= 5) playSoundCue("countdown", timeLeft);
   }, [sound, phase, dealerIsBot, timeLeft]);
 
+  // Direct "VS Bot" start (used by the multiplayer matchmaking fallback and by
+  // ?play=bot). Runs once on mount; bot mode only, untouching normal menu flow.
+  const autoStartRef = useRef(false);
+  useEffect(() => {
+    if (autoStartRef.current || typeof window === "undefined") return;
+    autoStartRef.current = true;
+    if (new URLSearchParams(window.location.search).get("play") === "bot") {
+      // Default mode is already "bot"; just launch the match directly.
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- mount-time auto-start from URL
+      startMatch();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const activePlayer = mode === "local"
     ? phase === "dealer"
       ? dealer
@@ -494,6 +532,8 @@ export default function Home() {
             setMode={setMode}
             names={names}
             setNames={setNames}
+            livesOn={livesOn}
+            setLivesOn={setLivesOn}
             startMatch={startMatch}
             openRules={() => setOverlay("rules")}
             openSettings={() => setOverlay("settings")}
@@ -510,6 +550,7 @@ export default function Home() {
               activePlayer={activePlayer}
               activeAction={activeAction}
               onSettings={() => setOverlay("settings")}
+              hearts={mode === "local" && livesOn ? lives : null}
             />
             <button className="quit-button" onClick={() => setOverlay("quit")} aria-label="Quit match" title="Quit match">↪</button>
 
@@ -599,6 +640,7 @@ export default function Home() {
                     alt=""
                     width={392}
                     height={952}
+                    unoptimized
                   />
                 </div>
                 <div className="stage-title above-hand">
@@ -695,10 +737,18 @@ export default function Home() {
                 </div>
                 <div className="round-verdict">
                   <b>{displayNames[result.winner]} WINS THE ROUND</b>
-                  <span>+{config.points} {config.points === 1 ? "point" : "points"}</span>
+                  {mode === "local" && livesOn && result.kind === "king" ? (
+                    <span>KING FOUND — {displayNames[dealer]} LOST A LIFE</span>
+                  ) : (
+                    <span>+{config.points} {config.points === 1 ? "point" : "points"}</span>
+                  )}
                 </div>
                 <button className="gold-button wide result-next" onClick={nextRound}>
-                  {round === 10 ? "LEVEL RESULTS" : "NEXT ROUND"}
+                  {mode === "local" && livesOn && lifeWinner !== null
+                    ? "FINAL RESULT"
+                    : round === 10
+                      ? "LEVEL RESULTS"
+                      : "NEXT ROUND"}
                 </button>
               </section>
             )}
@@ -729,13 +779,29 @@ export default function Home() {
               <section className="center-stage match-stage">
                 <span className="level-crown">♛</span>
                 <p className="eyebrow">THE KINGDOM HAS SPOKEN</p>
-                <h2>{scores[0] === scores[1] ? "A ROYAL DRAW" : `${displayNames[scores[0] > scores[1] ? 0 : 1]} WINS!`}</h2>
-                <Ornament />
-                <p>Thirty rounds. Three courts. One ruler.</p>
+                {mode === "local" && livesOn && lifeWinner !== null ? (
+                  <>
+                    <h2>{`${displayNames[lifeWinner]} WINS!`}</h2>
+                    <Ornament />
+                    <p>{`${displayNames[lifeWinner === 0 ? 1 : 0]} lost all 5 Kings.`}</p>
+                  </>
+                ) : (
+                  <>
+                    <h2>{scores[0] === scores[1] ? "A ROYAL DRAW" : `${displayNames[scores[0] > scores[1] ? 0 : 1]} WINS!`}</h2>
+                    <Ornament />
+                    <p>Thirty rounds. Three courts. One ruler.</p>
+                  </>
+                )}
                 <div className="score-board large final">
-                  <div><span>{displayNames[0]}</span><strong>{scores[0]}</strong></div>
+                  <div>
+                    <span>{displayNames[0]}</span>
+                    <strong>{mode === "local" && livesOn ? (lives[0] < 0 ? 0 : lives[0]) : scores[0]}</strong>
+                  </div>
                   <i>VS</i>
-                  <div><span>{displayNames[1]}</span><strong>{scores[1]}</strong></div>
+                  <div>
+                    <span>{displayNames[1]}</span>
+                    <strong>{mode === "local" && livesOn ? (lives[1] < 0 ? 0 : lives[1]) : scores[1]}</strong>
+                  </div>
                 </div>
                 <button className="gold-button wide" onClick={startMatch}>PLAY AGAIN</button>
                 <button className="text-button" onClick={() => setPhase("home")}>BACK TO HOME</button>
@@ -849,6 +915,7 @@ function SelectionHand({ index, cardCount, settled = false, faint = false, roami
       alt=""
       width={980}
       height={1792}
+      unoptimized
       aria-hidden="true"
       style={{
         "--hand-x": `${offset * 76}px`,
@@ -859,12 +926,14 @@ function SelectionHand({ index, cardCount, settled = false, faint = false, roami
 }
 
 function HomeScreen({
-  mode, setMode, names, setNames, startMatch, openRules, openSettings,
+  mode, setMode, names, setNames, livesOn, setLivesOn, startMatch, openRules, openSettings,
 }: {
   mode: Mode;
   setMode: (mode: Mode) => void;
   names: [string, string];
   setNames: React.Dispatch<React.SetStateAction<[string, string]>>;
+  livesOn: boolean;
+  setLivesOn: (on: boolean) => void;
   startMatch: () => void;
   openRules: () => void;
   openSettings: () => void;
@@ -882,6 +951,7 @@ function HomeScreen({
           width={1324}
           height={1296}
           priority
+          unoptimized
         />
       </div>
       <div className="entry-panel">
@@ -896,6 +966,16 @@ function HomeScreen({
           <>
             <label htmlFor="player-two">OPPONENT NAME</label>
             <input id="player-two" value={names[1]} onChange={(event) => setNames((previous) => [previous[0], event.target.value])} placeholder="Enter opponent name" />
+            <label className="settings-check" htmlFor="lives5">
+              <span>5 Lives</span>
+              <input
+                id="lives5"
+                type="checkbox"
+                checked={livesOn}
+                onChange={(e) => setLivesOn(e.target.checked)}
+              />
+            </label>
+            {livesOn && <p className="settings-note">Finding the King costs the hider a life. First to ❤ 0 loses.</p>}
           </>
         )}
         <button className="gold-button" onClick={startMatch}>START MATCH</button>
@@ -916,7 +996,7 @@ function HomeScreen({
 }
 
 function GameHeader({
-  level, round, config, names, scores, time, activePlayer, activeAction, onSettings,
+  level, round, config, names, scores, time, activePlayer, activeAction, onSettings, hearts,
 }: {
   level: number;
   round: number;
@@ -927,7 +1007,9 @@ function GameHeader({
   activePlayer: number | null;
   activeAction: string | null;
   onSettings: () => void;
+  hearts?: [number, number] | null;
 }) {
+  const showHearts = !!hearts;
   return (
     <header className="game-header">
       <Logo compact />
@@ -948,17 +1030,32 @@ function GameHeader({
         <span className={activePlayer === 0 ? "active-turn" : ""}>
           {activePlayer === 0 && activeAction && <small>{activeAction}</small>}
           <strong>{names[0]}</strong>
-          <b>{scores[0]}</b>
+          <b>{showHearts ? hearts![0] : scores[0]}</b>
         </span>
         <i>{config.cards} CARDS · {config.points}×</i>
         <span className={activePlayer === 1 ? "active-turn" : ""}>
-          <b>{scores[1]}</b>
+          <b>{showHearts ? hearts![1] : scores[1]}</b>
           <strong>{names[1]}</strong>
           {activePlayer === 1 && activeAction && <small>{activeAction}</small>}
         </span>
       </div>
+      {showHearts && (
+        <div className="single-lives-bar">
+          <span className="lives-row">{heartsPips(hearts![0])}</span>
+          <em>LIVES</em>
+          <span className="lives-row">{heartsPips(hearts![1])}</span>
+        </div>
+      )}
     </header>
   );
+}
+
+/** Render 5 heart pips, n of them full. */
+function heartsPips(n: number) {
+  const count = Math.max(0, Math.min(5, Math.round(n)));
+  return Array.from({ length: 5 }, (_, i) => (
+    <span key={i} className={`life ${i < count ? "" : "lost"}`} aria-hidden="true">❤</span>
+  ));
 }
 
 function PowerDock({ bluffActive, onStrategy, onBluff }: {

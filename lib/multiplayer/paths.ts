@@ -47,3 +47,34 @@ export function secretRef(db: Database, code: string, uid: string): DatabaseRefe
 export function secretChildRef(db: Database, code: string, uid: string, key: string): DatabaseReference {
   return ref(db, `rooms/${code}/secrets/${uid}/${key}`);
 }
+
+// ---------------------------------------------------------------------------
+// Matchmaking ("Search Online Players")
+// Layout:
+//   matchmaking/{uid}: { name, joinedAt, status, updatedAt, invitedBy? }
+//     - status: "searching" | "inviting" | "matched" | "cancelled"
+//     - invitedBy: uid of the player who invited this player into a room
+//   matchmakingHost/{uid}: { name, joinedAt, status, updatedAt, roomCode?, invitedUid? }
+//     The player who first pairs up becomes a "host" invitation: they create the
+//     room and leave the code under their own host node for the invitee to read.
+// ---------------------------------------------------------------------------
+
+/** Live "I am searching" entry (self-owned). */
+export function matchmakingRef(db: Database, uid: string): DatabaseReference {
+  return ref(db, `matchmaking/${uid}`);
+}
+
+/** Snapshot of every searching player's own node. */
+export function matchmakingAllRef(db: Database): DatabaseReference {
+  return ref(db, "matchmaking");
+}
+
+/** The host invitation node (also self-owned). */
+export function matchmakingHostRef(db: Database, uid: string): DatabaseReference {
+  return ref(db, `matchmakingHost/${uid}`);
+}
+
+/** Every host invitation in flight. */
+export function matchmakingHostAllRef(db: Database): DatabaseReference {
+  return ref(db, "matchmakingHost");
+}

@@ -16,7 +16,16 @@ import { getRTDatabase } from "@/lib/firebase/database";
 import { roomRef, playersRef, playerRef, gameRef } from "@/lib/multiplayer/paths";
 import { generateRoomCode, normalizeRoomCode } from "@/lib/multiplayer/roomCode";
 import { emptyGame } from "@/services/multiplayerService";
-import { MATCH_TIMEOUT_MS, type RoomData, type PlayerEntry, type Seat } from "@/lib/multiplayer/types";
+import {
+  DEFAULT_SETTINGS,
+  type MatchSettings,
+} from "@/lib/game/flow";
+import {
+  MATCH_TIMEOUT_MS,
+  type RoomData,
+  type PlayerEntry,
+  type Seat,
+} from "@/lib/multiplayer/types";
 
 /**
  * Room lifecycle service: create / join / watch / presence / leave.
@@ -50,7 +59,11 @@ function isExpired(room: RoomData | null): boolean {
  * transaction targeting rooms/{code}; if the code already exists the write is
  * aborted (committed = false) and we simply retry with a fresh code.
  */
-export async function createRoom(uid: string, name: string): Promise<CreateRoomResult> {
+export async function createRoom(
+  uid: string,
+  name: string,
+  settings: MatchSettings = DEFAULT_SETTINGS,
+): Promise<CreateRoomResult> {
   for (let attempt = 0; attempt < MAX_CODE_ATTEMPTS; attempt += 1) {
     const code = generateRoomCode();
     const now = Date.now();
@@ -70,6 +83,7 @@ export async function createRoom(uid: string, name: string): Promise<CreateRoomR
       updatedAt: serverTimestamp() as never as number,
       order: [uid, null],
       players: { [uid]: host },
+      settings,
     };
     try {
       const result = await runTransaction(
@@ -79,8 +93,8 @@ export async function createRoom(uid: string, name: string): Promise<CreateRoomR
       );
       if (result.committed) {
         // Initialise the authoritative game state so the match can start as
-        // soon as the second player joins.
-        await set(gameRef(db(), code), emptyGame()).catch(() => {});
+        // soon as the second player joins. The engine mirrors the config.
+        await set(gameRef(db(), code), emptyGame(settings)).catch(() => {});
         return { ok: true, code };
       }
     } catch {
@@ -88,6 +102,32 @@ export async function createRoom(uid: string, name: string): Promise<CreateRoomR
     }
   }
   return { ok: false, reason: "ROOM_CODE_EXHAUSTED" };
+}
+
+/**
+ * (Re)store the match config on an existing (not-yet-started) room and align its
+ * authoritative game node to that config. Only meaningful while only the host is
+ * present / before the match begins. Kept fire-and-forget friendly.
+ */
+export async function applyRoomSettings(code: string, settings: MatchSettings): Promise<boolean> {
+  const database = db();
+  const normalized = normalizeRoomCode(code);
+  if (!normalized) return false;
+  try {
+    const r = roomRef(database, normalized);
+    const snap = await get(r);
+    const current = snap.val() as RoomData | null;
+    if (!current) return false;
+    if (Object.values(current.players ?? {}).filter((p) => p && p.seat != null).length >= 2) {
+      // already a live match — settings are locked
+      return false;
+    }
+    await update(r, { settings, updatedAt: serverTimestamp() as never as number });
+    await set(gameRef(database, normalized), emptyGame(settings)).catch(() => {});
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** Classify why a join could not proceed. Returns "OK" if it can proceed. */

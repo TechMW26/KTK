@@ -8,6 +8,14 @@
  * moves / their own (seat-private) secret and react to the synced state.
  */
 
+import type {
+  MatchSettings,
+  TurnOrder,
+  WinMode,
+} from "@/lib/game/flow";
+
+export type { MatchSettings, TurnOrder, WinMode };
+
 /** Which seat a player occupies inside a room (matches scores[] indexing). */
 export type Seat = 0 | 1;
 
@@ -36,10 +44,22 @@ export interface RoomData {
   status: RoomStatus;
   createdAt: number;
   updatedAt: number;
+  /**
+   * Locked-in match configuration chosen by the host on the setup screen.
+   * Persisted on the ROOM (not only game) so the host may review it before the
+   * match begins and both clients observe the same locked config.
+   */
+  settings?: MatchSettings;
   /** Seats held by player uid in order: [p0Uid, p1Uid] (second may be null). */
   order: (string | null)[];
   /** uids -> player meta. */
   players: Record<string, PlayerEntry>;
+  /**
+   * Whether the host has locked the settings and "started" (filled the room).
+   * While false a joining guest stays on the settings screen instead of blind
+   * entering play. Mirrors a pre-game lobby.
+   */
+  ready?: boolean;
 }
 
 /** Authoritative game "phase" of a round, mirroring the single-player flow. */
@@ -64,22 +84,38 @@ export type ResultKind =
  * Public (both-players-visible) authoritative game state for the room.
  * NOTE: it intentionally never contains the active round's hidden King position —
  * that lives only in the dealer seat's PRIVATE secret node (see RoomPlayerSecret).
+ *
+ * Two engine flavours share this one shape:
+ *  - CLASSIC  (settings.winMode === "classic" && turnOrder === "alternate"):
+ *    the ORIGINAL scored game. `level` 0..2, `round` 1..10 resets each level,
+ *    the dealer alternates every round. Exactly as before these features.
+ *  - OPTIONAL (any other config: 5-lives and/or complete turns selected):
+ *    an additive continuous engine of RULESET_ROUNDS (20) hiding rounds.
+ *    `round` runs 1..20 continuously, `level` is derived from the hiding round
+ *    via flow.courtForHidingRound to reuse the court/card/timing visuals, the
+ *    dealer is decided by flow.dealerForHidingRound(turnOrder), and lives (when
+ *    enabled) decide the winner.
  */
 export interface GameState {
   status: "in-progress" | "finished";
-  /** Level index 0..2 -> card count / time / points. */
+  /** Level index 0..2 -> card count / time / points (per hiding round in optional). */
   level: number;
-  /** Round within the level, 1..10. */
+  /**
+   * Round. CLASSIC: 1..10 within the current level. OPTIONAL: continuous global
+   * hiding round 1..RULESET_ROUNDS.
+   */
   round: number;
-  /** Live score per seat. */
+  /** Live score per seat (kept for flavour; decides classic winner). */
   scores: [number, number];
   /**
-   * Per-seat flag whether that seat already used its single per-level Bluff.
-   * (Mirrors existing "one bluff per level per player".)
+   * Per-seat flag whether that seat already used its current bluff budget.
+   * CLASSIC: one per level. OPTIONAL: refreshed at court (deck) boundaries.
    */
   bluffsUsed: [boolean, boolean];
   phase: GamePhase;
-  /** Seat that is expected to act right now. */
+  /**
+   * Seat that is expected to act right now.
+   */
   actingSeat: Seat;
   /** Seat that is Dealer for the current round. */
   dealerSeat: Seat;
@@ -98,6 +134,22 @@ export interface GameState {
   winnerSeat: Seat | null;
   /** Monotonic change counter, raised on every accepted transition. */
   seq: number;
+  /**
+   * Locked-in match rules for this room (absent/legacy rooms treat as classic).
+   * Written once by the host before play and immutable thereafter.
+   */
+  settings?: MatchSettings;
+  /**
+   * 5-lives mode: remaining lives per seat. Only meaningful when
+   * settings.winMode === "lives". Starts [5,5].
+   */
+  lives?: [number, number];
+  /**
+   * True for the round currently awaiting its reveal when the King was hidden.
+   * Lets both clients / the engine know a found King deduction is expected and
+   * prevents a duplicate deduction (see services/multiplayerService).
+   */
+  kingPendingLife?: boolean;
 }
 
 export interface RoundResultRecord {
@@ -137,3 +189,36 @@ export const ROOM_CODE_LENGTH = 6;
 export const ROOM_CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 export const ROUNDS_PER_LEVEL = 10;
 export const MATCH_TIMEOUT_MS = 1000 * 60 * 60; // rooms expire after 1h idle
+/** How long "Search Online Players" keeps looking before giving up. */
+export const MATCHMAKING_TIMEOUT_MS = 30 * 1000;
+/** How long a stale matchmaking/host entry is considered alive. */
+export const MATCHMAKING_STALE_MS = 10 * 1000;
+
+/** A player's live entry under `matchmaking/{uid}` while they search. */
+export interface MatchmakingEntry {
+  name: string;
+  status: "searching" | "matched" | "cancelled";
+  joinedAt: number;
+  updatedAt: number;
+}
+
+/** Host's pairing invitation under `matchmakingHost/{uid}`. */
+export interface MatchmakingHostEntry {
+  name: string;
+  status: "inviting" | "matched" | "cancelled";
+  joinedAt: number;
+  updatedAt: number;
+  /** The room code the host created once a pairing is confirmed. */
+  roomCode?: string;
+  /** The uid this host has chosen to invite. */
+  invitedUid?: string;
+}
+
+/** Client-local representation of the matchmaker's lifecycle. */
+export type MatchmakingStatus =
+  | "idle"
+  | "searching"
+  | "opponent-found"
+  | "no-player"
+  | "cancelled"
+  | "error";

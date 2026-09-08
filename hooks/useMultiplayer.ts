@@ -7,6 +7,7 @@ import {
   watchRoom,
   bindPresence,
   leaveRoom,
+  applyRoomSettings,
 } from "@/services/roomService";
 import {
   watchGame,
@@ -18,6 +19,11 @@ import {
 } from "@/services/multiplayerService";
 import { normalizeRoomCode } from "@/lib/multiplayer/roomCode";
 import { levelConfig } from "@/lib/game/rules";
+import {
+  DEFAULT_SETTINGS,
+  isClassic,
+  type MatchSettings,
+} from "@/lib/game/flow";
 import type { RoomData, GameState, PlayerEntry } from "@/lib/multiplayer/types";
 
 /**
@@ -37,12 +43,16 @@ export default function useMultiplayer() {
   const [game, setGame] = useState<GameState | null>(null);
   const [roomError, setRoomError] = useState<string | null>(null);
 
+  // Draft settings the HOST configures on the create / setup screen before play.
+  // Once inside a live room the authoritative settings come from room.settings /
+  // game.settings (host-locked) and this draft is unused.
+  const [draftSettings, setDraftSettings] = useState<MatchSettings>(DEFAULT_SETTINGS);
+
   const [busy, setBusy] = useState(false);
   const [busyLabel, setBusyLabel] = useState("");
   const [meConnected, setMeConnected] = useState(true);
 
   const code = session?.code ?? null;
-  const myUid = session?.uid ?? null;
 
   // ------------------------------------------------------------------
   // 1) Anonymous sign-in
@@ -100,7 +110,7 @@ export default function useMultiplayer() {
         setBusy(false);
         return { ok: false };
       }
-      const res = await createRoom(got, name);
+      const res = await createRoom(got, name, draftSettings);
       setBusy(false);
       if (!res.ok) {
         setRoomError("CREATE_ERROR");
@@ -110,7 +120,7 @@ export default function useMultiplayer() {
       setSession({ code: res.code, uid: got });
       return { ok: true };
     },
-    [uid, login],
+    [uid, login, draftSettings],
   );
 
   const join = useCallback(
@@ -145,6 +155,24 @@ export default function useMultiplayer() {
     setGame(null);
     setRoomError(null);
   }, [session, room]);
+
+  /**
+   * Attach the session to an EXISTING room (created for us by matchmaking, or
+   * joined as an invitee). The room + game subscriptions then take over.
+   */
+  const attach = useCallback(
+    async (code: string): Promise<boolean> => {
+      const got = uid ?? (await login());
+      if (!got) {
+        setRoomError("AUTH_ERROR");
+        return false;
+      }
+      setRoomError(null);
+      setSession({ code: normalizeRoomCode(code), uid: got });
+      return true;
+    },
+    [uid, login],
+  );
 
   // ------------------------------------------------------------------
   // 4) Derived facts
@@ -230,6 +258,54 @@ export default function useMultiplayer() {
     return rematchGame(session.code);
   }, [session]);
 
+  /**
+   * Host settings control: either set the pre-create draft, or — if a room was
+   * already created and is still open (host only, before the 2nd seat fills) —
+   * push the new config to the authoritative room/game so the guest observes it.
+   */
+  const updateSettings = useCallback(
+    async (patch: Partial<MatchSettings>) => {
+      const next = { ...draftSettings, ...patch };
+      setDraftSettings(next);
+      if (session && room) {
+        // Only meaningful while the host is alone in a fresh room.
+        if (room.hostId === session.uid) {
+          await applyRoomSettings(session.code, next).catch(() => {});
+        }
+      }
+    },
+    [draftSettings, session, room],
+  );
+
+  /** Authoritative settings: from the live room/game once present, else the draft. */
+  const settings: MatchSettings = useMemo<MatchSettings>(() => {
+    return room?.settings ?? game?.settings ?? draftSettings;
+  }, [room, game, draftSettings]);
+
+  /** Whether the current (game) configuration uses the optional engine. */
+  const useOptionalFlow = useMemo(
+    () => !!game && !isClassic(game.settings ?? DEFAULT_SETTINGS),
+    [game],
+  );
+
+  /** Whether 5-lives mode governs the current match. */
+  const livesMode = useMemo(
+    () => !!game && (game.settings?.winMode === "lives"),
+    [game],
+  );
+
+  /** My current lives (authoritative) when lives mode is active. */
+  const myLives = useMemo<number | null>(() => {
+    if (!livesMode || !game?.lives || mySeat == null) return null;
+    return game.lives[mySeat] ?? null;
+  }, [livesMode, game, mySeat]);
+
+  /** Opponent's current lives when lives mode is active. */
+  const opponentLives = useMemo<number | null>(() => {
+    if (!livesMode || !game?.lives || mySeat == null) return null;
+    return game.lives[mySeat === 0 ? 1 : 0] ?? null;
+  }, [livesMode, game, mySeat]);
+
   const copyCode = useCallback(async () => {
     if (!code) return;
     try {
@@ -277,8 +353,17 @@ export default function useMultiplayer() {
     amDealer,
     myTurnToAct,
     guessSeconds,
+    // --- settings & lives (new rules) ---
+    draftSettings,
+    settings,
+    updateSettings,
+    useOptionalFlow,
+    livesMode,
+    myLives,
+    opponentLives,
     create,
     join,
+    attach,
     leave,
     hideCard,
     guess,

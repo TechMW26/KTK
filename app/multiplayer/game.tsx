@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { LEVELS, levelConfig, RESULT_COPY } from "@/lib/game/rules";
+import { LEVELS, levelConfig, RESULT_COPY, LEVEL_COUNT } from "@/lib/game/rules";
+import { RULESET_ROUNDS } from "@/lib/game/flow";
 import type useMultiplayer from "@/hooks/useMultiplayer";
 import { MpCard, MpEyebrow, MpFrame, MpLogo, MpModal, MpOrnament } from "./ui";
 
@@ -56,17 +57,55 @@ function Header({ mp, activeSeconds }: { mp: MP; activeSeconds: number | null })
         <div className="score-strip mp-score">
           <span className={myActive ? "active-turn" : ""}>
             <strong>You</strong>
-            <b>{g.scores[me]}</b>
+            <b>{mp.livesMode && g.lives ? g.lives[me] : g.scores[me]}</b>
           </span>
           <i>
             {cfg.cards} CARDS · {cfg.points}×
           </i>
           <span>
-            <b>{g.scores[them]}</b>
+            <b>{mp.livesMode && g.lives ? g.lives[them] : g.scores[them]}</b>
             <strong>{mp.opponent ?? "Opponent"}</strong>
           </span>
         </div>
       </header>
+      {mp.livesMode && g.lives ? (
+        <LivesHeader myLives={g.lives[me] ?? 0} theirLives={g.lives[them] ?? 0} myName="You" theirName={mp.opponent ?? "Opponent"} />
+      ) : null}
+    </div>
+  );
+}
+
+/** Compact hearts bar shown under the score strip when 5-lives mode is on. */
+function LivesHeader({
+  myLives,
+  theirLives,
+  myName,
+  theirName,
+}: {
+  myLives: number;
+  theirLives: number;
+  myName: string;
+  theirName: string;
+}) {
+  const hearts = (n: number) =>
+    Array.from({ length: 5 }, (_, i) => (
+      <span key={i} className={`life ${i < n ? "" : "lost"}`} aria-hidden="true">
+        ❤
+      </span>
+    ));
+  return (
+    <div className="mp-lives-strip">
+      <span className="mp-lives-side">
+        <em>{myName}</em>
+        <span className="lives-row">{hearts(myLives)}</span>
+      </span>
+      <span className="mp-lives-vs">
+        <em>LIVES</em>
+      </span>
+      <span className="mp-lives-side right">
+        <span className="lives-row">{hearts(theirLives)}</span>
+        <em>{theirName}</em>
+      </span>
     </div>
   );
 }
@@ -75,6 +114,8 @@ function MpLiveTimer({ seconds, cfgSeconds }: { seconds: number | null; cfgSecon
   const [sec, setSec] = useState(seconds ?? 0);
   useEffect(() => {
     if (seconds == null) return;
+    // Sync local ticker to the authoritative seconds each round (pre-existing).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setSec(seconds);
     const id = setInterval(() => setSec((v) => Math.max(0, v - 1)), 1000);
     return () => clearInterval(id);
@@ -218,6 +259,8 @@ function GuessStage({ mp }: { mp: MP }) {
   const done = busy || picked !== null;
 
   useEffect(() => {
+    // Reset the countdown when a new round begins (pre-existing behaviour).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLeft(seconds);
   }, [seconds, g.round]);
 
@@ -307,7 +350,14 @@ function Reveal({ mp }: { mp: MP }) {
   const copy = RESULT_COPY[result.kind];
   const meWon = result.winnerSeat === mp.mySeat;
   const [busy, setBusy] = useState(false);
-  const lastOfLevel = g.round >= 10;
+  // Classic: play "round" lives within a court; optional engine runs continuous
+  // rounds, so the final reveal is the last hide round of the match.
+  const lastOfGame = mp.useOptionalFlow
+    ? g.round >= RULESET_ROUNDS
+    : g.round >= 10 && g.level >= LEVEL_COUNT - 1;
+  const lastOfLevel = mp.useOptionalFlow ? lastOfGame : g.round >= 10;
+  // Lives: when the hidden King was found, the Dealer lost a life.
+  const lifeLost = mp.livesMode && result.kind === "king";
 
   const next = async () => {
     if (busy) return;
@@ -345,12 +395,16 @@ function Reveal({ mp }: { mp: MP }) {
         </div>
         <div className="round-verdict">
           <b>{meWon ? "YOU WIN THE ROUND" : `${mp.opponent ?? "Opponent"} WINS THE ROUND`}</b>
-          <span>
-            +{result.points} {result.points === 1 ? "point" : "points"}
-          </span>
+          {lifeLost ? (
+            <span>KING FOUND — {result.dealerSeat === mp.mySeat ? "YOU" : (mp.opponent ?? "Opponent")} LOST A LIFE</span>
+          ) : (
+            <span>
+              +{result.points} {result.points === 1 ? "point" : "points"}
+            </span>
+          )}
         </div>
         <button className="gold-button wide" onClick={next} disabled={busy}>
-          {lastOfLevel ? "CONTINUE" : "NEXT ROUND"}
+          {lastOfGame ? "FINAL RESULT" : lastOfLevel ? "CONTINUE" : "NEXT ROUND"}
         </button>
       </section>
     </MpFrame>
@@ -428,16 +482,30 @@ function MatchEnd({ mp, onLeave }: { mp: MP; onLeave: () => void }) {
         <MpEyebrow>THE KINGDOM HAS SPOKEN</MpEyebrow>
         <h2 className="mp-title">{drawn ? "A ROYAL DRAW" : meWon ? "YOU WIN!" : `${mp.opponent ?? "Opponent"} WINS!`}</h2>
         <MpOrnament />
-        <p>Thirty rounds. Three courts. One ruler.</p>
+        {mp.livesMode ? (
+          <>
+            {drawn ? (
+              <p>No one lost all their Kings. A royal standoff.</p>
+            ) : (
+              <p>
+                {meWon
+                  ? `${mp.opponent ?? "Opponent"} lost all 5 Kings — you rule the board!`
+                  : "You lost all 5 Kings. The rival takes the crown."}
+              </p>
+            )}
+          </>
+        ) : (
+          <p>Thirty rounds. Three courts. One ruler.</p>
+        )}
         <div className="score-board large final">
           <div>
             <span>You</span>
-            <strong>{g.scores[me]}</strong>
+            <strong>{mp.livesMode && g.lives ? g.lives[me] : g.scores[me]}</strong>
           </div>
           <i>VS</i>
           <div>
             <span>{mp.opponent ?? "Opponent"}</span>
-            <strong>{g.scores[them]}</strong>
+            <strong>{mp.livesMode && g.lives ? g.lives[them] : g.scores[them]}</strong>
           </div>
         </div>
         <button className="gold-button wide" onClick={again} disabled={busy}>
@@ -451,6 +519,8 @@ function MatchEnd({ mp, onLeave }: { mp: MP; onLeave: () => void }) {
   );
 }
 
+/* eslint-disable @typescript-eslint/no-unused-vars -- onLeave kept for uniform call sites
+ (the Center screens manage leave via the quit button already) */
 function Center({
   title,
   eyebrow,
@@ -470,3 +540,4 @@ function Center({
     </section>
   );
 }
+/* eslint-enable @typescript-eslint/no-unused-vars */

@@ -4,6 +4,7 @@ import { useState } from "react";
 import useMultiplayer from "@/hooks/useMultiplayer";
 import { normalizeRoomCode } from "@/lib/multiplayer/roomCode";
 import GameView from "./game";
+import SearchOnline from "./search";
 import { MpEyebrow, MpLogo, MpOrnament } from "./ui";
 
 /**
@@ -20,6 +21,7 @@ export default function MultiplayerPage() {
   const [joinDraft, setJoinDraft] = useState("");
   const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState("");
+  const [searching, setSearching] = useState(false);
 
   // ------------------------------------------------------------------ states
   const inMatch =
@@ -55,8 +57,25 @@ export default function MultiplayerPage() {
   };
 
   const leaveToMenu = async () => {
+    setSearching(false);
     await mp.leave();
     setJoinDraft("");
+  };
+
+  /** Host enters a room the matchmaker created for us. */
+  const enterRoomFromSearch = async (code: string) => {
+    await mp.attach(code);
+  };
+
+  const startSearch = () => {
+    if (!name.trim()) {
+      // fall through: name defaults inside the service
+    }
+    setSearching(true);
+  };
+
+  const cancelSearch = async () => {
+    setSearching(false);
   };
 
   // ------------------------------------------------------------------ body
@@ -96,6 +115,13 @@ export default function MultiplayerPage() {
             onCopy={doCopy}
             onLeave={leaveToMenu}
           />
+        ) : searching ? (
+          <SearchOnline
+            name={name}
+            settings={mp.draftSettings}
+            onEnterRoom={(code) => void enterRoomFromSearch(code)}
+            onBack={cancelSearch}
+          />
         ) : noRoom ? (
           <MenuScreen
             mp={mp}
@@ -105,6 +131,7 @@ export default function MultiplayerPage() {
             setJoinDraft={setJoinDraft}
             onCreate={create}
             onJoin={join}
+            onSearch={startSearch}
           />
         ) : null}
       </section>
@@ -123,6 +150,7 @@ function MenuScreen({
   setJoinDraft,
   onCreate,
   onJoin,
+  onSearch,
 }: {
   mp: ReturnType<typeof useMultiplayer>;
   name: string;
@@ -131,10 +159,19 @@ function MenuScreen({
   setJoinDraft: (v: string) => void;
   onCreate: () => void;
   onJoin: () => void;
+  onSearch: () => void;
 }) {
   const err = errorCopy(mp.roomError);
+  const draft = mp.draftSettings;
+  const setTurn = (mode: "alternate" | "complete") =>
+    void mp.updateSettings({ turnOrder: mode });
+  const setLives = (on: boolean) =>
+    void mp.updateSettings({ winMode: on ? "lives" : "classic" });
+
   return (
     <div className="mp-frame mp-flow">
+      {/* vinext App Router: same-origin navigation via full page load. */}
+      {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
       <a className="mp-back home-link" href="/">
         ← Back to single player
       </a>
@@ -168,6 +205,48 @@ function MenuScreen({
           </>
         )}
 
+        {/* --- Game rules the HOST locks in when creating a room --- */}
+        <div className="mp-rules">
+          <p className="mp-rules-heading">TURN ORDER</p>
+          <div className="mp-rule-row">
+            <button
+              className={draft.turnOrder === "alternate" ? "mp-rule-opt active" : "mp-rule-opt"}
+              onClick={() => setTurn("alternate")}
+            >
+              <b>Alternate Turns</b>
+              <small>Each player hides one after another.</small>
+            </button>
+            <button
+              className={draft.turnOrder === "complete" ? "mp-rule-opt active" : "mp-rule-opt"}
+              onClick={() => setTurn("complete")}
+            >
+              <b>Complete Turns</b>
+              <small>10 consecutive hiding turns each.</small>
+            </button>
+          </div>
+
+          <p className="mp-rules-heading">LIVES</p>
+          <div className="mp-rule-row">
+            <button
+              className={draft.winMode === "classic" ? "mp-rule-opt active" : "mp-rule-opt"}
+              onClick={() => setLives(false)}
+            >
+              <b>Classic Score</b>
+              <small>Original point rules.</small>
+            </button>
+            <button
+              className={draft.winMode === "lives" ? "mp-rule-opt active" : "mp-rule-opt"}
+              onClick={() => setLives(true)}
+            >
+              <b>5 Lives</b>
+              <small>Find the King to cost a life. First to 0 loses.</small>
+            </button>
+          </div>
+          {draft.winMode === "lives" && draft.turnOrder !== "alternate" ? (
+            <p className="mp-note">5 Lives uses the continuous-turn court format.</p>
+          ) : null}
+        </div>
+
         <button className="gold-button" onClick={onCreate} disabled={!mp.configured}>
           CREATE ROOM
         </button>
@@ -188,8 +267,16 @@ function MenuScreen({
         <button className="outline-button" onClick={onJoin} disabled={!mp.configured || joinDraft.length < 6}>
           JOIN ROOM
         </button>
+
+        <button
+          className="outline-button"
+          onClick={onSearch}
+          disabled={!mp.configured}
+        >
+          SEARCH ONLINE PLAYERS
+        </button>
       </div>
-      <p className="round-note">Create a room and share the code, or enter a friend’s code.</p>
+      <p className="round-note">Create a room and share the code, search for a rival, or enter a friend’s code.</p>
     </div>
   );
 }

@@ -192,3 +192,39 @@ Firebase state without duplicating moves.
 - Requires a live Firebase project + env vars (not provisioned here).
 - Authoritative clocks / anti‑cheat need Cloud Functions (see §7).
 - Play‑tested model assumes friendly, code‑shared matches.
+
+## 13. Go‑live / deploy checklist (as of current code)
+
+The repo now ships everything needed except one-time Firebase console work and
+the Firebase CLI / Vercel credentials, which only you can provide.
+
+**Firebase console (one time, ~2 min):**
+
+1. Open https://console.firebase.google.com/project/killtheking-94396.
+2. **Authentication → Sign‑in method → enable Anonymous** (required for every room).
+3. If not present, **Realtime Database** in native mode (pick the region matching
+   `NEXT_PUBLIC_FIREBASE_DATABASE_URL`; current = asia-southeast1).
+
+**Deploy rules (one command after installing CLI):**
+
+```
+npm i -g firebase-tools        # or: npx firebase-tools
+firebase login                 # log in with the Firebase account
+firebase deploy --only database
+```
+
+`firebase.json` (rules → `firebase/database.rules.json`) and `.firebaserc`
+(project `killtheking-94396`) are already configured, so no flags are needed.
+The rules now open `/matchmaking` + `/matchmakingHost` (self‑only writes) used by
+the "Search Online Players" feature.
+
+**Vercel (one time):** add these env vars (Production / Preview), same values as
+`.env.local`:
+`NEXT_PUBLIC_FIREBASE_API_KEY`, `_AUTH_DOMAIN`, `_DATABASE_URL`, `_PROJECT_ID`,
+`_STORAGE_BUCKET`, `_MESSAGING_SENDER_ID`, `_APP_ID`, `_MEASUREMENT_ID`.
+Then deploy normally (`vite build` is the build command; verified working).
+
+> Dev note: `pnpm dev` crashes locally on this machine due to a
+> `@vitejs/plugin-rsc@0.5.34` toolchain bug (NOT this app's code). Use
+> `pnpm build` then `node .output/server/index.mjs` to run locally until the
+> dev plugin is bumped.
