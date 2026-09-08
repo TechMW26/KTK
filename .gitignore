@@ -17,6 +17,7 @@ out/
 # local environment and logs
 .env*
 !.env.example
+!.env.local.example
 *.log
 
 # OS files

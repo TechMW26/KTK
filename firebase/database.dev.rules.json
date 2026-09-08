@@ -20,6 +20,20 @@
           }
         }
       }
+    },
+    "matchmaking": {
+      ".read": "auth != null",
+      "$uid": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      }
+    },
+    "matchmakingHost": {
+      ".read": "auth != null",
+      "$uid": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      }
     }
   }
 }
