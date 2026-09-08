@@ -77,11 +77,13 @@ export default function MultiplayerPage() {
   };
 
   /** Open the "Search Online Players" screen (fresh instance each call). */
-  const startSearch = (msg: string | null = null) => {
-    setNotice(msg);
+  const startSearch = (msg?: string | null) => {
+    setNotice(typeof msg === "string" ? msg : null);
     setSearching(true);
     setSearchKey((k) => k + 1);
   };
+  /** Menu button wrapper: do NOT forward the click event as the notice string. */
+  const menuSearch = () => startSearch();
 
   const cancelSearch = async () => {
     setSearching(false);
@@ -217,7 +219,7 @@ export default function MultiplayerPage() {
             setJoinDraft={setJoinDraft}
             onCreate={create}
             onJoin={join}
-            onSearch={startSearch}
+            onSearch={menuSearch}
           />
         ) : null}
       </section>
