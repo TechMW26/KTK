@@ -1,8 +1,8 @@
 /**
- * Pure "tournament flow" engine for KILL THE KING's NEW optional rules.
+ * Pure "tournament flow" engine for KILL THE KING's optional rules.
  *
- * The built-in online match is SCORE based across 3 courts x 10 rounds with the
- * dealer switching every round ("Alternate Turns") — that code path lives in
+ * The built-in online match is the SCORE based 3-court game with the dealer
+ * switching every round ("Alternate Turns") — that code path lives in
  * services/multiplayerService.ts and is preserved untouched for these settings.
  *
  * "Complete Turns" — each player hides for a block of consecutive rounds instead
@@ -15,21 +15,32 @@
  *
  * Model
  * -----
- * A game following the optional rules runs a fixed number of hiding rounds. Each
- * hiding round has ONE Dealer (who hides the King) and ONE Guesser.
+ * A match runs the three courts in order. A court is a fixed number of rounds
+ * (ROUNDS_PER_COURT = 10) and the round counter RESTARTS at 1 in each court —
+ * exactly like the local/2-player engine. Within a court the hides are split
+ * into two consecutive blocks of HIDES_PER_BLOCK (= 5): seat 0 hides the first
+ * block, seat 1 the second. Because the counter resets, seat 0 always opens a
+ * court and each seat deals the same number of rounds per court.
  *
- *   COMPLETE block size  : COMPLETE_BLOCK (10) consecutive dealer rounds.
- *   Alternate            : the dealer flips every round.
+ *   COMPLETE block size : HIDES_PER_BLOCK (5) consecutive dealer rounds per court.
+ *   Alternate           : the dealer flips every hiding round.
  *
- * Deck scope (which court's card count applies) is a display-level concern and is
- * derived deterministically from the 1-based hiding round so the optional rules can
- * reuse the existing LEVEL/Court visuals without their own math.
+ * The global hiding-round index (1..RULESET_ROUNDS) is the authoritative clock;
+ * `courtForHidingRound` maps it to the court whose card count / clock / stakes
+ * apply, so the optional rules reuse the existing LEVEL visuals without their own
+ * copy of the court table.
  */
 
-/** Identifier of who deals when using "Complete Turns". */
-export const DEALS_PER_SEAT = 10;
-/** Total hiding rounds in an optional-rules match (each seat deals DEALS_PER_SEAT). */
-export const RULESET_ROUNDS = DEALS_PER_SEAT * 2; // 20
+/** Round the dealer ROTATION restarts at, within a court. */
+export const ROUNDS_PER_COURT = 10;
+/** Consecutive hides each seat takes inside one court (half the court). */
+export const HIDES_PER_BLOCK = ROUNDS_PER_COURT / 2; // 5
+/** Number of courts in a match (matches the shared COURTS table length). */
+export const COURT_COUNT = 3;
+/** Total hiding rounds in a match (3 courts x 10 rounds). */
+export const RULESET_ROUNDS = ROUNDS_PER_COURT * COURT_COUNT; // 30
+/** Rounds each seat deals across a whole match (one block in every court). */
+export const DEALS_PER_SEAT = RULESET_ROUNDS / 2; // 15
 
 // ---------------------------------------------------------------------------
 // Types (kept local & inline so this module stays import-free)
@@ -105,12 +116,39 @@ export interface RoundOutcome {
 // Dealer / guesser arithmetics (pure)
 // ---------------------------------------------------------------------------
 
-/** Dealer seat for a 1-based global hiding round under a turn-order mode. */
+/**
+ * Round WITHIN the current court (1..ROUNDS_PER_COURT) for a 1-based global
+ * hiding round. The dealer rotation restarts here every court, mirroring the
+ * local engine where `round` resets to 1 on a new court.
+ */
+export function roundInCourt(hidingRound: number): number {
+  const zero = hidingRound - 1;
+  return (zero % ROUNDS_PER_COURT) + 1;
+}
+
+/** Zero-based court (level) index for a 1-based global hiding round. */
+export function courtForHidingRound(hidingRound: number): number {
+  const zero = hidingRound - 1;
+  return Math.min(COURT_COUNT - 1, Math.floor(zero / ROUNDS_PER_COURT));
+}
+
+/**
+ * Dealer seat for a 1-based global hiding round under a turn-order mode.
+ *
+ * COMPLETE — "complete turns": the hides INSIDE a court are split into two
+ * consecutive blocks of HIDES_PER_BLOCK (5). Seat 0 takes rounds 1..5 of the
+ * court and seat 1 takes 6..10, so each seat hides a whole block before the
+ * table turns. The counter restarts each court, so seat 0 opens every court and
+ * both seats deal an equal number of rounds.
+ *
+ * ALTERNATE — the dealer flips every single hiding round.
+ */
 export function dealerForHidingRound(hidingRound: number, turnOrder: TurnOrder): Seat {
   if (turnOrder === "complete") {
-    return (Math.floor((hidingRound - 1) / DEALS_PER_SEAT) % 2) as Seat;
+    const inCourt = roundInCourt(hidingRound);
+    return (Math.floor((inCourt - 1) / HIDES_PER_BLOCK) % 2) as Seat;
   }
-  // alternate: dealer alternates each hiding round.
+  // alternate: dealer alternates each hiding round (global parity).
   return (((hidingRound - 1) % 2) as Seat) as Seat;
 }
 
@@ -121,17 +159,16 @@ export function guesserForHidingRound(hidingRound: number, turnOrder: TurnOrder)
 /**
  * How many hiding rounds `seat` has already COMPLETED as Dealer by the time
  * `hidingRound` is about to begin (1-based). Used to render a "consecutive turn"
- * counter and (conceptually) bound lives losses. Pure.
+ * counter and (conceptually) bound life losses. Pure.
  */
 export function hidesDealtBy(seat: Seat, hidingRound: number, turnOrder: TurnOrder): number {
   // hidingRound is 1-based; rounds before it that are fully done:
   const done = hidingRound - 1;
   if (turnOrder === "complete") {
-    const block = DEALS_PER_SEAT; // 10
-    // seat0 deals cycles [1..10],[21..30],...; seat1 deals [11..20],[31..40],...
-    const cycle = block * 2;
-    const fullCycles = Math.floor(done / cycle);
-    let count = fullCycles * block;
+    const block = HIDES_PER_BLOCK; // 5
+    const cycle = ROUNDS_PER_COURT; // 10: block for seat 0, then block for seat 1
+    const fullCourts = Math.floor(done / cycle);
+    let count = fullCourts * block;
     const within = done % cycle;
     if (seat === 0) {
       count += Math.min(within, block);
@@ -141,26 +178,9 @@ export function hidesDealtBy(seat: Seat, hidingRound: number, turnOrder: TurnOrd
     return count;
   }
   // alternate: dealers interleave; a seat has dealt every other completed round.
-  // seat0 deals rounds 1,3,5,... (index parity of round-1); seat1 deals 2,4,6,...
+  // seat0 deals rounds 1,3,5,...; seat1 deals 2,4,6,...
   const seat0Dealt = Math.ceil(done / 2);
   return seat === 0 ? seat0Dealt : Math.floor(done / 2);
-}
-
-// ---------------------------------------------------------------------------
-// Which court (level) is in play for a global hiding round (display only)
-// ---------------------------------------------------------------------------
-
-/**
- * Map a 1-based global hiding round to the LEVEL/court index used to drive the
- * existing card-count, timing and points visuals. We carve RULESET_ROUNDS (20)
- * into the same 3-court spirit as the classic game: 0..7 -> Court(5 cards),
- * 8..14 -> High Stakes(3), 15..20 -> Final Duel(2). Pure & deterministic.
- */
-export const ROUNDS_PER_COURT = 7; // first two courts
-export function courtForHidingRound(hidingRound: number): number {
-  if (hidingRound <= ROUNDS_PER_COURT) return 0;
-  if (hidingRound <= ROUNDS_PER_COURT * 2) return 1;
-  return 2;
 }
 
 // ---------------------------------------------------------------------------
@@ -248,15 +268,76 @@ export function dealerSequence(turnOrder: TurnOrder): Seat[] {
   );
 }
 
-/** Consecutive-turn counter string shown in the UI ("1/10", "5/10"). */
+/** Consecutive-turn counter string shown in the UI ("1/5", "5/5"). */
 export function consecutiveLabel(seat: Seat, nextHidingRound: number, turnOrder: TurnOrder): string {
   if (turnOrder !== "complete") return `${nextHidingRound}/${RULESET_ROUNDS}`;
-  const doneForSeat = hidesDealtBy(seat, nextHidingRound, turnOrder);
-  const withinBlock = nextHidingRound <= 0 ? 0 : nextHidingRound;
-  // position inside this seat's current deal block / or upcoming deal block
-  const inTheirBlock =
-    dealerForHidingRound(nextHidingRound, turnOrder) === seat;
-  const cur = inTheirBlock ? (doneForSeat % DEALS_PER_SEAT) + 1 : doneForSeat % DEALS_PER_SEAT;
-  void withinBlock;
-  return `${Math.max(0, cur)}/${DEALS_PER_SEAT}`;
+  // Position of this seat inside its current block of the court it is dealing.
+  const inCourt = roundInCourt(nextHidingRound);
+  const isMyBlock = dealerForHidingRound(nextHidingRound, turnOrder) === seat;
+  const slot = isMyBlock
+    ? ((inCourt - 1) % HIDES_PER_BLOCK) + 1
+    : 0;
+  return `${Math.max(0, slot)}/${HIDES_PER_BLOCK}`;
+}
+
+// ---------------------------------------------------------------------------
+// Strategy-panel history (pure)
+// ---------------------------------------------------------------------------
+
+/** The minimal resolved-round facts the online Strategy panel needs. */
+export interface ResolvedRoundFacts {
+  /** 1-based hiding round in the engine's own counting. */
+  round: number;
+  /** Court the round belongs to in the engine's own counting (classic only). */
+  level: number;
+  dealerSeat: Seat;
+  guesserSeat: Seat;
+  /** 0-based card the guesser picked, or null (timeout / bluff call). */
+  pick: number | null;
+  wasBluff: boolean;
+  /** Seat that took the round. */
+  winnerSeat: Seat;
+}
+
+/** One row of the Strategy panel, in the panel's own units. */
+export interface StrategyHistoryEntry {
+  /** Court the round was played in (always court-relative). */
+  level: number;
+  /** Round WITHIN that court (1..ROUNDS_PER_COURT). */
+  round: number;
+  dealer: Seat;
+  guesser: Seat;
+  /** 1-based card number for display, or null when the round ended without a pick. */
+  pick: number | null;
+  calledBluff: boolean;
+  wasBluff: boolean;
+  /** Whether the guesser took the round. */
+  won: boolean;
+}
+
+/**
+ * Turn a resolved round into a Strategy-panel row.
+ *
+ * The panel charts per COURT, so CLASSIC rounds (already numbered within their
+ * court, level 0..2) pass straight through while the OPTIONAL engine's global
+ * 1..RULESET_ROUNDS counter is mapped back to court-relative values. `pick` is
+ * normalised from the engine's 0-based index to the 1-based card number shown in
+ * the panel. Pure, so the online panel is guaranteed to chart the same shape as
+ * the solo one.
+ */
+export function strategyEntryFor(
+  facts: ResolvedRoundFacts,
+  calledBluff: boolean,
+  classic: boolean,
+): StrategyHistoryEntry {
+  return {
+    level: classic ? facts.level : courtForHidingRound(facts.round),
+    round: classic ? facts.round : roundInCourt(facts.round),
+    dealer: facts.dealerSeat,
+    guesser: facts.guesserSeat,
+    pick: facts.pick === null ? null : facts.pick + 1,
+    calledBluff,
+    wasBluff: facts.wasBluff,
+    won: facts.winnerSeat === facts.guesserSeat,
+  };
 }

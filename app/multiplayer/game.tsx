@@ -1,8 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import Image from "next/image";
 import { LEVELS, levelConfig, RESULT_COPY, LEVEL_COUNT } from "@/lib/game/rules";
-import { RULESET_ROUNDS } from "@/lib/game/flow";
+import { RULESET_ROUNDS, roundInCourt, consecutiveLabel } from "@/lib/game/flow";
+import { dealTimings, SHUFFLE_MS } from "@/features/game/constants/pacing";
+import { PowerDock } from "@/features/game/components/PowerDock";
+import { StrategyModal } from "@/features/game/components/StrategyModal";
+import { picksThisCourt, summarisePicks } from "@/features/game/logic/strategy";
 import type useMultiplayer from "@/hooks/useMultiplayer";
 import { PlayingCard } from "@/components/ui/PlayingCard";
 import { LifePips } from "@/features/game/components/GameHeader";
@@ -17,6 +22,12 @@ type MP = ReturnType<typeof useMultiplayer>;
  */
 export default function GameView({ mp, onLeave }: { mp: MP; onLeave: () => void }) {
   const g = mp.game;
+  // Strategy panel visibility + which seat is charted. Owned here (not per phase)
+  // so the panel opens identically from every in-match screen, exactly like the
+  // single-player board where one overlay covers the whole match.
+  const [strategyOpen, setStrategyOpen] = useState(false);
+  const [strategyTab, setStrategyTab] = useState<0 | 1>(0);
+  const [bluffOpen, setBluffOpen] = useState(false);
 
   if (!g) {
     return (
@@ -28,14 +39,96 @@ export default function GameView({ mp, onLeave }: { mp: MP; onLeave: () => void 
     );
   }
 
+  const me = mp.mySeat ?? 0;
+  const cfg = levelConfig(g.level);
+  // The online engine counts rounds globally (1..30); the strategy panel charts a
+  // COURT, so ask for the court-relative round just like the local panel does.
+  const strategyLevel = g.level;
+  const entries = picksThisCourt(g.history ?? [], strategyLevel, strategyTab);
+  const frequency = summarisePicks(entries, cfg.cards);
+  const canCallBluff = g.phase === "guess" && g.actingSeat === me;
+
+  const dock =
+    g.phase === "match-end" ? null : (
+      <PowerDock
+        bluffActive={canCallBluff}
+        onStrategy={() => {
+          setStrategyTab(me as 0 | 1);
+          setStrategyOpen(true);
+        }}
+        onBluff={() => setBluffOpen(true)}
+      />
+    );
+
+  const panel = (
+    <>
+      {strategyOpen ? (
+        <StrategyModal
+          names={["You", mp.opponent ?? "Opponent"]}
+          tab={strategyTab}
+          setTab={setStrategyTab}
+          entries={entries}
+          frequency={frequency}
+          cardCount={cfg.cards}
+          levelName={cfg.name}
+          onClose={() => setStrategyOpen(false)}
+        />
+      ) : null}
+      {bluffOpen ? (
+        <MpModal
+          eyebrow="TRUST YOUR INSTINCT"
+          title="CALL THE BLUFF?"
+          symbol="◑ ◒"
+          onClose={() => setBluffOpen(false)}
+          className="bluff-modal"
+        >
+          <p>Do you think the Dealer hid no King this round?</p>
+          <button
+            className="gold-button wide"
+            onClick={() => {
+              setBluffOpen(false);
+              void mp.guess(null, true);
+            }}
+          >
+            YES — CALL BLUFF
+          </button>
+          <button className="outline-button wide" onClick={() => setBluffOpen(false)}>
+            NO — PICK A CARD
+          </button>
+          <small>A wrong accusation gives the round to the Dealer.</small>
+        </MpModal>
+      ) : null}
+    </>
+  );
+
   // Match over.
   if (g.phase === "match-end") return <MatchEnd mp={mp} onLeave={onLeave} />;
-  if (g.phase === "level-end") return <LevelEnd mp={mp} />;
+  if (g.phase === "level-end")
+    return (
+      <>
+        <LevelEnd mp={mp} />
+        {dock}
+        {panel}
+      </>
+    );
 
   // Result of a round is available to replay.
-  if (g.phase === "reveal" && g.lastResult) return <Reveal mp={mp} />;
+  if (g.phase === "reveal" && g.lastResult)
+    return (
+      <>
+        <Reveal mp={mp} />
+        {dock}
+        {panel}
+      </>
+    );
 
-  return <LiveRound mp={mp} />;
+  return (
+    <>
+      <LiveRound mp={mp} bluffOpen={bluffOpen} setBluffOpen={setBluffOpen} />
+      {dock}
+      {panel}
+    </>
+  );
 }
 
 function Header({ mp, activeSeconds }: { mp: MP; activeSeconds: number | null }) {
@@ -44,6 +137,9 @@ function Header({ mp, activeSeconds }: { mp: MP; activeSeconds: number | null })
   const me = mp.mySeat ?? 0;
   const them = me === 0 ? 1 : 0;
   const myActive = g.phase === "guess" || g.phase === "dealer-hide" ? g.actingSeat === me : false;
+  // The optional engine counts rounds globally (1..30). Players think in courts,
+  // so show the round WITHIN the current court, like the local game does.
+  const shownRound = mp.useOptionalFlow ? roundInCourt(g.round) : g.round;
 
   return (
     <div className="mp-head">
@@ -51,7 +147,7 @@ function Header({ mp, activeSeconds }: { mp: MP; activeSeconds: number | null })
         <MpLogo compact />
         <div className="round-medallion">
           <small>LEVEL {g.level + 1}</small>
-          <strong>{String(g.round).padStart(2, "0")}</strong>
+          <strong>{String(shownRound).padStart(2, "0")}</strong>
         </div>
         <div className="header-controls">
           <MpLiveTimer seconds={activeSeconds} cfgSeconds={cfg.seconds} />
@@ -134,7 +230,15 @@ function MpLiveTimer({ seconds, cfgSeconds }: { seconds: number | null; cfgSecon
 }
 
 /** Dealer-hide + guess phases (the interactive part of a round). */
-function LiveRound({ mp }: { mp: MP }) {
+function LiveRound({
+  mp,
+  bluffOpen,
+  setBluffOpen,
+}: {
+  mp: MP;
+  bluffOpen: boolean;
+  setBluffOpen: (v: boolean) => void;
+}) {
   const g = mp.game!;
   const me = mp.mySeat ?? 0;
   const cfg = levelConfig(g.level);
@@ -168,19 +272,106 @@ function LiveRound({ mp }: { mp: MP }) {
       </button>
       <Header mp={mp} activeSeconds={iAct && isGuess ? actingSeconds : null} />
 
+      {g.phase === "shuffle" ? <ShuffleStage mp={mp} /> : null}
       {isDealerRound && iAmDealer && iAct ? <HideStage mp={mp} /> : null}
       {isDealerRound && !(iAmDealer && iAct) ? (
         <Waiting title="OPPONENT'S TURN" text={`${mp.opponent ?? "Opponent"} is hiding the King…`} />
       ) : null}
-      {isGuess && iAct ? <GuessStage mp={mp} /> : null}
+      {isGuess && iAct ? (
+        <GuessStage mp={mp} onCallBluff={() => setBluffOpen(true)} bluffOpen={bluffOpen} />
+      ) : null}
       {isGuess && !iAct ? (
         <Waiting title="OPPONENT'S TURN" text={`${mp.opponent ?? "Opponent"} is guessing a card…`} />
       ) : null}
 
-      {iAct ? null : (
+      {g.phase === "shuffle" || iAct ? null : (
         <p className="mp-muted mp-waitsmall">Waiting for the other player. Do not close this tab.</p>
       )}
     </MpFrame>
+  );
+}
+
+/**
+ * Card-distribution beat. The Dealer's illustrated hand sweeps the table and
+ * throws one card into each slot — the exact `dealer-hand-rig` /
+ * `flying-deal-card` choreography the single-player shuffle stage uses, so the
+ * two modes look identical. Nobody acts; the animation owns the beat and hands
+ * off to the guess phase when it lands (the parent guards a stalled peer).
+ */
+function ShuffleStage({ mp }: { mp: MP }) {
+  const g = mp.game!;
+  const cfg = levelConfig(g.level);
+  const iAmDealer = g.dealerSeat === mp.mySeat;
+  // The deal cadence is driven by the shared pacing constant so both clients run
+  // the identical animation window and leave the beat on the same frame.
+  const deal = useMemo(() => dealTimings(cfg.cards, SHUFFLE_MS), [cfg.cards]);
+
+  // Whoever is watching runs the same clock; the first to finish advances the
+  // authoritative phase, so both clients leave this beat together.
+  useEffect(() => {
+    const id = window.setTimeout(() => {
+      void mp.beginGuess();
+    }, Math.round(deal.total * 1000));
+    return () => window.clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [g.level, g.round]);
+
+  return (
+    <section
+      className="mp-stage play-stage shuffle-stage"
+      style={{ "--shuffle-ms": `${deal.windowSec}s` } as React.CSSProperties}
+    >
+      <div
+        className="dealer-hand-rig"
+        aria-hidden="true"
+        style={{
+          "--deal-start": `${-((cfg.cards - 1) * 38)}px`,
+          "--deal-end": `${(cfg.cards - 1) * 38}px`,
+        } as React.CSSProperties}
+      >
+        <span className="held-card-mini"><i>♛</i></span>
+        <Image
+          className="dealer-hand-img"
+          src="/dealer-hand.png"
+          alt=""
+          width={392}
+          height={952}
+          unoptimized
+        />
+      </div>
+      <div className="stage-title above-hand">
+        <MpEyebrow>THE CARDS ARE IN MOTION</MpEyebrow>
+        <h2 className="mp-title">GAME SETUP</h2>
+        <MpOrnament />
+        <p>
+          {iAmDealer
+            ? "You locked the King in. The cards are being dealt…"
+            : `${mp.opponent ?? "Opponent"} is arranging the cards…`}
+        </p>
+      </div>
+      <div className="cards-row dealing">
+        <div className="deal-flight-layer" aria-hidden="true">
+          {Array.from({ length: cfg.cards }, (_, index) => {
+            const offset = index - (cfg.cards - 1) / 2;
+            return (
+              <span
+                key={index}
+                className="flying-deal-card"
+                style={{
+                  "--slot-x": `${offset * 76}px`,
+                  "--flight-delay": `${deal.launch(index)}s`,
+                  "--flight-duration": `${deal.flight}s`,
+                } as React.CSSProperties}
+              />
+            );
+          })}
+        </div>
+        {Array.from({ length: cfg.cards }, (_, index) => (
+          <PlayingCard key={index} index={index} disabled dealDelay={deal.land(index)} />
+        ))}
+      </div>
+      <p className="bottom-copy">Cards are being placed.<br />Watch closely.</p>
+    </section>
   );
 }
 
@@ -204,10 +395,13 @@ function HideStage({ mp }: { mp: MP }) {
   return (
     <section className="mp-stage">
       <div className="stage-title">
-        <MpEyebrow>YOU ARE THE DEALER · ROUND {g.round}</MpEyebrow>
+        <MpEyebrow>YOU ARE THE DEALER · ROUND {mp.useOptionalFlow ? roundInCourt(g.round) : g.round}</MpEyebrow>
         <h2 className="mp-title">HIDE THE KING</h2>
         <MpOrnament />
         <p>Choose a hiding place, then lock the cards.</p>
+        {mp.useOptionalFlow ? (
+          <p className="block-note">HIDING {consecutiveLabel(me, g.round, "complete")}</p>
+        ) : null}
       </div>
       <div className="cards-row dealer-choice">
         {Array.from({ length: cfg.cards }, (_, i) => (
@@ -244,15 +438,22 @@ function HideStage({ mp }: { mp: MP }) {
   );
 }
 
-function GuessStage({ mp }: { mp: MP }) {
+function GuessStage({
+  mp,
+  bluffOpen,
+  onCallBluff,
+}: {
+  mp: MP;
+  bluffOpen: boolean;
+  onCallBluff: () => void;
+}) {
   const g = mp.game!;
   const cfg = levelConfig(g.level);
   const seconds = cfg.seconds;
   const [picked, setPicked] = useState<number | null>(null);
-  const [bluffAsk, setBluffAsk] = useState(false);
   const [busy, setBusy] = useState(false);
   const [left, setLeft] = useState(seconds);
-  const done = busy || picked !== null;
+  const done = busy || picked !== null || bluffOpen;
 
   useEffect(() => {
     // Reset the countdown when a new round begins (pre-existing behaviour).
@@ -278,28 +479,9 @@ function GuessStage({ mp }: { mp: MP }) {
     await mp.guess(i, false);
     setBusy(false);
   };
-  const callBluff = async () => {
-    setBluffAsk(false);
-    if (done) return;
-    setBusy(true);
-    await mp.guess(null, true);
-    setBusy(false);
-  };
 
   return (
     <section className="mp-stage">
-      {bluffAsk && (
-        <MpModal eyebrow="TRUST YOUR INSTINCT" title="CALL THE BLUFF?" symbol="◑ ◒" onClose={() => setBluffAsk(false)} className="bluff-modal">
-          <p>Do you think the Dealer hid no King this round?</p>
-          <button className="gold-button wide" onClick={callBluff} disabled={busy}>
-            YES — CALL BLUFF
-          </button>
-          <button className="outline-button wide" onClick={() => setBluffAsk(false)}>
-            NO — PICK A CARD
-          </button>
-          <small>A wrong accusation gives the round to the Dealer.</small>
-        </MpModal>
-      )}
       <div className="stage-title">
         <MpEyebrow>YOUR TURN · GUESSER</MpEyebrow>
         <h2 className="mp-title">FIND THE KING</h2>
@@ -311,7 +493,7 @@ function GuessStage({ mp }: { mp: MP }) {
           <PlayingCard key={i} index={i} chosen={picked === i} disabled={done} onClick={() => pick(i)} />
         ))}
       </div>
-      <button className="outline-button wide mp-wide" onClick={() => setBluffAsk(true)} disabled={done}>
+      <button className="outline-button wide mp-wide" onClick={onCallBluff} disabled={done}>
         CALL THE BLUFF
       </button>
       <p className="bottom-copy">Find the King — or call a bluff.</p>

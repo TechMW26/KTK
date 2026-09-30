@@ -66,6 +66,14 @@ export interface RoomData {
 export type GamePhase =
   | "await-start"
   | "dealer-hide"
+  /**
+   * The Dealer has locked in their choice and the illustrated Dealer hand is
+   * sweeping the table, dealing the cards into their slots. Purely a presentation
+   * beat (the same `dealer-hand-rig` + `flying-deal-card` choreography the
+   * single-player shuffle stage uses) that both clients replay identically before
+   * the Guesser's clock starts. Nobody acts during it.
+   */
+  | "shuffle"
   | "guess"
   | "reveal"
   | "level-end"
@@ -126,8 +134,16 @@ export interface GameState {
     calledBluff: boolean;
     guesserSeat: Seat;
   } | null;
-  /** Persisted reveal so both clients replay the same result after reconnect. */
+  /**
+   * Persisted reveal so both clients replay the same result after reconnect.
+   */
   lastResult: RoundResultRecord | null;
+  /**
+   * Every COMPLETED round of the match, oldest first, appended by the reveal
+   * transition. Both clients read the same list, so the Strategy panel shows
+   * identical analytics on both devices and recovers after a reconnect.
+   */
+  history?: RoundHistoryEntry[];
   /** Whether reveal / level screens expect a "Next" acknowledgement. */
   awaitingNext: boolean;
   /** The full winner seat (set at match-end; null when drawn). */
@@ -169,6 +185,30 @@ export interface RoundResultRecord {
 }
 
 /**
+ * One completed round, shaped for the shared Strategy panel.
+ *
+ * Mirrors `features/game/types/game.ts`'s `RoundHistoryEntry` on purpose so the
+ * SAME `summarisePicks` / `picksThisCourt` analytics drive the online panel as
+ * the solo one — the strategy read-out is not a second implementation.
+ *
+ * `level` and `round` are the COURT-RELATIVE values (the online engine counts
+ * rounds globally), because the panel charts "what happened in this court".
+ */
+export interface RoundHistoryEntry {
+  level: number;
+  round: number;
+  dealer: Seat;
+  guesser: Seat;
+  /** 1-based card number for display; null when the round ended without a pick. */
+  pick: number | null;
+  calledBluff: boolean;
+  /** Whether the dealer had actually hidden no King. */
+  wasBluff: boolean;
+  /** Whether the guesser took the round. */
+  won: boolean;
+}
+
+/**
  * Seat-private node `rooms/{code}/secrets/{uid}`.
  * Only the owning uid may write & read their own secret through RTDB rules,
  * so a dealer's hidden King is never visible to the guesser.
@@ -199,6 +239,14 @@ export const MATCHMAKING_STALE_MS = 10 * 1000;
  * network blip from kicking the remaining player out of a good match.
  */
 export const OPPONENT_GRACE_MS = 8 * 1000;
+
+/**
+ * Upper bound on the card-distribution ("shuffle") beat. The dealing client
+ * advances the phase the moment its animation lands; this is the fallback so a
+ * dropped client can never leave the other one stuck watching the Dealer's hand.
+ * Must stay ABOVE the animation length (SHUFFLE_MS = 1450ms) plus a little slack.
+ */
+export const SHUFFLE_GRACE_MS = 2200;
 
 /** A player's live entry under `matchmaking/{uid}` while they search. */
 export interface MatchmakingEntry {

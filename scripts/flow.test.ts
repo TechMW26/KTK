@@ -8,10 +8,15 @@
 import {
   RULESET_ROUNDS,
   DEALS_PER_SEAT,
+  ROUNDS_PER_COURT,
+  HIDES_PER_BLOCK,
+  COURT_COUNT,
   dealerForHidingRound,
   guesserForHidingRound,
   dealerSequence,
   hidesDealtBy,
+  roundInCourt,
+  strategyEntryFor,
   applyLivesChange,
   livesVerdict,
   simulateMatch,
@@ -40,16 +45,25 @@ check("alternate deals alternate 0,1,0,1...", () => {
   for (let i = 0; i < d.length; i += 1) flow.equal(d[i], i % 2);
 });
 
-check("complete deals blocks of 10 (0x10 then 1x10)", () => {
+check("complete hides a 5-round block per seat in every court", () => {
   const d = dealerSequence("complete");
-  flow.deepEqual(
-    d.slice(0, DEALS_PER_SEAT),
-    Array.from({ length: DEALS_PER_SEAT }, () => 0 as const),
-  );
-  flow.deepEqual(
-    d.slice(DEALS_PER_SEAT, DEALS_PER_SEAT * 2),
-    Array.from({ length: DEALS_PER_SEAT }, () => 1 as const),
-  );
+  // Each court: seat0 takes rounds 1..5, seat1 takes 6..10. The counter restarts
+  // every court, so the SAME shape repeats COURT_COUNT times.
+  const perCourt = [
+    ...Array.from({ length: HIDES_PER_BLOCK }, () => 0 as const),
+    ...Array.from({ length: HIDES_PER_BLOCK }, () => 1 as const),
+  ];
+  flow.equal(d.length, RULESET_ROUNDS);
+  for (let c = 0; c < COURT_COUNT; c += 1) {
+    flow.deepEqual(d.slice(c * ROUNDS_PER_COURT, (c + 1) * ROUNDS_PER_COURT), perCourt);
+  }
+  // Each seat deals exactly one block per court across the whole match.
+  flow.equal(DEALS_PER_SEAT, HIDES_PER_BLOCK * COURT_COUNT);
+});
+
+check("complete: player 2's turn arrives in the SAME court (round 6)", () => {
+  flow.equal(dealerForHidingRound(6, "complete"), 1);
+  flow.equal(dealerForHidingRound(5, "complete"), 0);
 });
 
 check("alternate guesser is complement of dealer", () => {
@@ -63,17 +77,25 @@ check("alternate guesser is complement of dealer", () => {
   }
 });
 
-check("courtForHidingRound buckets 1..7 ->0, 8..14 ->1, 15..20 ->2", () => {
+check("courtForHidingRound buckets 1..10 ->0, 11..20 ->1, 21..30 ->2", () => {
   flow.equal(courtForHidingRound(1), 0);
-  flow.equal(courtForHidingRound(7), 0);
-  flow.equal(courtForHidingRound(8), 1);
-  flow.equal(courtForHidingRound(14), 1);
-  flow.equal(courtForHidingRound(15), 2);
-  flow.equal(courtForHidingRound(20), 2);
+  flow.equal(courtForHidingRound(10), 0);
+  flow.equal(courtForHidingRound(11), 1);
+  flow.equal(courtForHidingRound(20), 1);
+  flow.equal(courtForHidingRound(21), 2);
+  flow.equal(courtForHidingRound(30), 2);
 });
 
-check("complete dealer block boundary round 11 => seat1", () => {
-  flow.equal(dealerForHidingRound(11, "complete"), 1);
+check("roundInCourt restarts at 1 every court", () => {
+  flow.equal(roundInCourt(1), 1);
+  flow.equal(roundInCourt(10), 10);
+  flow.equal(roundInCourt(11), 1);
+  flow.equal(roundInCourt(21), 1);
+});
+
+check("complete dealer block boundary round 11 => seat0 (new court)", () => {
+  flow.equal(dealerForHidingRound(11, "complete"), 0);
+  flow.equal(roundInCourt(11), 1);
 });
 check("complete dealer block boundary round 1 => seat0", () => {
   flow.equal(dealerForHidingRound(1, "complete"), 0);
@@ -89,14 +111,19 @@ check("alternate hidesDealtBy seat1 before round5 = 2 (rounds 2,4)", () => {
 check("alternate hidesDealtBy seat1 before round2 = 0", () => {
   flow.equal(hidesDealtBy(1, 2, "alternate"), 0);
 });
-check("complete hidesDealtBy seat0 before round11 = 10", () => {
-  flow.equal(hidesDealtBy(0, 11, "complete"), 10);
+check("complete hidesDealtBy seat0 before round6 = 5 (its whole block)", () => {
+  flow.equal(hidesDealtBy(0, 6, "complete"), 5);
 });
-check("complete hidesDealtBy seat1 before round11 = 0", () => {
-  flow.equal(hidesDealtBy(1, 11, "complete"), 0);
+check("complete hidesDealtBy seat1 before round6 = 0", () => {
+  flow.equal(hidesDealtBy(1, 6, "complete"), 0);
 });
-check("complete hidesDealtBy seat1 before round12 = 1 (dealt round 11)", () => {
-  flow.equal(hidesDealtBy(1, 12, "complete"), 1);
+check("complete hidesDealtBy seat1 before round7 = 1 (dealt round 6)", () => {
+  flow.equal(hidesDealtBy(1, 7, "complete"), 1);
+});
+check("complete hidesDealtBy accumulates across courts", () => {
+  // After court 0 (10 rounds) each seat has dealt one 5-round block.
+  flow.equal(hidesDealtBy(0, 11, "complete"), 5);
+  flow.equal(hidesDealtBy(1, 11, "complete"), 5);
 });
 
 check("finding a king costs its dealer a life", () => {
@@ -148,6 +175,71 @@ check("no kings found -> match runs full length, draw at end", () => {
   const res = simulateMatch(kinds);
   flow.equal(res.hidingRoundsPlayed, RULESET_ROUNDS);
   flow.equal(res.verdict.over, false);
+});
+
+// ---------------------------------------------------------------------------
+// Strategy-panel history rows
+// ---------------------------------------------------------------------------
+
+check("strategyEntryFor maps the global round to court-relative for optional", () => {
+  const row = strategyEntryFor(
+    {
+      round: 12, // second court (rounds 11..20), 2nd round inside it
+      level: 99, // ignored in optional mode
+      dealerSeat: 0,
+      guesserSeat: 1,
+      pick: 2, // 0-based -> card 3
+      wasBluff: false,
+      winnerSeat: 1,
+    },
+    false,
+    false,
+  );
+  flow.equal(row.level, 1);
+  flow.equal(row.round, 2);
+  flow.equal(row.pick, 3);
+  flow.equal(row.won, true);
+  flow.equal(row.calledBluff, false);
+});
+
+check("strategyEntryFor passes classic level/round through untouched", () => {
+  const row = strategyEntryFor(
+    {
+      round: 7,
+      level: 2,
+      dealerSeat: 1,
+      guesserSeat: 0,
+      pick: 0,
+      wasBluff: true,
+      winnerSeat: 1,
+    },
+    true,
+    true,
+  );
+  flow.equal(row.level, 2);
+  flow.equal(row.round, 7);
+  flow.equal(row.pick, 1);
+  flow.equal(row.calledBluff, true);
+  flow.equal(row.wasBluff, true);
+  flow.equal(row.won, false); // dealer seat 1 won, guesser was seat 0
+});
+
+check("strategyEntryFor keeps a no-pick round out of the pick chart", () => {
+  const row = strategyEntryFor(
+    {
+      round: 1,
+      level: 0,
+      dealerSeat: 0,
+      guesserSeat: 1,
+      pick: null,
+      wasBluff: false,
+      winnerSeat: 0,
+    },
+    true,
+    false,
+  );
+  flow.equal(row.pick, null);
+  flow.equal(row.calledBluff, true);
 });
 
 // ---------------------------------------------------------------------------

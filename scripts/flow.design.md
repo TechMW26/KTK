@@ -6,17 +6,31 @@ See lib/game/flow.ts + scripts/flow.test.ts. Recorded for continuity.
 
 The ORIGINAL online match (`winMode:'classic'` + `turnOrder:'alternate'`) is the
 untouched scored 3-court x10 game in services/multiplayerService.ts — never changed.
-Any OTHER config runs the new OPTIONAL rules, modelled as a fixed sequence of
-`RULESET_ROUNDS = 20` hiding rounds:
+Any OTHER config runs the OPTIONAL rules, which replay the SAME three-court
+structure as the local game on one global hiding-round clock:
 
-- complete : dealer fixed in blocks of 10 (seat0 rounds 1..10, seat1 11..20)
-- alternate: dealer flips every hiding round (0,1,0,1...)
-  Court/deck for a hiding round = courtForHidingRound() -> 0/1/2 (levels 0..2) so the
+- 3 courts x ROUNDS_PER_COURT (10) = `RULESET_ROUNDS` (30) hides.
+- `courtForHidingRound(r)` -> court 0/1/2; `roundInCourt(r)` -> 1..10. The round
+  counter RESTARTS inside every court, exactly like the local engine.
+- complete : hides split into two blocks of `HIDES_PER_BLOCK` (5) per court.
+  seat0 takes rounds 1..5 of the court, seat1 takes 6..10. Because the counter
+  resets each court, seat0 opens every court and each seat deals one block per
+  court (15 hides total). Player 2's first turn is round 6 of the FIRST court.
+- alternate: dealer flips every hiding round (0,1,0,1...).
+- Court/deck for a hiding round = courtForHidingRound() -> 0/1/2 (levels 0..2) so the
   existing card/timing/points visuals are reused.
 - lives : each starts 5; ONLY a found hidden King (`kind:king`) costs its DEALER 1
   life (spec). wrong/bluff/timeout consume the round but cost no life.
-- winner check: any life hits 0 -> that seat LOSES (other wins). If all 20 hiding
+- winner check: any life hits 0 -> that seat LOSES (other wins). If all 30 hiding
   rounds finish first, the player with MORE lives wins (else draw).
+
+### Bug this replaced (2026-09-30)
+
+`DEALS_PER_SEAT` was 10 and complete-turns used a block of 10, so seat0 dealt
+rounds 1..10 while seat1 only began at round 11 — but courts advanced at rounds
+8 and 15. Player 2 never dealt a court-opening round, both card-count changes
+happened on player 1's watch, and in a short match player 2 never got a turn.
+The per-court block model above fixes it: player 2 deals from round 6.
 
 ## Server integrity (Feat 5/8)
 

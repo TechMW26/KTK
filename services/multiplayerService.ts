@@ -23,6 +23,7 @@ import {
   dealerForHidingRound,
   guesserForHidingRound,
   courtForHidingRound,
+  strategyEntryFor,
   applyLivesChange,
   livesVerdict,
   RULESET_ROUNDS,
@@ -74,6 +75,7 @@ export function emptyGame(settings: MatchSettings = DEFAULT_SETTINGS): GameState
     dealerSeat: dealer,
     pendingGuess: null,
     lastResult: null,
+    history: [],
     awaitingNext: false,
     winnerSeat: null,
     seq: 0,
@@ -180,10 +182,32 @@ export async function dealerPlaces(
         bluffsUsed: args.isBluff
           ? (cur.bluffsUsed.map((v, i) => (i === args.seat ? true : v)) as [boolean, boolean])
           : cur.bluffsUsed,
-        phase: "guess",
+        // Move to the DEAL beat: the cards are distributed by the Dealer hand
+        // before the guesser's clock starts. Either client advances it (idempotent).
+        phase: "shuffle",
         actingSeat: actingGuess,
       };
     },
+  );
+}
+
+/**
+ * Hand-off from the "shuffle" (card distribution) beat to the guess phase. Called
+ * by either client once the deal animation has finished; the guard means only the
+ * first accepted call wins, so both clients converge on the same moment even if
+ * they have slightly different animation timings.
+ */
+export async function startGuess(
+  code: string,
+  args: { level: number; round: number },
+): Promise<boolean> {
+  return commit(
+    code,
+    (cur) =>
+      cur.phase === "shuffle" &&
+      cur.level === args.level &&
+      cur.round === args.round,
+    (cur) => ({ ...cur, phase: "guess" }),
   );
 }
 
@@ -262,6 +286,7 @@ export async function dealerReveals(
     (cur) => {
       const pending = cur.pendingGuess!;
       const settings = cur.settings ?? DEFAULT_SETTINGS;
+      const classic = isClassic(settings);
       const livesMode = settings.winMode === "lives";
       const points = levelConfig(args.level).points;
       const result = resolveGuess({
@@ -283,6 +308,12 @@ export async function dealerReveals(
         ...cur,
         scores: cur.scores.map((v, i) => (i === result.winnerSeat ? v + result.points : v)) as [number, number],
         lastResult: result,
+        // Append the round for the Strategy panel (see historyEntryFor). The list
+        // is capped at the match length so it can't grow without bound.
+        history: [
+          ...(cur.history ?? []),
+          strategyEntryFor(result, pending.calledBluff, classic),
+        ].slice(-RULESET_ROUNDS),
         pendingGuess: null,
         awaitingNext: true,
         phase: "reveal",

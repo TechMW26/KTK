@@ -12,6 +12,7 @@ import {
 import {
   watchGame,
   dealerPlaces,
+  startGuess as startGuessPhase,
   guesserMoves,
   dealerReveals,
   advanceNext,
@@ -26,6 +27,7 @@ import {
   type MatchSettings,
 } from "@/lib/game/flow";
 import type { RoomData, GameState, PlayerEntry } from "@/lib/multiplayer/types";
+import { SHUFFLE_GRACE_MS } from "@/lib/multiplayer/types";
 
 /**
  * Multiplayer session hook.
@@ -285,6 +287,30 @@ export default function useMultiplayer() {
     [session, mySeat, game],
   );
 
+  /**
+   * Leave the "shuffle" (card distribution) beat and start the guesser's clock.
+   * Either client may call it; the service guard makes repeat calls harmless.
+   */
+  const beginGuess = useCallback(async () => {
+    if (!session || !game) return false;
+    return startGuessPhase(session.code, { level: game.level, round: game.round });
+  }, [session, game]);
+
+  /**
+   * Safety net: if the client that ran the deal animation drops mid-shuffle, the
+   * other client still advances the phase once the deal window has elapsed so the
+   * match can never stall on the presentation beat.
+   */
+  useEffect(() => {
+    if (!session || !game) return;
+    if (game.phase !== "shuffle") return;
+    const id = window.setTimeout(
+      () => void startGuessPhase(session.code, { level: game.level, round: game.round }),
+      SHUFFLE_GRACE_MS,
+    );
+    return () => window.clearTimeout(id);
+  }, [session, game]);
+
   const advance = useCallback(async () => {
     if (!session) return false;
     return advanceNext(session.code);
@@ -404,6 +430,7 @@ export default function useMultiplayer() {
     discardMatch,
     leave,
     hideCard,
+    beginGuess,
     guess,
     advance,
     rematch,
