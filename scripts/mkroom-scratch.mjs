@@ -1,6 +1,15 @@
+/**
+ * Manual two-client Firebase smoke script.
+ *
+ * Creates one real room in the live RTDB so you can point two browsers at it.
+ * Not part of the test suite and not imported by the app — it exists purely for
+ * hand-testing matchmaking/room flows.
+ *
+ * Run:  node scripts/mkroom-scratch.mjs
+ */
 import { initializeApp } from "firebase/app";
 import { getAuth, signInAnonymously } from "firebase/auth";
-import { getDatabase, ref, set, update, runTransaction, get, serverTimestamp } from "firebase/database";
+import { getDatabase, ref, set, runTransaction, serverTimestamp } from "firebase/database";
 
 const firebaseConfig = {
     apiKey: "AIzaSyBYC7w0AJOxhQEL3PmCNhQbWjr9ExTOoMI",
@@ -16,14 +25,12 @@ const dbA = getDatabase(appA);
 const { user: host } = await signInAnonymously(authA);
 const hostUid = host.uid;
 
-const CODE = "TSTEST"; // static for this run
 const ALPH = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 function gen() { let s = ''; for (let i = 0; i < 6; i++) s += ALPH[Math.floor(Math.random() * ALPH.length)]; return s; }
 const code = gen();
 console.log("room code", code);
 
 // createRoom equivalent: whole-room transaction
-const abc = ALPH;
 const now = Date.now();
 const roomObj = {
     code, hostId: hostUid, status: "waiting", createdAt: now,

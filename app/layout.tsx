@@ -1,5 +1,9 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+// Liquid Glass visual system. Imported after globals.css on purpose: it refines
+// the base styles (tokens, surface hierarchy, materials) without globals.css
+// needing to change.
+import "./glass.css";
 
 export const metadata: Metadata = {
   title: "Kill the King",

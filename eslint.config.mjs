@@ -9,10 +9,17 @@ import tseslint from "typescript-eslint";
 
 const eslintConfig = defineConfig([
   globalIgnores([
+    // Build artefacts must never be linted. `.output` and `.vercel` are emitted
+    // by Nitro; they contain bundled vendor code with thousands of false
+    // positives that drowned out real source problems.
     ".next/**",
+    ".output/**",
+    ".vercel/**",
+    ".vinext/**",
     "dist/**",
     "out/**",
     "build/**",
+    "android/**",
     "next-env.d.ts",
   ]),
   eslint.configs.recommended,

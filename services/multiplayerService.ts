@@ -368,7 +368,7 @@ function advanceClassic(cur: GameState): GameState {
 }
 
 /**
- * Optional rules engine (5-lives and/or Complete Turns).
+ * Optional rules engine (Complete Turns and/or 5-lives).
  *
  * Runs a continuous sequence of RULESET_ROUNDS hides (round 1..N, never resetting
  * per court — courts are presentation only, derived via courtForHidingRound).

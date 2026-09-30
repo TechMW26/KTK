@@ -1,17 +1,17 @@
 /**
  * Pure "tournament flow" engine for KILL THE KING's NEW optional rules.
  *
- * The original online match is SCORE based across 3 courts x 10 rounds with the
- * dealer switching every round ("Alternate Turns", classic behaviour) — that code
- * path lives in services/multiplayerService.ts and is preserved untouched for the
- * default Classic configuration.
+ * The built-in online match is SCORE based across 3 courts x 10 rounds with the
+ * dealer switching every round ("Alternate Turns") — that code path lives in
+ * services/multiplayerService.ts and is preserved untouched for these settings.
  *
- * These optional rules — "5 Lives" (lives REPLACE score as the win condition) and
- * "Complete Turns" (each player hides for a block of consecutive rounds instead of
- * alternating) — are modelled here as a *pure, deterministic* sequence of hiding
- * rounds. This module has NO imports and NO side effects so it can be verified by a
- * standalone Node harness (scripts/flow.test.ts) and shared verbatim by the
- * Firebase transaction layer, the UI and local 2-player mode.
+ * "Complete Turns" — each player hides for a block of consecutive rounds instead
+ * of alternating — is the DEFAULT turn order, and the optional "5 Lives" rule
+ * (lives REPLACE score as the win condition) layers on top. Both are modelled here
+ * as a *pure, deterministic* sequence of hiding rounds. This module has NO imports
+ * and NO side effects so it can be verified by a standalone Node harness
+ * (scripts/flow.test.ts) and shared verbatim by the Firebase transaction layer,
+ * the UI and local 2-player mode.
  *
  * Model
  * -----
@@ -35,6 +35,10 @@ export const RULESET_ROUNDS = DEALS_PER_SEAT * 2; // 20
 // Types (kept local & inline so this module stays import-free)
 // ---------------------------------------------------------------------------
 
+/**
+ * "complete" — each player hides for a block of consecutive rounds (the DEFAULT).
+ * "alternate" — the dealer flips every round (the optional classic behaviour).
+ */
 export type TurnOrder = "alternate" | "complete";
 export type WinMode = "classic" | "lives";
 
@@ -46,23 +50,34 @@ export type Seat = 0 | 1;
  * the whole match and synchronised to both clients in the authoritative game node.
  */
 export interface MatchSettings {
-  /** "alternate" -> dealer flips every round (classic per-round steering). */
+  /**
+   * "complete"  -> each player hides for a block of consecutive rounds (DEFAULT).
+   * "alternate" -> dealer flips every round (the optional classic behaviour).
+   */
   turnOrder: TurnOrder;
   /**
-   * "classic" -> the ORIGINAL scored 3x10-court game (unchanged behaviour).
-   * "lives"  -> each player starts with 5 lives; finding the hidden King costs the
-   *             Dealer one life; first player to reach 0 lives loses.
+   * "classic" -> the scored 3x10-court game (unchanged per-round behaviour).
+   * "lives"   -> each player starts with 5 lives; finding the hidden King costs the
+   *              Dealer one life; first player to reach 0 lives loses.
    * Choosing lives automatically uses the optional continuous engine.
    */
   winMode: WinMode;
 }
 
+/**
+ * Default match config: Complete Turns with classic scoring. This is the
+ * continuous 20-hide engine; "Alternate Turns" is the opt-in classic format.
+ */
 export const DEFAULT_SETTINGS: MatchSettings = {
-  turnOrder: "alternate",
+  turnOrder: "complete",
   winMode: "classic",
 };
 
-/** True when a config is the untouched, built-in game (no optional engine). */
+/**
+ * True when a config selects the untouched, alternate-turns scored game — the
+ * optional "Alternate Turns" format. All other configs (i.e. the Complete Turns
+ * default, with or without lives) use the optional continuous engine.
+ */
 export function isClassic(settings: MatchSettings): boolean {
   return settings.winMode === "classic" && settings.turnOrder === "alternate";
 }

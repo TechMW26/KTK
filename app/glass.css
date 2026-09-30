@@ -1,0 +1,718 @@
+/* ===========================================================================
+   KILL THE KING — LIQUID GLASS
+   ===========================================================================
+
+   This file is the visual system. It is loaded AFTER globals.css so it can
+   refine the base styles without globals.css needing to change.
+
+   Structure
+   ---------
+   1. Tokens        — colour, elevation, blur, radii, motion.
+   2. Atmosphere    — the room the glass sits in (background light).
+   3. Glass levels  — L1 background … L5 critical action. One level per surface
+                      class, so hierarchy is declared rather than improvised.
+   4. Materials     — cards, buttons, dialogs, overlays.
+   5. Responsive    — layout corrections for short and narrow viewports.
+   6. Reduced motion.
+
+   Rules of the material
+   ---------------------
+   - Glass is a RELATIONSHIP, not a filter. A surface is only translucent if
+     there is something behind it worth seeing. Elevation is expressed by blur,
+     border light and shadow TOGETHER, never by blur alone.
+   - Light comes from above. Every raised surface gets a top edge highlight and
+     a soft drop shadow below.
+   - One accent (gold) and one alarm (red). No third hue.
+   - Nothing decorative may reduce contrast below the token text colours.
+
+   IMPORTANT: class names here are the same ones the components already use.
+   This file changes appearance only — never behaviour, layout geometry that
+   gameplay depends on, or the meaning of a control.
+   =========================================================================== */
+
+/* ===========================================================================
+   1. TOKENS
+   =========================================================================== */
+
+:root {
+  /* --- surface stack (ink → glass) --- */
+  --glass-ink: #050403;
+  --glass-void: #080706;
+  --glass-l1: rgba(14, 12, 9, 0.62);
+  --glass-l2: rgba(20, 17, 12, 0.58);
+  --glass-l3: rgba(30, 25, 17, 0.52);
+  --glass-l4: rgba(46, 37, 22, 0.46);
+  --glass-l5: rgba(66, 50, 24, 0.42);
+
+  /* --- edge light: top highlight + bottom shade --- */
+  --edge-hi: rgba(255, 236, 190, 0.14);
+  --edge-hi-strong: rgba(255, 240, 200, 0.32);
+  --edge-lo: rgba(0, 0, 0, 0.42);
+  --edge-line: rgba(214, 168, 84, 0.22);
+  --edge-line-strong: rgba(244, 205, 120, 0.55);
+
+  /* --- blur ladder (px) --- */
+  --blur-l1: 2px;
+  --blur-l2: 14px;
+  --blur-l3: 20px;
+  --blur-l4: 26px;
+  --blur-l5: 30px;
+  --blur-veil: 34px;
+
+  /* --- elevation: layered, soft, never harsh --- */
+  --lift-1: 0 1px 2px rgba(0, 0, 0, 0.45);
+  --lift-2: 0 6px 18px rgba(0, 0, 0, 0.5), 0 1px 0 var(--edge-hi) inset;
+  --lift-3: 0 10px 26px rgba(0, 0, 0, 0.55), 0 2px 0 var(--edge-hi) inset;
+  --lift-4: 0 16px 38px rgba(0, 0, 0, 0.6), 0 1px 0 var(--edge-hi-strong) inset;
+  --lift-5: 0 0 34px rgba(203, 150, 44, 0.3), 0 14px 34px rgba(0, 0, 0, 0.6),
+    0 1px 0 var(--edge-hi-strong) inset;
+  --lift-press: 0 2px 6px rgba(0, 0, 0, 0.5), 0 1px 0 var(--edge-hi) inset;
+
+  /* --- radii --- */
+  --r-sm: 8px;
+  --r-md: 14px;
+  --r-lg: 20px;
+  --r-pill: 999px;
+
+  /* --- motion: slow, purposeful, GPU-friendly --- */
+  --ease-glass: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --dur-quick: 160ms;
+  --dur-base: 260ms;
+  --dur-slow: 480ms;
+
+  /* --- text on glass --- */
+  --on-glass: #f4e6c2;
+  --on-glass-dim: #b8a274;
+  --on-glass-faint: #8b7a56;
+
+  /* --- amplifier for the existing gold accents --- */
+  --glass-glow: 0 0 22px rgba(226, 168, 56, 0.28);
+}
+
+/* ===========================================================================
+   2. ATMOSPHERE — the room, not the furniture
+   =========================================================================== */
+
+.game-shell {
+  /* Three lights: a warm key from above, a cool fill from the corner, and a
+     floor shadow. This is what the glass has to refract. */
+  background:
+    radial-gradient(120% 78% at 50% -10%, rgba(255, 205, 120, 0.1), transparent 58%),
+    radial-gradient(80% 60% at 88% 8%, rgba(120, 150, 190, 0.07), transparent 62%),
+    radial-gradient(140% 90% at 50% 118%, rgba(0, 0, 0, 0.72), transparent 60%),
+    linear-gradient(168deg, #0a0806 0%, #070605 48%, #040404 100%);
+}
+
+/* ===========================================================================
+   3. GLASS LEVELS
+   =========================================================================== */
+
+/* --- L2 · primary glass: the board itself --- */
+.game-screen {
+  border: 1px solid var(--edge-line);
+  border-radius: var(--r-lg);
+  background:
+    linear-gradient(180deg, rgba(255, 240, 205, 0.035), transparent 42%),
+    radial-gradient(100% 60% at 50% 0%, rgba(226, 168, 56, 0.06), transparent 60%),
+    repeating-radial-gradient(circle at 20% 20%, rgba(33, 27, 17, 0.9) 0 1px, rgba(6, 6, 5, 0.94) 1px 5px);
+  backdrop-filter: blur(var(--blur-l2)) saturate(1.12);
+  -webkit-backdrop-filter: blur(var(--blur-l2)) saturate(1.12);
+  box-shadow:
+    var(--lift-4),
+    0 0 70px rgba(0, 0, 0, 0.85);
+}
+
+/* The inner hairline is the refraction edge — it catches the light. */
+.game-screen::before {
+  inset: 6px;
+  border: 1px solid rgba(255, 235, 195, 0.08);
+  border-radius: calc(var(--r-lg) - 6px);
+  box-shadow: inset 0 1px 0 rgba(255, 245, 220, 0.05);
+}
+
+/* --- L1 · the header floats above the board, not in it --- */
+.game-header {
+  background: linear-gradient(180deg, rgba(255, 238, 200, 0.045), transparent);
+  border-bottom: 1px solid rgba(255, 235, 195, 0.06);
+}
+
+/* --- L3 · interactive surfaces --- */
+
+/* Segmented control (mode switch, strategy tabs) */
+.mode-switch,
+.strategy-tabs {
+  border: 1px solid var(--edge-line);
+  border-radius: var(--r-pill);
+  background: var(--glass-l1);
+  backdrop-filter: blur(var(--blur-l3));
+  -webkit-backdrop-filter: blur(var(--blur-l3));
+  box-shadow: var(--lift-2);
+}
+
+.strategy-tabs {
+  border-radius: var(--r-sm);
+}
+
+.mode-switch button.active,
+.strategy-tabs button.active {
+  border-radius: var(--r-pill);
+  background: linear-gradient(180deg, rgba(226, 168, 56, 0.3), rgba(132, 88, 18, 0.4));
+  box-shadow:
+    inset 0 1px 0 var(--edge-hi-strong),
+    inset 0 0 0 1px var(--edge-line-strong),
+    0 0 16px rgba(226, 168, 56, 0.22);
+}
+
+.strategy-tabs button.active {
+  border-radius: 6px;
+}
+
+/* --- L3 · inputs --- */
+.entry-panel input {
+  border: 1px solid var(--edge-line);
+  border-radius: var(--r-sm);
+  background: var(--glass-l1);
+  backdrop-filter: blur(var(--blur-l2));
+  -webkit-backdrop-filter: blur(var(--blur-l2));
+  box-shadow: inset 0 1px 0 rgba(0, 0, 0, 0.32);
+  transition: border-color var(--dur-quick) var(--ease-glass),
+    box-shadow var(--dur-quick) var(--ease-glass);
+}
+
+.entry-panel input:focus {
+  border-color: var(--edge-line-strong);
+  box-shadow:
+    inset 0 1px 0 rgba(0, 0, 0, 0.32),
+    0 0 0 3px rgba(226, 168, 56, 0.14);
+}
+
+/* --- L3 · score / stat rails --- */
+.score-strip {
+  border-top: 1px solid rgba(255, 235, 195, 0.08);
+  border-bottom: 1px solid rgba(255, 235, 195, 0.05);
+}
+
+.score-strip span.active-turn {
+  background: linear-gradient(90deg, rgba(226, 168, 56, 0.26), rgba(92, 58, 10, 0.42));
+  box-shadow:
+    inset 0 1px 0 var(--edge-hi-strong),
+    inset 0 0 0 1px var(--edge-line-strong),
+    0 0 18px rgba(226, 168, 56, 0.26);
+}
+
+/* The medallion becomes a polished disc rather than a flat ring. */
+.round-medallion {
+  background:
+    radial-gradient(circle at 46% 30%, rgba(255, 226, 160, 0.22), transparent 52%),
+    radial-gradient(circle at 50% 62%, rgba(18, 14, 9, 0.96), rgba(6, 6, 5, 0.98) 70%);
+  border: 1px solid var(--edge-line-strong);
+  backdrop-filter: blur(var(--blur-l3));
+  -webkit-backdrop-filter: blur(var(--blur-l3));
+  box-shadow:
+    var(--lift-3),
+    inset 0 1px 0 var(--edge-hi-strong);
+}
+
+/* --- L3 · the timer ring --- */
+.timer {
+  background:
+    radial-gradient(circle, #0a0906 54%, transparent 56%),
+    conic-gradient(var(--gold-bright) var(--timer), rgba(60, 45, 22, 0.55) 0);
+  box-shadow:
+    0 0 22px rgba(226, 168, 56, 0.24),
+    inset 0 1px 0 var(--edge-hi);
+}
+
+/* --- L4 · focused / active elements --- */
+
+/* Turn indicator: a glass slab that spans the board width. */
+.turn-indicator {
+  border: 1px solid var(--edge-line);
+  border-radius: var(--r-md);
+  background: linear-gradient(
+    90deg,
+    rgba(20, 17, 12, 0) 0%,
+    var(--glass-l3) 22%,
+    var(--glass-l3) 78%,
+    rgba(20, 17, 12, 0) 100%
+  );
+  backdrop-filter: blur(var(--blur-l4));
+  -webkit-backdrop-filter: blur(var(--blur-l4));
+  box-shadow:
+    inset 0 1px 0 var(--edge-hi),
+    0 6px 18px rgba(0, 0, 0, 0.4);
+}
+
+.turn-indicator.opponent-turn {
+  border-color: rgba(190, 186, 175, 0.3);
+  background: linear-gradient(
+    90deg,
+    rgba(19, 19, 18, 0) 0%,
+    rgba(34, 34, 32, 0.55) 22%,
+    rgba(34, 34, 32, 0.55) 78%,
+    rgba(19, 19, 18, 0) 100%
+  );
+}
+
+/* --- L4 · selected cards glow from beneath the glass --- */
+.playing-card.chosen {
+  transform: translateY(-8px);
+  filter: drop-shadow(0 0 10px rgba(255, 210, 110, 0.85))
+    drop-shadow(0 10px 16px rgba(0, 0, 0, 0.5));
+}
+
+.playing-card.chosen .card-back,
+.playing-card.chosen .card-front {
+  border-color: rgba(255, 240, 200, 0.85);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 250, 235, 0.34),
+    inset 0 1px 0 var(--edge-hi-strong),
+    0 0 18px rgba(240, 186, 70, 0.5);
+}
+
+.playing-card.is-king .card-front {
+  border-color: rgba(255, 238, 190, 0.95);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 250, 235, 0.4),
+    inset 0 1px 0 var(--edge-hi-strong),
+    0 0 26px rgba(240, 186, 70, 0.55);
+}
+
+/* ===========================================================================
+   4. MATERIALS
+   =========================================================================== */
+
+/* --- Cards: lacquered, not flat --- */
+.card-back,
+.card-front {
+  border: 1px solid var(--edge-line-strong);
+  border-radius: 7px;
+  box-shadow:
+    inset 0 1px 0 var(--edge-hi),
+    inset 0 -1px 0 var(--edge-lo),
+    0 10px 20px rgba(0, 0, 0, 0.5);
+}
+
+.card-front {
+  background:
+    radial-gradient(circle at 50% 32%, rgba(255, 214, 140, 0.1), transparent 46%),
+    linear-gradient(160deg, rgba(255, 240, 205, 0.05), transparent 38%),
+    linear-gradient(145deg, #16150f, #060606);
+}
+
+.card-back {
+  background:
+    linear-gradient(180deg, rgba(255, 240, 205, 0.06), transparent 40%),
+    #000 url("/card-back.png") center / 100% 100% no-repeat;
+}
+
+/* --- Buttons: pressed glass --- */
+.gold-button,
+.outline-button {
+  position: relative;
+  border-radius: var(--r-sm);
+  transition: transform var(--dur-quick) var(--ease-glass),
+    filter var(--dur-quick) var(--ease-glass),
+    box-shadow var(--dur-quick) var(--ease-glass);
+}
+
+.gold-button {
+  border: 1px solid rgba(255, 232, 178, 0.8);
+  background: linear-gradient(180deg, #f0c765 0%, #9a681f 52%, #6d4410 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.42),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.28),
+    var(--lift-3);
+}
+
+.gold-button:hover:not(:disabled) {
+  filter: brightness(1.1);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.5),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.28),
+    var(--lift-4),
+    var(--glass-glow);
+}
+
+.gold-button:active:not(:disabled) {
+  transform: translateY(1px) scale(0.995);
+  box-shadow: var(--lift-press);
+}
+
+.outline-button {
+  border: 1px solid var(--edge-line);
+  background: var(--glass-l2);
+  backdrop-filter: blur(var(--blur-l3));
+  -webkit-backdrop-filter: blur(var(--blur-l3));
+  box-shadow:
+    inset 0 1px 0 var(--edge-hi),
+    var(--lift-2);
+}
+
+.outline-button:hover:not(:disabled) {
+  border-color: var(--edge-line-strong);
+  background: var(--glass-l3);
+  box-shadow:
+    inset 0 1px 0 var(--edge-hi-strong),
+    var(--lift-3);
+}
+
+.outline-button:active:not(:disabled) {
+  transform: translateY(1px) scale(0.995);
+  box-shadow: var(--lift-press);
+}
+
+/* The bluff toggle and the rule selectors are the same material. */
+.bluff-choice,
+.mp-rule-opt,
+.settings-row,
+.settings-check {
+  border: 1px solid var(--edge-line);
+  border-radius: var(--r-sm);
+  background: var(--glass-l1);
+  backdrop-filter: blur(var(--blur-l2));
+  -webkit-backdrop-filter: blur(var(--blur-l2));
+  box-shadow:
+    inset 0 1px 0 var(--edge-hi),
+    var(--lift-1);
+  transition: border-color var(--dur-quick) var(--ease-glass),
+    background var(--dur-quick) var(--ease-glass),
+    box-shadow var(--dur-quick) var(--ease-glass);
+}
+
+.bluff-choice.active,
+.mp-rule-opt.active {
+  border-color: var(--edge-line-strong);
+  background: var(--glass-l4);
+  box-shadow:
+    inset 0 1px 0 var(--edge-hi-strong),
+    inset 0 0 0 1px rgba(226, 168, 56, 0.22),
+    var(--lift-3);
+}
+
+/* --- Dialogs: the thickest glass in the product --- */
+.modal-backdrop {
+  background: rgba(4, 3, 2, 0.72);
+  backdrop-filter: blur(10px) saturate(0.9);
+  -webkit-backdrop-filter: blur(10px) saturate(0.9);
+}
+
+.modal-card {
+  border: 1px solid var(--edge-line-strong);
+  border-radius: var(--r-lg);
+  background:
+    linear-gradient(180deg, rgba(255, 240, 205, 0.05), transparent 34%),
+    radial-gradient(90% 50% at 50% 0%, rgba(226, 168, 56, 0.07), transparent 62%),
+    linear-gradient(180deg, rgba(20, 17, 12, 0.9), rgba(8, 7, 5, 0.94));
+  backdrop-filter: blur(var(--blur-l5)) saturate(1.15);
+  -webkit-backdrop-filter: blur(var(--blur-l5)) saturate(1.15);
+  box-shadow:
+    var(--lift-4),
+    0 0 60px rgba(0, 0, 0, 0.7),
+    inset 0 1px 0 var(--edge-hi);
+}
+
+.modal-close {
+  border: 1px solid var(--edge-line);
+  background: var(--glass-l2);
+  backdrop-filter: blur(var(--blur-l2));
+  -webkit-backdrop-filter: blur(var(--blur-l2));
+  box-shadow: inset 0 1px 0 var(--edge-hi);
+  transition: border-color var(--dur-quick) var(--ease-glass),
+    color var(--dur-quick) var(--ease-glass);
+  /* The decorative `.modal-symbol` is a full-width block that overlaps this
+     button's hit area. The close control must always win, so it is promoted
+     above the symbol. (Accessibility: a dialog you cannot dismiss is a trap.) */
+  z-index: 2;
+}
+
+.modal-close:hover {
+  border-color: var(--edge-line-strong);
+  color: var(--gold-bright);
+}
+
+/* The symbol is purely decorative and must never intercept a tap aimed at the
+   close button or anything else behind it. */
+.modal-symbol {
+  pointer-events: none;
+}
+
+/* --- Power dock: a floating glass bar --- */
+.power-dock {
+  border: 1px solid var(--edge-line);
+  border-radius: var(--r-pill);
+  background: var(--glass-l3);
+  backdrop-filter: blur(var(--blur-l4)) saturate(1.1);
+  -webkit-backdrop-filter: blur(var(--blur-l4)) saturate(1.1);
+  box-shadow:
+    inset 0 1px 0 var(--edge-hi),
+    var(--lift-4);
+}
+
+.power-dock button {
+  transition: color var(--dur-quick) var(--ease-glass),
+    background var(--dur-quick) var(--ease-glass),
+    transform var(--dur-quick) var(--ease-glass);
+}
+
+.power-dock button:hover:not(:disabled) {
+  background: rgba(226, 168, 56, 0.12);
+  box-shadow: inset 0 1px 0 var(--edge-hi);
+}
+
+/* --- Quit button: alarm glass --- */
+.quit-button {
+  border: 1px solid rgba(214, 106, 60, 0.5);
+  background: rgba(40, 12, 6, 0.55);
+  backdrop-filter: blur(var(--blur-l3));
+  -webkit-backdrop-filter: blur(var(--blur-l3));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 180, 140, 0.16),
+    var(--lift-2);
+}
+
+.quit-button:hover {
+  border-color: rgba(255, 150, 100, 0.7);
+  background: rgba(86, 24, 10, 0.6);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 190, 150, 0.24),
+    var(--lift-3),
+    0 0 20px rgba(200, 60, 30, 0.3);
+}
+
+.quit-confirm {
+  border-radius: var(--r-sm);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 200, 170, 0.2),
+    var(--lift-3);
+}
+
+/* --- Section dividers get a light edge instead of a hard rule --- */
+.ornament::before,
+.ornament::after,
+.panel-title::before,
+.panel-title::after,
+.mp-divider::before,
+.mp-divider::after {
+  background: linear-gradient(90deg, transparent, var(--edge-line-strong), transparent);
+}
+
+.panel-title::after,
+.mp-divider::after {
+  background: linear-gradient(90deg, transparent, var(--edge-line-strong), transparent);
+}
+
+/* --- Score boards --- */
+.score-board div {
+  border: 1px solid var(--edge-line);
+  border-radius: var(--r-md);
+  background: var(--glass-l2);
+  backdrop-filter: blur(var(--blur-l3));
+  -webkit-backdrop-filter: blur(var(--blur-l3));
+  box-shadow:
+    inset 0 1px 0 var(--edge-hi),
+    var(--lift-2);
+}
+
+/* --- Pattern panel in the strategy dialog --- */
+.pattern-result {
+  border: 1px solid var(--edge-line);
+  border-radius: var(--r-md);
+  background: var(--glass-l2);
+  backdrop-filter: blur(var(--blur-l2));
+  -webkit-backdrop-filter: blur(var(--blur-l2));
+  box-shadow: inset 0 1px 0 var(--edge-hi);
+}
+
+/* --- Verdict rail --- */
+.round-verdict {
+  border-top: 1px solid var(--edge-line);
+  border-bottom: 1px solid var(--edge-line);
+  background: linear-gradient(90deg, transparent, rgba(255, 240, 205, 0.03), transparent);
+}
+
+/* --- Multiplayer room code card --- */
+.mp-room-card {
+  border: 1px solid var(--edge-line-strong);
+  border-radius: var(--r-lg);
+  background:
+    linear-gradient(180deg, rgba(255, 240, 205, 0.05), transparent 40%),
+    var(--glass-l3);
+  backdrop-filter: blur(var(--blur-l4));
+  -webkit-backdrop-filter: blur(var(--blur-l4));
+  box-shadow:
+    inset 0 1px 0 var(--edge-hi),
+    var(--lift-4);
+}
+
+/* --- Multiplayer veils --- */
+.mp-veil {
+  background: rgba(4, 3, 2, 0.86);
+  backdrop-filter: blur(var(--blur-veil));
+  -webkit-backdrop-filter: blur(var(--blur-veil));
+}
+
+/* --- Cinematic turn veil keeps its own blur animation, gains a warm core --- */
+.turn-transition {
+  background:
+    radial-gradient(60% 40% at 50% 50%, rgba(226, 168, 56, 0.05), transparent 70%),
+    rgba(3, 3, 3, 0.55);
+}
+
+/* --- Reveal tints read as light on glass, not as a coloured flood --- */
+.game-screen.danger {
+  border-color: rgba(214, 90, 60, 0.55);
+}
+
+.game-screen.victory {
+  border-color: rgba(244, 205, 120, 0.7);
+}
+
+.game-screen.danger .impact-vignette {
+  box-shadow:
+    inset 0 0 70px rgba(226, 60, 34, 0.45),
+    inset 0 1px 0 rgba(255, 190, 160, 0.14);
+  background: radial-gradient(circle at 50% 55%, transparent 46%, rgba(150, 20, 10, 0.18));
+}
+
+.game-screen.victory .impact-vignette {
+  box-shadow:
+    inset 0 0 76px rgba(236, 180, 60, 0.42),
+    inset 0 1px 0 rgba(255, 245, 210, 0.2);
+  background: radial-gradient(circle at 50% 52%, rgba(240, 182, 60, 0.1), transparent 48%);
+}
+
+/* --- Focus ring: visible on every glass level --- */
+button:focus-visible,
+input:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--gold-bright);
+  outline-offset: 3px;
+  border-radius: var(--r-sm);
+}
+
+/* --- Missing rules this pass repairs (classes the UI already used) --- */
+.mp-back {
+  display: inline-block;
+  margin-bottom: 4px;
+}
+
+/* The reveal row needs the same geometry as any other card row.
+   NOTE: the vertical margin is intentionally NOT set here. The result stage
+   owns its own spacing (see `.result-stage .cards-row` tiers in globals.css) so
+   the row can compress on short viewports instead of being pinned to a desktop
+   value. */
+.reveal-row {
+  position: relative;
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  perspective: 900px;
+}
+
+/* ===========================================================================
+   5. RESPONSIVE
+   =========================================================================== */
+
+/* --- Short-viewport reachability fix (BUGFIX, see note) -------------------
+   `globals.css` sets `.game-screen { min-height: 650px }` under
+   `max-width: 460px`. On a short-but-narrow device (e.g. 320x568) that minimum
+   wins over `height: 100svh`, so the board grows TALLER than the viewport and
+   pushes the bottom-anchored controls — the power dock and the dealer's
+   "LOCK THE CARDS" button, which is a REQUIRED action — below the fold and out
+   of reach.
+
+   This relaxes the minimum only when the viewport is genuinely too short to
+   honour it, so the board always fits the screen and every control stays
+   tappable. Geometry for normal phones (>= 650px tall) is untouched.
+   ------------------------------------------------------------------------- */
+@media (max-width: 460px) {
+  .game-screen {
+    min-height: 0;
+  }
+}
+
+/* Short viewports: tighten the glass paddings before shrinking content. */
+@media (max-height: 760px) {
+  .game-header {
+    border-bottom-color: rgba(255, 235, 195, 0.05);
+  }
+
+  /* The dock is a floating bar; its container must not swallow taps aimed at
+     content that scrolls beneath it. Only its buttons are interactive. */
+  .power-dock {
+    pointer-events: none;
+  }
+  .power-dock button {
+    pointer-events: auto;
+  }
+}
+
+/* Very short viewports: shrink the dock and reserve room beneath the stage so
+   "LOCK THE CARDS" / "CALL BLUFF" are never overlapped. */
+@media (max-height: 640px) {
+  .power-dock {
+    bottom: 10px;
+    height: 58px;
+  }
+  /* Only the stages that DON'T own their own bottom gutter. `.result-stage`
+     declares its own padding in globals.css (the dock floats above it and the
+     stack is taller), so it is deliberately excluded here. */
+  .play-stage:not(.result-stage),
+  .center-stage {
+    padding-bottom: 116px;
+  }
+  .bottom-copy {
+    bottom: 108px;
+  }
+  .dealer-actions {
+    margin-top: 18px;
+  }
+}
+
+/* Narrow phones: the board is edge-to-edge, so drop the side radii. */
+@media (max-width: 460px) {
+  .game-screen {
+    border-left: 0;
+    border-right: 0;
+    border-radius: 0;
+  }
+  .game-screen::before {
+    border-left: 0;
+    border-right: 0;
+    border-radius: 0;
+  }
+}
+
+/* Touch devices: guarantee tappable targets inside glass panels. */
+@media (hover: none), (pointer: coarse) {
+  .mp-frame button,
+  .mp-frame input,
+  .modal-card button {
+    min-height: 46px;
+  }
+}
+
+/* ===========================================================================
+   6. REDUCED MOTION
+   =========================================================================== */
+
+/* Blur is cheap to render but expensive to animate. When the player has
+   animations off, the glass stops animating entirely and simply is. */
+.reduced-motion .modal-card,
+.reduced-motion .modal-backdrop,
+.reduced-motion .power-dock,
+.reduced-motion .turn-indicator {
+  transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gold-button,
+  .outline-button,
+  .playing-card,
+  .card-inner,
+  .power-dock button {
+    transition: none;
+  }
+}

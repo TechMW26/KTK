@@ -86,10 +86,10 @@ export type ResultKind =
  * that lives only in the dealer seat's PRIVATE secret node (see RoomPlayerSecret).
  *
  * Two engine flavours share this one shape:
- *  - CLASSIC  (settings.winMode === "classic" && turnOrder === "alternate"):
- *    the ORIGINAL scored game. `level` 0..2, `round` 1..10 resets each level,
- *    the dealer alternates every round. Exactly as before these features.
- *  - OPTIONAL (any other config: 5-lives and/or complete turns selected):
+ *  - CLASSIC  (settings.winMode === "classic" && turnOrder === "alternate", the
+ *    opt-in "Alternate Turns" format): the scored 3-court game. `level` 0..2,
+ *    `round` 1..10 resets each level, the dealer alternates every round.
+ *  - OPTIONAL (any other config: the default Complete Turns, and/or 5-lives):
  *    an additive continuous engine of RULESET_ROUNDS (20) hiding rounds.
  *    `round` runs 1..20 continuously, `level` is derived from the hiding round
  *    via flow.courtForHidingRound to reuse the court/card/timing visuals, the

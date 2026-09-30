@@ -298,18 +298,18 @@ function MenuScreen({
           <p className="mp-rules-heading">TURN ORDER</p>
           <div className="mp-rule-row">
             <button
-              className={draft.turnOrder === "alternate" ? "mp-rule-opt active" : "mp-rule-opt"}
-              onClick={() => setTurn("alternate")}
-            >
-              <b>Alternate Turns</b>
-              <small>Each player hides one after another.</small>
-            </button>
-            <button
               className={draft.turnOrder === "complete" ? "mp-rule-opt active" : "mp-rule-opt"}
               onClick={() => setTurn("complete")}
             >
               <b>Complete Turns</b>
-              <small>10 consecutive hiding turns each.</small>
+              <small>Each player hides 10 turns in a row. Default.</small>
+            </button>
+            <button
+              className={draft.turnOrder === "alternate" ? "mp-rule-opt active" : "mp-rule-opt"}
+              onClick={() => setTurn("alternate")}
+            >
+              <b>Alternate Turns</b>
+              <small>Players trade the Dealer every round.</small>
             </button>
           </div>
 

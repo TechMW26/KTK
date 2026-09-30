@@ -1,15 +1,35 @@
 import type { ResultKind, RoundResultRecord, Seat } from "@/lib/multiplayer/types";
+// NOTE: relative import (not the `@/` alias) because this module is reachable
+// from the bare-Node test harness, which cannot resolve path aliases.
+import {
+  COURTS,
+  ROUNDS_PER_COURT,
+  COURT_COUNT,
+  courtAt,
+  dealerForRound,
+  guesserForRound,
+} from "../../features/game/constants/courts.ts";
 
 export type { ResultKind, RoundResultRecord, Seat };
 
 /**
- * Pure game-rule constants & helpers for KILL THE KING.
+ * The authoritative round resolver for the online match.
  *
- * These mirror the single-player values exactly (level card counts, timings and
- * points) so online multiplayer plays by the same rules. No UI, no timers, no
- * React here — only pure data + a pure result resolver shared by both clients.
+ * ─────────────────────────────────────────────────────────────────────────────
+ * IMPORTANT — DO NOT RESTATE RULES HERE.
+ * ─────────────────────────────────────────────────────────────────────────────
+ *
+ * Courts, round counts and seat assignment are owned by
+ * `features/game/constants/courts.ts`. This module re-exports them in the shape
+ * the multiplayer services expect (`LEVELS` with an explicit `index`, and the
+ * `*SeatFor` aliases) and adds the one thing that is genuinely multiplayer's own:
+ * `resolveGuess`, which decides a round from the DEALER's private secret.
+ *
+ * There is exactly one place to change a card count, a clock, a point value or
+ * the dealer rotation: `features/game/constants/courts.ts`.
  */
 
+/** A court, in the shape the multiplayer services consume. */
 export interface LevelConfig {
   index: number;
   name: string;
@@ -18,30 +38,47 @@ export interface LevelConfig {
   points: number;
 }
 
-export const LEVELS: LevelConfig[] = [
-  { index: 0, name: "THE COURT", cards: 5, seconds: 20, points: 1 },
-  { index: 1, name: "HIGH STAKES", cards: 3, seconds: 15, points: 2 },
-  { index: 2, name: "FINAL DUEL", cards: 2, seconds: 9, points: 3 },
-];
+/** The courts with an explicit zero-based index, derived from the source table. */
+export const LEVELS: LevelConfig[] = COURTS.map((court, index) => ({
+  index,
+  name: court.name,
+  cards: court.cards,
+  seconds: court.seconds,
+  points: court.points,
+}));
 
-export const ROUNDS_PER_LEVEL = 10;
-export const LEVEL_COUNT = LEVELS.length;
-export const TOTAL_ROUNDS = ROUNDS_PER_LEVEL * LEVEL_COUNT;
+export const ROUNDS_PER_LEVEL = ROUNDS_PER_COURT;
+export const LEVEL_COUNT = COURT_COUNT;
+export const TOTAL_ROUNDS = ROUNDS_PER_COURT * COURT_COUNT;
 
+/** The court for a zero-based index, clamped to the table. */
 export function levelConfig(index: number): LevelConfig {
-  return LEVELS[Math.max(0, Math.min(LEVEL_COUNT - 1, index))];
+  const clamped = Math.max(0, Math.min(LEVEL_COUNT - 1, index));
+  const court = courtAt(clamped);
+  return {
+    index: clamped,
+    name: court.name,
+    cards: court.cards,
+    seconds: court.seconds,
+    points: court.points,
+  };
 }
 
 /**
- * Dealer seat for a given level-round: seat (round-1) % 2 — exactly as the
- * existing single-player match does (round resets to 1 each level).
+ * Dealer seat for a given round in the CLASSIC online match.
+ *
+ * Classic online play always alternates the dealer every round (seat
+ * (round-1) % 2, with the round resetting to 1 each court), so it passes
+ * block = 1 to the shared rotation. The single-player game uses the DEFAULT
+ * blocked rotation (HIDES_PER_BLOCK) from the same function, so the two can
+ * never drift into two separate copies of the formula.
  */
 export function dealerSeatFor(round: number): Seat {
-  return ((round - 1) % 2) as Seat;
+  return dealerForRound(round, 1);
 }
 
 export function guesserSeatFor(round: number): Seat {
-  return (1 - dealerSeatFor(round)) as Seat;
+  return guesserForRound(round, 1);
 }
 
 export interface RoundArgs {

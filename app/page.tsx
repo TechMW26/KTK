@@ -3,199 +3,59 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 
-type Phase = "home" | "dealer" | "pass" | "shuffle" | "guess" | "result" | "level-end" | "match-end";
-type Mode = "local" | "bot";
-type Overlay = null | "rules" | "strategy" | "settings" | "bluff" | "quit";
-type ResultKind = "king" | "wrong" | "bluff-caught" | "bluff-missed" | "bluff-worked" | "timeout";
-
-type RoundResult = {
-  kind: ResultKind;
-  winner: number;
-  pick: number | null;
-  calledBluff: boolean;
-};
-
-type HistoryItem = {
-  level: number;
-  round: number;
-  dealer: number;
-  guesser: number;
-  pick: number | null;
-  calledBluff: boolean;
-  wasBluff: boolean;
-  won: boolean;
-};
-
-type TurnInfo = {
-  kind: "player" | "opponent";
-  title: string;
-  subtitle: string;
-};
-
-const TURN_COPY = {
-  playerGuess: { kind: "player", title: "YOUR TURN", subtitle: "Pick a card before time runs out." },
-  playerDealer: { kind: "player", title: "YOUR TURN", subtitle: "Dealer — hide the King." },
-  opponentGuess: { kind: "opponent", title: "OPPONENT'S TURN", subtitle: "Waiting for The Rival..." },
-  opponentDealer: { kind: "opponent", title: "OPPONENT'S TURN", subtitle: "Waiting for The Rival..." },
-} as const;
-
-function getTurnInfo(phase: Phase, dealerIsBot: boolean, guesserIsBot: boolean): TurnInfo | null {
-  if (phase === "guess") {
-    return guesserIsBot ? { ...TURN_COPY.opponentGuess } : { ...TURN_COPY.playerGuess };
-  }
-  if (phase === "dealer") {
-    return dealerIsBot ? { ...TURN_COPY.opponentDealer } : { ...TURN_COPY.playerDealer };
-  }
-  return null;
-}
-
-const LEVELS = [
-  { name: "THE COURT", cards: 5, seconds: 20, points: 1 },
-  { name: "HIGH STAKES", cards: 3, seconds: 15, points: 2 },
-  { name: "FINAL DUEL", cards: 2, seconds: 9, points: 3 },
-] as const;
-
-// Duration of the cinematic turn-transition overlay (ms).
-const TURN_TRANSITION_MS = 2800;
-// How long after the transition overlay disappears before the opponent picks (ms).
-const TURN_PICK_DELAY_MS = 1500;
-
-type SoundCue = "start" | "countdown" | "king" | "wrong" | "bluff-open" | "bluff-caught" | "bluff-missed";
-
-let backgroundAudio: HTMLAudioElement | null = null;
-
-function getBackgroundAudio() {
-  if (typeof window === "undefined") return null;
-  if (!backgroundAudio) {
-    backgroundAudio = new Audio("/audio/background.wav");
-    backgroundAudio.loop = true;
-    backgroundAudio.preload = "auto";
-    backgroundAudio.volume = .32;
-  }
-  return backgroundAudio;
-}
-
-function preloadGameAudio() {
-  if (typeof window === "undefined") return;
-  getBackgroundAudio()?.load();
-  (["start", "countdown", "king", "wrong", "bluff-open", "bluff-caught", "bluff-missed"] as SoundCue[]).forEach((cue) => {
-    const audio = new Audio(`/audio/${cue}.wav`);
-    audio.preload = "auto";
-    audio.load();
-  });
-}
-
-function playSoundCue(cue: SoundCue, countdown = 5) {
-  if (typeof window === "undefined") return;
-  const audio = new Audio(`/audio/${cue}.wav`);
-  audio.preload = "auto";
-  audio.volume = cue === "countdown" ? .72 : .82;
-  if (cue === "countdown") audio.playbackRate = .92 + (6 - countdown) * .055;
-  void audio.play().catch(() => undefined);
-}
-
-function startAmbientMusic() {
-  const audio = getBackgroundAudio();
-  if (!audio) return;
-  void audio.play().catch(() => undefined);
-}
-
-function stopAmbientMusic() {
-  if (!backgroundAudio) return;
-  backgroundAudio.pause();
-}
-
-const resultCopy: Record<ResultKind, { title: string; subtitle: string; tone: string }> = {
-  king: { title: "KING FOUND!", subtitle: "You found the King", tone: "victory" },
-  wrong: { title: "WRONG CARD", subtitle: "Not the King", tone: "danger" },
-  "bluff-caught": { title: "BLUFF GUESSED!", subtitle: "The accusation was correct", tone: "victory" },
-  "bluff-missed": { title: "BLUFF MISSED", subtitle: "The accusation was wrong", tone: "danger" },
-  "bluff-worked": { title: "DECEPTION!", subtitle: "There was no King this round", tone: "danger" },
-  timeout: { title: "TIME EXPIRED", subtitle: "The King stayed hidden", tone: "danger" },
-};
-
-function Logo({ compact = false }: { compact?: boolean }) {
-  return (
-    <div className={compact ? "logo compact" : "logo"} aria-label="Kill the King">
-      <span className="logo-crown">♛</span>
-      <strong>KILL</strong><i>THE</i><strong>KING</strong>
-    </div>
-  );
-}
-
-type CardProps = {
-  index: number;
-  faceUp?: boolean;
-  king?: boolean;
-  blank?: boolean;
-  chosen?: boolean;
-  wrong?: boolean;
-  disabled?: boolean;
-  onClick?: () => void;
-  onHover?: (hovered: boolean) => void;
-  dealDelay?: number;
-};
-
-function Card({ index, faceUp, king, blank, chosen, wrong, disabled, onClick, onHover, dealDelay }: CardProps) {
-  return (
-    <button
-      className={["playing-card", faceUp ? "face-up" : "", king ? "is-king" : "", chosen ? "chosen" : "", wrong ? "shattered" : ""].join(" ")}
-      onClick={onClick}
-      onMouseEnter={() => onHover?.(true)}
-      onMouseLeave={() => onHover?.(false)}
-      onFocus={() => onHover?.(true)}
-      onBlur={() => onHover?.(false)}
-      style={dealDelay === undefined ? undefined : { "--deal-delay": `${dealDelay}s` } as React.CSSProperties}
-      disabled={disabled}
-      aria-label={faceUp ? (king ? `King in card ${index + 1}` : `Card ${index + 1}`) : `Choose card ${index + 1}`}
-    >
-      <span className="card-inner">
-        <span className="card-back">
-          <small>KTK</small>
-          <b>♛</b>
-          <em>◆</em>
-        </span>
-        <span className="card-front">
-          {blank ? (
-            <span className="blank-card"><b>?</b><small>EMPTY</small></span>
-          ) : king ? (
-            <>
-              <span className="corner-rank">K<small>♥</small></span>
-              <span className="king-face">♚</span>
-              <span className="king-label">THE KING</span>
-            </>
-          ) : (
-            <>
-              <span className="corner-rank">{index + 1}<small>♥</small></span>
-              <span className="heart-pip">♥</span>
-            </>
-          )}
-        </span>
-      </span>
-      {king && faceUp && <span className="card-crown" aria-hidden="true">♛</span>}
-      {wrong && (
-        <span className="shatter-layer" aria-hidden="true">
-          <i className="fracture fracture-a" />
-          <i className="fracture fracture-b" />
-          <i className="fracture fracture-c" />
-          <i className="shard shard-a" />
-          <i className="shard shard-b" />
-          <i className="shard shard-c" />
-          <i className="shard shard-d" />
-        </span>
-      )}
-      {wrong && <span className="wrong-badge" aria-hidden="true">×</span>}
-    </button>
-  );
-}
-
-function Ornament() {
-  return <div className="ornament" aria-hidden="true"><span>◆</span></div>;
-}
+import { Logo, Ornament } from "@/components/common/Brand";
+import { Modal as DialogShell } from "@/components/ui/Modal";
+import { PlayingCard } from "@/components/ui/PlayingCard";
+import { GameHeader } from "@/features/game/components/GameHeader";
+import { RulesModal, SettingsModal } from "@/features/game/components/InfoDialogs";
+import { PowerDock } from "@/features/game/components/PowerDock";
+import { SelectionHand } from "@/features/game/components/SelectionHand";
+import { StrategyModal } from "@/features/game/components/StrategyModal";
+import { TurnIndicator, TurnTransition } from "@/features/game/components/TurnIndicator";
+import { COURTS, HIDES_PER_BLOCK, STARTING_LIVES } from "@/features/game/constants/courts";
+import {
+  RESULT_COPY,
+  turnAnnouncement,
+  turnKey as buildTurnKey,
+} from "@/features/game/constants/copy";
+import {
+  BOT_ACCUSE_MS,
+  BOT_GUESS_REACH_MS,
+  BOT_HIDE_LOCK_MS,
+  BOT_HIDE_PICK_MS,
+  BOT_THINK_AFTER_VEIL_MS,
+  COUNTDOWN_WARNING_SECONDS,
+  dealTimings,
+  REDUCED,
+  SHUFFLE_MS,
+  TURN_VEIL_MS,
+} from "@/features/game/constants/pacing";
+import { decideGuessTurn, decideHidingSpot } from "@/features/game/logic/bot";
+import { afterCourt, afterRound } from "@/features/game/logic/progression";
+import { resolveLocalRound, resolveTimedOutDealerChoice } from "@/features/game/logic/round";
+import { applyLifeLoss, applyRoundWin, lifeWinner as winnerFromLives } from "@/features/game/logic/scoring";
+import { dealerForRound, guesserForRound, hidesIntoBlock } from "@/features/game/logic/seats";
+import { picksThisCourt, summarisePicks } from "@/features/game/logic/strategy";
+import type {
+  MatchPhase,
+  OpenDialog,
+  OpponentKind,
+  RoundHistoryEntry,
+  RoundOutcome,
+  RoundOutcomeKind,
+  Seat,
+  TurnAnnouncement,
+} from "@/features/game/types/game";
+import {
+  playSoundCue,
+  preloadGameAudio,
+  startAmbientMusic,
+  stopAmbientMusic,
+} from "@/services/audio/gameAudio";
 
 export default function Home() {
-  const [phase, setPhase] = useState<Phase>("home");
-  const [mode, setMode] = useState<Mode>("bot");
+  const [phase, setPhase] = useState<MatchPhase>("home");
+  const [mode, setMode] = useState<OpponentKind>("bot");
   const [names, setNames] = useState<[string, string]>(["", "The Rival"]);
   const [scores, setScores] = useState<[number, number]>([0, 0]);
   const [level, setLevel] = useState(0);
@@ -206,35 +66,44 @@ export default function Home() {
   // Local 2-Player optional 5-Lives rule (Feature: "5 Lives"). Only read when
   // mode === "local" && livesOn; VS Bot stays untouched.
   const [livesOn, setLivesOn] = useState(false);
-  const [lives, setLives] = useState<[number, number]>([5, 5]);
+  const [lives, setLives] = useState<[number, number]>([STARTING_LIVES, STARTING_LIVES]);
   const [lifeWinner, setLifeWinner] = useState<0 | 1 | null>(null);
-  const [result, setResult] = useState<RoundResult | null>(null);
-  const [history, setHistory] = useState<HistoryItem[]>([]);
-  const [timeLeft, setTimeLeft] = useState(LEVELS[0].seconds);
-  const [overlay, setOverlay] = useState<Overlay>(null);
+  const [result, setResult] = useState<RoundOutcome | null>(null);
+  const [history, setHistory] = useState<RoundHistoryEntry[]>([]);
+  const [timeLeft, setTimeLeft] = useState<number>(COURTS[0].seconds);
+  const [overlay, setOverlay] = useState<OpenDialog>(null);
   const [hoveredCard, setHoveredCard] = useState<number | null>(null);
   const [opponentActiveCard, setOpponentActiveCard] = useState<number | null>(null);
   const [strategyTab, setStrategyTab] = useState<0 | 1>(0);
   const [sound, setSound] = useState(true);
   const [motion, setMotion] = useState(true);
-  const [turnTransition, setTurnTransition] = useState<TurnInfo | null>(null);
+  const [turnTransition, setTurnTransition] = useState<TurnAnnouncement | null>(null);
   const prevTurnKey = useRef<string | null>(null);
   const transitionTimer = useRef<number | undefined>(undefined);
 
-  const config = LEVELS[level];
-  const dealer = (round - 1) % 2;
-  const guesser = dealer === 0 ? 1 : 0;
+  const config = COURTS[level];
+  const dealer = dealerForRound(round);
+  const guesser = guesserForRound(round);
   const dealerIsBot = mode === "bot" && dealer === 1;
   const guesserIsBot = mode === "bot" && guesser === 1;
+  // Complete-turn blocks: which hide this is inside the current player's run.
+  // Round resets to 1 each court, so the block restarts there too.
+  const hideNumber = hidesIntoBlock(round);
+  const hideLabel = `HIDING ${hideNumber}/${HIDES_PER_BLOCK}`;
+  // Even, window-fitted deal choreography for the current court's card count.
+  const deal = useMemo(
+    () => dealTimings(config.cards, motion ? SHUFFLE_MS : REDUCED.shuffle),
+    [config.cards, motion],
+  );
   const displayNames: [string, string] = [names[0].trim() || "Player 1", mode === "bot" ? "The Rival" : names[1].trim() || "Player 2"];
-  const currentTurn = getTurnInfo(phase, dealerIsBot, guesserIsBot);
-  const turnKey = currentTurn ? `${currentTurn.kind}:${phase}` : null;
+  const currentTurn = turnAnnouncement({ phase, dealerIsBot, guesserIsBot });
+  const turnKey = buildTurnKey(currentTurn, phase);
 
   const resetRoundState = (nextLevel = level) => {
     setKingPosition(null);
     setIsBluff(false);
     setResult(null);
-    setTimeLeft(LEVELS[nextLevel].seconds);
+    setTimeLeft(COURTS[nextLevel].seconds);
     setOverlay(null);
     setHoveredCard(null);
     setOpponentActiveCard(null);
@@ -253,7 +122,7 @@ export default function Home() {
     setBluffsAvailable([true, true]);
     setHistory([]);
     if (mode === "local") {
-      setLives([5, 5]);
+      setLives([STARTING_LIVES, STARTING_LIVES]);
       setLifeWinner(null);
     }
     resetRoundState(0);
@@ -269,16 +138,24 @@ export default function Home() {
     setBluffsAvailable([true, true]);
     setHistory([]);
     if (mode === "local") {
-      setLives([5, 5]);
+      setLives([STARTING_LIVES, STARTING_LIVES]);
       setLifeWinner(null);
     }
     resetRoundState(0);
     setPhase("home");
   };
 
-  const finishRound = (kind: ResultKind, winner: number, pick: number | null, calledBluff: boolean) => {
-    setResult({ kind, winner, pick, calledBluff });
-    setScores((previous) => previous.map((score, index) => score + (index === winner ? config.points : 0)) as [number, number]);
+  /**
+   * Resolve the round and show its reveal.
+   *
+   * Scoring, the optional life loss and the history record are all derived from
+   * the outcome here, so the reveal, the score strip and the strategy panel can
+   * never disagree about what happened.
+   */
+  const finishRound = (kind: RoundOutcomeKind, winner: Seat, pick: number | null, calledBluff: boolean) => {
+    const outcome: RoundOutcome = { kind, winner, pick, calledBluff };
+    setResult(outcome);
+    setScores((previous) => applyRoundWin(previous, winner, config.points));
     setHistory((previous) => [...previous, {
       level,
       round,
@@ -297,25 +174,24 @@ export default function Home() {
     }
     setOverlay(null);
     // Local 2-Player 5-Lives: a found hidden King costs its DEALER one life.
-    if (mode === "local" && livesOn && kind === "king") {
-      const newLives: [number, number] =
-        dealer === 0 ? [lives[0] - 1, lives[1]] : [lives[0], lives[1] - 1];
-      setLives(newLives);
-      if (newLives[dealer] <= 0) setLifeWinner(dealer === 0 ? 1 : 0);
+    if (mode === "local" && livesOn) {
+      const nextLives = applyLifeLoss(lives, outcome, dealer);
+      setLives(nextLives);
+      const winner = winnerFromLives(nextLives);
+      if (winner !== null) setLifeWinner(winner);
     }
     setPhase("result");
   };
 
   const chooseCard = (index: number) => {
     if (phase !== "guess" || result) return;
-    if (isBluff) finishRound("bluff-worked", dealer, index, false);
-    else if (index === kingPosition) finishRound("king", guesser, index, false);
-    else finishRound("wrong", dealer, index, false);
+    const outcome = resolveLocalRound({ isBluff, kingIndex: kingPosition, pick: index, calledBluff: false, dealer });
+    finishRound(outcome.kind, outcome.winner, outcome.pick, outcome.calledBluff);
   };
 
   const callBluff = () => {
-    if (isBluff) finishRound("bluff-caught", guesser, null, true);
-    else finishRound("bluff-missed", dealer, null, true);
+    const outcome = resolveLocalRound({ isBluff, kingIndex: kingPosition, pick: null, calledBluff: true, dealer });
+    finishRound(outcome.kind, outcome.winner, outcome.pick, outcome.calledBluff);
   };
 
   const confirmDealerChoice = () => {
@@ -327,45 +203,51 @@ export default function Home() {
   };
 
   const nextRound = () => {
-    if (mode === "local" && livesOn && lifeWinner !== null) {
+    const step = afterRound({ round, livesEnabled: mode === "local" && livesOn, hasLifeWinner: lifeWinner !== null });
+    if (step.action === "match-complete") {
       setPhase("match-end");
       return;
     }
-    if (round === 10) {
+    if (step.action === "court-complete") {
       setPhase("level-end");
       return;
     }
-    setRound((previous) => previous + 1);
+    setRound(step.round);
     resetRoundState();
     setPhase("dealer");
   };
 
   const nextLevel = () => {
-    if (level === LEVELS.length - 1) {
+    const step = afterCourt(level);
+    if (step.action === "match-complete") {
       setPhase("match-end");
       return;
     }
-    const newLevel = level + 1;
-    setLevel(newLevel);
-    setRound(1);
+    setLevel(step.level);
+    setRound(step.round);
     setBluffsAvailable([true, true]);
-    resetRoundState(newLevel);
+    resetRoundState(step.level);
     setPhase("dealer");
   };
 
   useEffect(() => {
     if (phase !== "dealer" || !dealerIsBot) return;
-    const useBluff = bluffsAvailable[dealer] && Math.random() < 0.14;
-    const hiddenPosition = Math.floor(Math.random() * config.cards);
+    const hiding = decideHidingSpot({
+      cards: config.cards,
+      bluffAvailable: bluffsAvailable[dealer],
+      bluffRoll: Math.random(),
+      positionRoll: Math.random(),
+    });
+    const useBluff = hiding.isBluff;
     const chooseTimer = window.setTimeout(() => {
       setIsBluff(useBluff);
-      setKingPosition(useBluff ? null : hiddenPosition);
-    }, motion ? 520 : 40);
+      setKingPosition(hiding.kingIndex);
+    }, motion ? BOT_HIDE_PICK_MS : REDUCED.hidePick);
     const finishTimer = window.setTimeout(() => {
       if (useBluff) setBluffsAvailable((previous) => [previous[0], false]);
       setOpponentActiveCard(null);
       setPhase("shuffle");
-    }, motion ? 1750 : 120);
+    }, motion ? BOT_HIDE_LOCK_MS : REDUCED.hideLock);
     return () => {
       window.clearTimeout(chooseTimer);
       window.clearTimeout(finishTimer);
@@ -378,7 +260,7 @@ export default function Home() {
       setTimeLeft((previous) => {
         if (previous <= 1) {
           window.clearInterval(timer);
-          setKingPosition(Math.floor(Math.random() * config.cards));
+          setKingPosition(resolveTimedOutDealerChoice(config.cards, Math.random()));
           setIsBluff(false);
           window.setTimeout(() => setPhase(mode === "local" ? "pass" : "shuffle"), 0);
           return 0;
@@ -394,7 +276,7 @@ export default function Home() {
     const timer = window.setTimeout(() => {
       setTimeLeft(config.seconds);
       setPhase("guess");
-    }, motion ? 3000 : 400);
+    }, motion ? SHUFFLE_MS : REDUCED.shuffle);
     return () => window.clearTimeout(timer);
   }, [phase, config.seconds, motion]);
 
@@ -419,19 +301,24 @@ export default function Home() {
     if (phase !== "guess" || !guesserIsBot) return;
     let resolveTimer: number | undefined;
     // Wait for the cinematic "OPPONENT'S TURN" overlay to finish, then give the
-    // player a beat (TURN_PICK_DELAY_MS) before the opponent reveals its choice.
-    const thinkDelay = (motion ? TURN_TRANSITION_MS : 120) + (motion ? TURN_PICK_DELAY_MS : 30);
+    // player a beat before the opponent reveals its choice.
+    const thinkDelay = (motion ? TURN_VEIL_MS : REDUCED.veil) + (motion ? BOT_THINK_AFTER_VEIL_MS : REDUCED.afterVeil);
     const thinkTimer = window.setTimeout(() => {
-      const accuse = isBluff ? Math.random() < 0.55 : Math.random() < 0.08;
-      if (accuse) {
-        resolveTimer = window.setTimeout(() => callBluff(), motion ? 500 : 20);
+      const decision = decideGuessTurn({
+        cards: config.cards,
+        dealerBluffed: isBluff,
+        accuseRoll: Math.random(),
+        pickRoll: Math.random(),
+      });
+      if (decision.accused) {
+        resolveTimer = window.setTimeout(() => callBluff(), motion ? BOT_ACCUSE_MS : REDUCED.accuse);
       } else {
-        const choice = Math.floor(Math.random() * config.cards);
+        const choice = decision.cardIndex ?? 0;
         setOpponentActiveCard(choice);
         resolveTimer = window.setTimeout(() => {
           setOpponentActiveCard(null);
           chooseCard(choice);
-        }, motion ? 1250 : 30);
+        }, motion ? BOT_GUESS_REACH_MS : REDUCED.guessReach);
       }
     }, thinkDelay);
     return () => {
@@ -442,15 +329,13 @@ export default function Home() {
   }, [phase, guesserIsBot, round, level]);
 
   const strategyEntries = useMemo(
-    () => history.filter((entry) => entry.level === level && entry.guesser === strategyTab && entry.pick !== null),
+    () => picksThisCourt(history, level, strategyTab),
     [history, level, strategyTab],
   );
-  const frequency = useMemo(() => {
-    const counts = Array(config.cards).fill(0) as number[];
-    strategyEntries.forEach((entry) => { if (entry.pick) counts[entry.pick - 1] += 1; });
-    const high = Math.max(0, ...counts);
-    return { counts, high, best: high ? counts.indexOf(high) + 1 : null };
-  }, [strategyEntries, config.cards]);
+  const frequency = useMemo(
+    () => summarisePicks(strategyEntries, config.cards),
+    [strategyEntries, config.cards],
+  );
 
   const gameplay = phase !== "home";
 
@@ -462,7 +347,7 @@ export default function Home() {
 
   useEffect(() => {
     const timedTurn = phase === "guess" || (phase === "dealer" && !dealerIsBot);
-    if (sound && timedTurn && timeLeft > 0 && timeLeft <= 5) playSoundCue("countdown", timeLeft);
+    if (sound && timedTurn && timeLeft > 0 && timeLeft <= COUNTDOWN_WARNING_SECONDS) playSoundCue("countdown", timeLeft);
   }, [sound, phase, dealerIsBot, timeLeft]);
 
   // Direct "VS Bot" start (used by the multiplayer matchmaking fallback and by
@@ -479,6 +364,14 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Which seat the score rail highlights.
+  //
+  // Only meaningful for a shared device (local 2-player), where the highlight
+  // tells the two humans whose turn it is. Online and vs-bot have their own
+  // chrome, so this stays null there.
+  //
+  // `pass` and `shuffle` belong to the incoming GUESSER: they are the one who
+  // receives the device and then plays the guess.
   const activePlayer = mode === "local"
     ? phase === "dealer"
       ? dealer
@@ -486,15 +379,19 @@ export default function Home() {
         ? guesser
         : null
     : null;
+
+  // The one-word verb shown beside the highlighted seat.
+  //
+  // CRITICAL: this is a per-player ACTION badge, so it must only be set for
+  // phases where a player is actually doing something. `pass` and `shuffle` are
+  // neutral beats — the device is being handed over, then the cards are dealt —
+  // so no seat gets a badge. Labelling the guesser "NEXT TURN" / "GET READY"
+  // would attribute an action to a player who is not acting.
   const activeAction = phase === "dealer"
     ? "HIDING"
     : phase === "guess"
       ? "GUESSING"
-      : phase === "pass"
-        ? "NEXT TURN"
-        : phase === "shuffle"
-          ? "GET READY"
-          : null;
+      : null;
 
   // Announce a turn change with a brief cinematic transition overlay.
   useEffect(() => {
@@ -504,7 +401,7 @@ export default function Home() {
       if (transitionTimer.current !== undefined) window.clearTimeout(transitionTimer.current);
       transitionTimer.current = window.setTimeout(
         () => setTurnTransition(null),
-        motion ? TURN_TRANSITION_MS : 120,
+        motion ? TURN_VEIL_MS : REDUCED.veil,
       );
     }
     prevTurnKey.current = turnKey;
@@ -520,7 +417,7 @@ export default function Home() {
 
   return (
     <main className={["game-shell", motion ? "" : "reduced-motion"].join(" ")}>
-      <section className={["game-screen", phase === "result" && result ? resultCopy[result.kind].tone : ""].join(" ")}>
+      <section className={["game-screen", phase === "result" && result ? RESULT_COPY[result.kind].tone : ""].join(" ")}>
         <div className="corner corner-tl" /><div className="corner corner-tr" />
         <div className="corner corner-bl" /><div className="corner corner-br" />
 
@@ -543,7 +440,9 @@ export default function Home() {
             <GameHeader
               level={level}
               round={round}
-              config={config}
+              cardCount={config.cards}
+              points={config.points}
+              seconds={config.seconds}
               names={displayNames}
               scores={scores}
               time={phase === "guess" || (phase === "dealer" && !dealerIsBot) ? timeLeft : null}
@@ -562,11 +461,12 @@ export default function Home() {
                   <h2>{dealerIsBot ? "OPPONENT'S TURN" : "HIDE THE KING"}</h2>
                   <Ornament />
                   <p>{dealerIsBot ? "Your opponent is choosing…" : `Choose a hiding place within ${config.seconds} seconds.`}</p>
+                  <p className="block-note">{hideLabel} · ROUND {round}</p>
                 </div>
                 {dealerIsBot && (
                   <div className="cards-row dealer-choice opponent-choice">
                     {Array.from({ length: config.cards }, (_, index) => (
-                      <Card key={index} index={index} disabled />
+                      <PlayingCard key={index} index={index} disabled />
                     ))}
                     <SelectionHand
                       index={Math.floor((config.cards - 1) / 2)}
@@ -580,7 +480,7 @@ export default function Home() {
                   <>
                     <div className="cards-row dealer-choice">
                       {Array.from({ length: config.cards }, (_, index) => (
-                        <Card
+                        <PlayingCard
                           key={index}
                           index={index}
                           chosen={!isBluff && kingPosition === index}
@@ -624,7 +524,10 @@ export default function Home() {
             )}
 
             {phase === "shuffle" && (
-              <section className="play-stage shuffle-stage">
+              <section
+                className="play-stage shuffle-stage"
+                style={{ "--shuffle-ms": `${deal.windowSec}s` } as React.CSSProperties}
+              >
                 <div
                   className="dealer-hand-rig"
                   aria-hidden="true"
@@ -652,7 +555,6 @@ export default function Home() {
                 <div className="cards-row dealing">
                   <div className="deal-flight-layer" aria-hidden="true">
                     {Array.from({ length: config.cards }, (_, index) => {
-                      const flightDelay = .24 + index * (1.76 / Math.max(1, config.cards - 1));
                       const offset = index - (config.cards - 1) / 2;
                       return (
                         <span
@@ -660,20 +562,20 @@ export default function Home() {
                           className="flying-deal-card"
                           style={{
                             "--slot-x": `${offset * 76}px`,
-                            "--flight-delay": `${flightDelay}s`,
+                            "--flight-delay": `${deal.launch(index)}s`,
+                            "--flight-duration": `${deal.flight}s`,
                           } as React.CSSProperties}
                         />
                       );
                     })}
                   </div>
                   {Array.from({ length: config.cards }, (_, index) => {
-                    const flightDelay = .24 + index * (1.76 / Math.max(1, config.cards - 1));
                     return (
-                      <Card
+                      <PlayingCard
                         key={index}
                         index={index}
                         disabled
-                        dealDelay={flightDelay + .64}
+                        dealDelay={deal.land(index)}
                       />
                     );
                   })}
@@ -690,10 +592,11 @@ export default function Home() {
                   <h2>{guesserIsBot ? "OPPONENT’S TURN" : "YOUR TURN"}</h2>
                   <Ornament />
                   <p>{guesserIsBot ? "The opponent is reading the table…" : "Pick a card before time runs out."}</p>
+                  <p className="block-note">ROUND {round} · {displayNames[dealer]} HIDES</p>
                 </div>
                 <div className="cards-row">
                   {Array.from({ length: config.cards }, (_, index) => (
-                    <Card
+                    <PlayingCard
                       key={index}
                       index={index}
                       disabled={guesserIsBot}
@@ -716,13 +619,13 @@ export default function Home() {
                 <div className="impact-vignette" />
                 <div className="stage-title">
                   <p className="eyebrow">ROUND {round} RESULT</p>
-                  <h2>{resultCopy[result.kind].title}</h2>
+                  <h2>{RESULT_COPY[result.kind].title}</h2>
                   <Ornament />
-                  <p>{resultCopy[result.kind].subtitle}</p>
+                  <p>{RESULT_COPY[result.kind].subtitle}</p>
                 </div>
                 <div className="cards-row reveal-row">
                   {Array.from({ length: config.cards }, (_, index) => (
-                    <Card
+                    <PlayingCard
                       key={index}
                       index={index}
                       faceUp
@@ -764,10 +667,10 @@ export default function Home() {
                   <i>—</i>
                   <div><span>{displayNames[1]}</span><strong>{scores[1]}</strong></div>
                 </div>
-                {level < LEVELS.length - 1 ? (
+                {level < COURTS.length - 1 ? (
                   <>
-                    <p>Next: <strong>{LEVELS[level + 1].cards} cards</strong>, {LEVELS[level + 1].seconds} seconds, {LEVELS[level + 1].points}× stakes.</p>
-                    <button className="gold-button wide" onClick={nextLevel}>ENTER {LEVELS[level + 1].name}</button>
+                    <p>Next: <strong>{COURTS[level + 1].cards} cards</strong>, {COURTS[level + 1].seconds} seconds, {COURTS[level + 1].points}× stakes.</p>
+                    <button className="gold-button wide" onClick={nextLevel}>ENTER {COURTS[level + 1].name}</button>
                   </>
                 ) : (
                   <button className="gold-button wide" onClick={nextLevel}>FINAL RESULT</button>
@@ -823,10 +726,17 @@ export default function Home() {
 
         {overlay === "rules" && <RulesModal onClose={() => setOverlay(null)} />}
         {overlay === "settings" && (
-          <SettingsModal sound={sound} motion={motion} setSound={setSound} setMotion={setMotion} onClose={() => setOverlay(null)} />
+          <SettingsModal
+            sound={sound}
+            motion={motion}
+            setSound={setSound}
+            setMotion={setMotion}
+            onSoundEnabled={() => { preloadGameAudio(); playSoundCue("start"); }}
+            onClose={() => setOverlay(null)}
+          />
         )}
         {overlay === "quit" && (
-          <Modal onClose={() => setOverlay(null)} className="quit-modal">
+          <DialogShell onClose={() => setOverlay(null)} className="quit-modal">
             <span className="modal-symbol">↪</span>
             <p className="eyebrow">LEAVE THE KINGDOM?</p>
             <h3>QUIT MATCH</h3>
@@ -834,10 +744,10 @@ export default function Home() {
             <p>Your current round, score, and strategy history will be cleared.</p>
             <button className="quit-confirm wide" onClick={quitMatch}>QUIT TO HOME</button>
             <button className="outline-button wide" onClick={() => setOverlay(null)}>KEEP PLAYING</button>
-          </Modal>
+          </DialogShell>
         )}
         {overlay === "bluff" && (
-          <Modal onClose={() => setOverlay(null)} className="bluff-modal">
+          <DialogShell onClose={() => setOverlay(null)} className="bluff-modal">
             <span className="modal-symbol">◑ ◒</span>
             <p className="eyebrow">TRUST YOUR INSTINCT</p>
             <h3>CALL THE BLUFF?</h3>
@@ -846,7 +756,7 @@ export default function Home() {
             <button className="gold-button wide" onClick={callBluff}>YES — CALL BLUFF</button>
             <button className="outline-button wide" onClick={() => setOverlay(null)}>NO — PICK A CARD</button>
             <small>A wrong accusation gives the round to the dealer.</small>
-          </Modal>
+          </DialogShell>
         )}
         {overlay === "strategy" && (
           <StrategyModal
@@ -865,71 +775,12 @@ export default function Home() {
   );
 }
 
-function TurnIndicator({ turn }: { turn: TurnInfo | null }) {
-  if (!turn) return null;
-  const isPlayer = turn.kind === "player";
-  return (
-    <div className={["turn-indicator", isPlayer ? "player-turn" : "opponent-turn"].join(" ")}>
-      <span className="turn-dot">●</span>
-      <span className="turn-text">
-        <b>{turn.title}</b>
-        <small>{turn.subtitle}</small>
-      </span>
-    </div>
-  );
-}
-
-function TurnTransition({ turn }: { turn: TurnInfo | null }) {
-  if (!turn) return null;
-  const isPlayer = turn.kind === "player";
-  return (
-    <div className={["turn-transition", isPlayer ? "player-turn" : "opponent-turn"].join(" ")} aria-hidden="true">
-      <div className="turn-transition-announce">
-        <span className="turn-transition-crown">♛</span>
-        <b className="turn-transition-title">{turn.title}</b>
-        <Ornament />
-        <small className="turn-transition-subtitle">{turn.subtitle}</small>
-      </div>
-    </div>
-  );
-}
-
-function SelectionHand({ index, cardCount, settled = false, faint = false, roaming = false }: {
-  index: number | null;
-  cardCount: number;
-  settled?: boolean;
-  faint?: boolean;
-  roaming?: boolean;
-}) {
-  if (index === null) return null;
-  const offset = index - (cardCount - 1) / 2;
-  return (
-    <Image
-      className={[
-        "selection-hand-img",
-        settled ? "settled" : "",
-        faint ? "faint" : "",
-        roaming ? "roaming" : "",
-      ].join(" ")}
-      src="/guesser-hand.png"
-      alt=""
-      width={980}
-      height={1792}
-      unoptimized
-      aria-hidden="true"
-      style={{
-        "--hand-x": `${offset * 76}px`,
-        "--roam-span": `${(cardCount - 1) * 38}px`,
-      } as React.CSSProperties}
-    />
-  );
-}
 
 function HomeScreen({
   mode, setMode, names, setNames, livesOn, setLivesOn, startMatch, openRules, openSettings,
 }: {
-  mode: Mode;
-  setMode: (mode: Mode) => void;
+  mode: OpponentKind;
+  setMode: (mode: OpponentKind) => void;
   names: [string, string];
   setNames: React.Dispatch<React.SetStateAction<[string, string]>>;
   livesOn: boolean;
@@ -992,208 +843,5 @@ function HomeScreen({
       <div className="level-route"><span>5 CARDS</span><i>→</i><span>3 CARDS</span><i>→</i><span>2 CARDS</span></div>
       <p className="round-note">10 rounds per level · one bluff each</p>
     </section>
-  );
-}
-
-function GameHeader({
-  level, round, config, names, scores, time, activePlayer, activeAction, onSettings, hearts,
-}: {
-  level: number;
-  round: number;
-  config: typeof LEVELS[number];
-  names: [string, string];
-  scores: [number, number];
-  time: number | null;
-  activePlayer: number | null;
-  activeAction: string | null;
-  onSettings: () => void;
-  hearts?: [number, number] | null;
-}) {
-  const showHearts = !!hearts;
-  return (
-    <header className="game-header">
-      <Logo compact />
-      <div className="round-medallion">
-        <small>LEVEL {level + 1}</small>
-        <strong>{String(round).padStart(2, "0")}</strong>
-      </div>
-      <div className="header-controls">
-        {time === null ? (
-          <button className="mini-settings" onClick={onSettings} aria-label="Settings">⚙</button>
-        ) : (
-          <div className="timer" style={{ "--timer": `${Math.max(0, time / config.seconds) * 360}deg` } as React.CSSProperties}>
-            <strong>{time}</strong><small>SEC</small>
-          </div>
-        )}
-      </div>
-      <div className="score-strip">
-        <span className={activePlayer === 0 ? "active-turn" : ""}>
-          {activePlayer === 0 && activeAction && <small>{activeAction}</small>}
-          <strong>{names[0]}</strong>
-          <b>{showHearts ? hearts![0] : scores[0]}</b>
-        </span>
-        <i>{config.cards} CARDS · {config.points}×</i>
-        <span className={activePlayer === 1 ? "active-turn" : ""}>
-          <b>{showHearts ? hearts![1] : scores[1]}</b>
-          <strong>{names[1]}</strong>
-          {activePlayer === 1 && activeAction && <small>{activeAction}</small>}
-        </span>
-      </div>
-      {showHearts && (
-        <div className="single-lives-bar">
-          <span className="lives-row">{heartsPips(hearts![0])}</span>
-          <em>LIVES</em>
-          <span className="lives-row">{heartsPips(hearts![1])}</span>
-        </div>
-      )}
-    </header>
-  );
-}
-
-/** Render 5 heart pips, n of them full. */
-function heartsPips(n: number) {
-  const count = Math.max(0, Math.min(5, Math.round(n)));
-  return Array.from({ length: 5 }, (_, i) => (
-    <span key={i} className={`life ${i < count ? "" : "lost"}`} aria-hidden="true">❤</span>
-  ));
-}
-
-function PowerDock({ bluffActive, onStrategy, onBluff }: {
-  bluffActive: boolean;
-  onStrategy: () => void;
-  onBluff: () => void;
-}) {
-  return (
-    <nav className="power-dock" aria-label="Powers">
-      <button onClick={onStrategy}><span>▱</span><b>STRATEGY</b></button>
-      <div />
-      <button onClick={onBluff} disabled={!bluffActive}><span>◑</span><b>CALL BLUFF</b></button>
-    </nav>
-  );
-}
-
-function Modal({ children, onClose, className = "" }: { children: React.ReactNode; onClose: () => void; className?: string }) {
-  return (
-    <div className="modal-backdrop" role="presentation">
-      <section className={["modal-card", className].join(" ")} role="dialog" aria-modal="true">
-        <button className="modal-close" onClick={onClose} aria-label="Close">×</button>
-        {children}
-      </section>
-    </div>
-  );
-}
-
-function RulesModal({ onClose }: { onClose: () => void }) {
-  return (
-    <Modal onClose={onClose}>
-      <span className="modal-symbol">♛</span>
-      <p className="eyebrow">KNOW THE COURT</p>
-      <h3>HOW TO PLAY</h3>
-      <Ornament />
-      <ol className="rules-list">
-        <li><b>Hide.</b> The Dealer secretly places the King—or uses their one Bluff.</li>
-        <li><b>Shuffle.</b> Five cards are dealt. Later levels fall to three, then two.</li>
-        <li><b>Guess.</b> Pick a card before the timer reaches zero.</li>
-        <li><b>Call it.</b> If you suspect no King was placed, call Bluff. Right wins; wrong loses.</li>
-        <li><b>Rule.</b> Play ten rounds per level. Higher levels award more points.</li>
-      </ol>
-      <button className="gold-button wide" onClick={onClose}>ENTER THE KINGDOM</button>
-    </Modal>
-  );
-}
-
-function SettingsModal({ sound, motion, setSound, setMotion, onClose }: {
-  sound: boolean;
-  motion: boolean;
-  setSound: (value: boolean) => void;
-  setMotion: (value: boolean) => void;
-  onClose: () => void;
-}) {
-  return (
-    <Modal onClose={onClose}>
-      <span className="modal-symbol">⚙</span>
-      <p className="eyebrow">YOUR EXPERIENCE</p>
-      <h3>SETTINGS</h3>
-      <Ornament />
-      <div className="settings-list">
-        <div className="settings-row"><span><label htmlFor="sound-setting">Sound &amp; music</label><small>Ambient theme, countdown and result cues</small></span><input id="sound-setting" type="checkbox" checked={sound} onChange={(event) => { if (event.target.checked) { preloadGameAudio(); playSoundCue("start"); } setSound(event.target.checked); }} /></div>
-        <div className="settings-row"><span><label htmlFor="motion-setting">Card animations</label><small>Dealer hand and transitions</small></span><input id="motion-setting" type="checkbox" checked={motion} onChange={(event) => setMotion(event.target.checked)} /></div>
-      </div>
-      <button className="gold-button wide" onClick={onClose}>SAVE SETTINGS</button>
-    </Modal>
-  );
-}
-
-function StrategyModal({ names, tab, setTab, entries, frequency, cardCount, levelName, onClose }: {
-  names: [string, string];
-  tab: 0 | 1;
-  setTab: (tab: 0 | 1) => void;
-  entries: HistoryItem[];
-  frequency: { counts: number[]; high: number; best: number | null };
-  cardCount: number;
-  levelName: string;
-  onClose: () => void;
-}) {
-  const recordedTurns = entries.slice(0, 5);
-  const constellationPoints = recordedTurns
-    .map((entry, index) => entry.pick ? `${((entry.pick - .5) / 5) * 100},${((index + .5) / 5) * 100}` : null)
-    .filter(Boolean)
-    .join(" ");
-
-  return (
-    <Modal onClose={onClose} className="strategy-modal">
-      <span className="modal-symbol">▱</span>
-      <p className="eyebrow">{levelName}</p>
-      <h3>STRATEGY</h3>
-      <div className="strategy-tabs">
-        <button className={tab === 0 ? "active" : ""} onClick={() => setTab(0)}>{names[0].toUpperCase()}</button>
-        <button className={tab === 1 ? "active" : ""} onClick={() => setTab(1)}>{names[1].toUpperCase()}</button>
-      </div>
-      <p className="strategy-help">Only cards picked while guessing are recorded. Hidden King positions are never included.</p>
-      <div className="strategy-map">
-        <div className="strategy-round-labels">
-          {Array.from({ length: 5 }, (_, index) => <b key={index}>ROUND {index + 1}</b>)}
-        </div>
-        <div className="strategy-card-field">
-          {constellationPoints && (
-            <svg className="strategy-constellation" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-              <polyline points={constellationPoints} />
-            </svg>
-          )}
-          <div className="strategy-card-grid">
-            {Array.from({ length: 5 }, (_, row) =>
-              Array.from({ length: 5 }, (_, column) => {
-                const cardNumber = column + 1;
-                const entry = recordedTurns[row];
-                const selected = entry?.pick === cardNumber;
-                return (
-                  <div
-                    key={`${row}-${column}`}
-                    className={[
-                      "strategy-mini-card",
-                      selected ? "selected" : "",
-                      cardNumber > cardCount ? "unavailable" : "",
-                    ].join(" ")}
-                    title={entry ? `Game round ${entry.round}` : `Turn ${row + 1}`}
-                  >
-                    {selected && <span>{cardNumber}<small>✓</small></span>}
-                    {entry?.calledBluff && column === 2 && <span className="bluff-record">B<small>BLUFF</small></span>}
-                  </div>
-                );
-              }),
-            )}
-          </div>
-        </div>
-      </div>
-      <div className="pattern-result">
-        <small>PATTERN DETECTED</small>
-        {frequency.best ? (
-          <><b>CARD {frequency.best} PICKED MOST</b><span>{frequency.high} of {recordedTurns.filter((entry) => entry.pick).length} recorded guesses · {frequency.best === Math.ceil(cardCount / 2) ? "CENTER-FOCUSED" : frequency.best <= cardCount / 2 ? "LEFT-LEANING" : "RIGHT-LEANING"}</span></>
-        ) : (
-          <><b>NO PATTERN YET</b><span>Make a guess to begin recording.</span></>
-        )}
-      </div>
-      <button className="gold-button wide" onClick={onClose}>CLOSE</button>
-    </Modal>
   );
 }

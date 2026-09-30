@@ -4,7 +4,9 @@ import { useEffect, useState } from "react";
 import { LEVELS, levelConfig, RESULT_COPY, LEVEL_COUNT } from "@/lib/game/rules";
 import { RULESET_ROUNDS } from "@/lib/game/flow";
 import type useMultiplayer from "@/hooks/useMultiplayer";
-import { MpCard, MpEyebrow, MpFrame, MpLogo, MpModal, MpOrnament } from "./ui";
+import { PlayingCard } from "@/components/ui/PlayingCard";
+import { LifePips } from "@/features/game/components/GameHeader";
+import { MpEyebrow, MpFrame, MpLogo, MpModal, MpOrnament } from "./ui";
 
 type MP = ReturnType<typeof useMultiplayer>;
 
@@ -87,23 +89,17 @@ function LivesHeader({
   myName: string;
   theirName: string;
 }) {
-  const hearts = (n: number) =>
-    Array.from({ length: 5 }, (_, i) => (
-      <span key={i} className={`life ${i < n ? "" : "lost"}`} aria-hidden="true">
-        ❤
-      </span>
-    ));
   return (
     <div className="mp-lives-strip">
       <span className="mp-lives-side">
         <em>{myName}</em>
-        <span className="lives-row">{hearts(myLives)}</span>
+        <span className="lives-row"><LifePips filled={myLives} /></span>
       </span>
       <span className="mp-lives-vs">
         <em>LIVES</em>
       </span>
       <span className="mp-lives-side right">
-        <span className="lives-row">{hearts(theirLives)}</span>
+        <span className="lives-row"><LifePips filled={theirLives} /></span>
         <em>{theirName}</em>
       </span>
     </div>
@@ -215,7 +211,7 @@ function HideStage({ mp }: { mp: MP }) {
       </div>
       <div className="cards-row dealer-choice">
         {Array.from({ length: cfg.cards }, (_, i) => (
-          <MpCard
+          <PlayingCard
             key={i}
             index={i}
             chosen={!isBluff && kingIndex === i}
@@ -312,7 +308,7 @@ function GuessStage({ mp }: { mp: MP }) {
       </div>
       <div className="cards-row">
         {Array.from({ length: cfg.cards }, (_, i) => (
-          <MpCard key={i} index={i} chosen={picked === i} disabled={done} onClick={() => pick(i)} />
+          <PlayingCard key={i} index={i} chosen={picked === i} disabled={done} onClick={() => pick(i)} />
         ))}
       </div>
       <button className="outline-button wide mp-wide" onClick={() => setBluffAsk(true)} disabled={done}>
@@ -382,7 +378,7 @@ function Reveal({ mp }: { mp: MP }) {
         <div className="reveal-hand-wrap">
           <div className="cards-row reveal-row mp-reveal">
             {Array.from({ length: cfg.cards }, (_, i) => (
-              <MpCard
+              <PlayingCard
                 key={i}
                 index={i}
                 faceUp

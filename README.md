@@ -6,7 +6,7 @@ A mobile-first strategy and bluff card game built with React, TypeScript, Vinext
 
 - Three escalating levels: 5 cards, 3 cards, then 2 cards
 - 10 rounds per level
-- Alternating Dealer and Guesser roles
+- Complete-turn hiding: each player hides five rounds in a row, then the table turns
 - Timed hiding and guessing: 20 seconds, 15 seconds, then 9 seconds
 - One bluff per player in each level
 - Local two-player and versus-bot modes

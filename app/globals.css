@@ -206,6 +206,15 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .level-route { margin-top: auto; display: flex; gap: 7px; color: #ae8846; font-size: 10px; letter-spacing: .09em; }
 .level-route i { color: #694719; font-style: normal; }
 .round-note { margin: 7px 0 0; color: #796844; font-size: 9px; letter-spacing: .08em; }
+/* Complete-turn block marker: tells the player which hide of their run this is,
+   so the 5-in-a-row structure is visible instead of invisible bookkeeping. */
+.block-note {
+  margin: 10px 0 0;
+  color: var(--gold-bright, #f2cf75);
+  font-size: 10px;
+  letter-spacing: .14em;
+  opacity: .82;
+}
 
 .game-header {
   position: relative;
@@ -490,6 +499,23 @@ button:disabled { cursor: not-allowed; opacity: .42; }
   animation: page-switch-in .48s cubic-bezier(.2,.78,.24,1) both;
 }
 .play-stage { display: flex; flex-direction: column; align-items: center; }
+/* --- Result screen: the one stage whose content is taller than the space ---
+   The result stage stacks title + card row + verdict + a primary action, and it
+   must coexist with the absolutely-positioned power dock. On a short viewport
+   that stack overflows a fixed-height, non-scrolling flex column, which pushed
+   NEXT ROUND below the fold and let the dock land on top of the verdict.
+
+   The fix is to let the stage scroll as a safety valve AND remove the dead
+   space the dock would occupy, rather than to pin the dock over live content.
+   `overflow-y: auto` only engages when the content genuinely cannot fit; at
+   normal heights the stage still reads as a single fixed composition. */
+.result-stage {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px));
+}
+.result-stage::-webkit-scrollbar { width: 0; height: 0; }
 .stage-title { position: relative; z-index: 7; width: 100%; text-align: center; }
 .stage-title .eyebrow, .center-stage .eyebrow, .modal-card .eyebrow { margin: 0 0 8px; color: #c2a261; font-size: 10px; font-weight: 700; letter-spacing: .15em; }
 .stage-title h2, .center-stage h2 {
@@ -665,6 +691,10 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 
 .shuffle-stage { isolation: isolate; }
 .shuffle-stage .cards-row { position: relative; z-index: 1; margin-top: 135px; }
+/* --shuffle-ms mirrors SHUFFLE_MS (pacing.ts) so the hand sweep, the held-card
+   release and the switch to the guess stage all finish on the same beat. The
+   real value is set inline from dealTimings(); this is only the fallback. */
+.shuffle-stage { --shuffle-ms: 1450ms; }
 .dealer-hand-rig {
   --deal-start: -152px;
   --deal-end: 152px;
@@ -676,7 +706,7 @@ button:disabled { cursor: not-allowed; opacity: .42; }
   height: 253px;
   transform-origin: top center;
   filter: drop-shadow(0 13px 12px rgba(0,0,0,.72));
-  animation: dealer-sweep 3s cubic-bezier(.22,.61,.36,1) both;
+  animation: dealer-sweep var(--shuffle-ms) cubic-bezier(.22,.61,.36,1) both;
   pointer-events: none;
   will-change: left, transform;
 }
@@ -702,7 +732,7 @@ button:disabled { cursor: not-allowed; opacity: .42; }
   background: #000 url("/card-back.png") center / 100% 100% no-repeat;
   box-shadow: inset 0 0 0 3px #080706, inset 0 0 0 4px #6d4917, 0 5px 12px rgba(0,0,0,.7);
   transform: rotate(7deg);
-  animation: held-card-release 3s ease both;
+  animation: held-card-release var(--shuffle-ms) ease both;
 }
 .held-card-mini::before, .held-card-mini::after {
   content: "";
@@ -722,6 +752,7 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .flying-deal-card {
   --slot-x: 0px;
   --flight-delay: .24s;
+  --flight-duration: .64s;
   position: absolute;
   left: 50%;
   top: 0;
@@ -731,7 +762,7 @@ button:disabled { cursor: not-allowed; opacity: .42; }
   background: #000 url("/card-back.png") center / 100% 100% no-repeat;
   filter: drop-shadow(0 9px 12px rgba(0,0,0,.75)) drop-shadow(0 0 5px rgba(211,151,43,.28));
   opacity: 0;
-  animation: deal-card-throw .64s cubic-bezier(.17,.72,.24,1) var(--flight-delay) both;
+  animation: deal-card-throw var(--flight-duration) cubic-bezier(.17,.72,.24,1) var(--flight-delay) both;
   will-change: transform, opacity;
 }
 .dealing .playing-card { opacity: 0; animation: card-land-reveal .16s ease-out var(--deal-delay,.88s) forwards; }
@@ -747,19 +778,24 @@ button:disabled { cursor: not-allowed; opacity: .42; }
   from { opacity: 0; transform: scale(.985); }
   to { opacity: 1; transform: scale(1); }
 }
+/* The hand makes ONE pass, left -> right, releasing a card per slot.
+   The 88% keyframe is where the hand REACHES the far side and is mirrored by
+   DEAL_HAND_ARRIVE_FRACTION (pacing.ts) — the card flights are derived from it
+   so each card rides the hand at exactly the hand's speed. If you move 88%,
+   update DEAL_HAND_ARRIVE_FRACTION to match. */
 @keyframes dealer-sweep {
-  0% { left: calc(50% + var(--deal-start)); transform: translate(-50%,-20px) rotate(-3deg); }
-  9% { transform: translate(-50%,-2px) rotate(-1deg); }
-  22% { transform: translate(-50%,3px) rotate(.5deg); }
-  38% { transform: translate(-50%,0) rotate(-.5deg); }
-  56% { transform: translate(-50%,3px) rotate(.7deg); }
-  70% { left: calc(50% + var(--deal-end)); transform: translate(-50%,1px) rotate(1.2deg); }
-  90% { left: calc(50% + var(--deal-end)); transform: translate(-50%,2px) rotate(1.5deg); }
-  100% { left: calc(50% + var(--deal-end)); transform: translate(-50%,-15px) rotate(3deg); }
+  0% { left: calc(50% + var(--deal-start)); transform: translate(-50%,-16px) rotate(-3deg); }
+  12% { transform: translate(-50%,-1px) rotate(-1deg); }
+  30% { transform: translate(-50%,2px) rotate(.5deg); }
+  50% { transform: translate(-50%,0) rotate(-.4deg); }
+  70% { transform: translate(-50%,2px) rotate(.5deg); }
+  88% { left: calc(50% + var(--deal-end)); transform: translate(-50%,1px) rotate(1.1deg); }
+  96% { left: calc(50% + var(--deal-end)); transform: translate(-50%,2px) rotate(1.3deg); }
+  100% { left: calc(50% + var(--deal-end)); transform: translate(-50%,-10px) rotate(2.2deg); }
 }
 @keyframes held-card-release {
-  0%,84% { opacity:1; transform:translate(0,0) rotate(6deg) scale(1); }
-  93% { opacity:.8; transform:translate(-4px,10px) rotate(2deg) scale(.93); }
+  0%,90% { opacity:1; transform:translate(0,0) rotate(6deg) scale(1); }
+  96% { opacity:.8; transform:translate(-4px,10px) rotate(2deg) scale(.93); }
   100% { opacity:0; transform:translate(-7px,22px) rotate(0) scale(.88); }
 }
 
@@ -1076,6 +1112,39 @@ button:disabled { cursor: not-allowed; opacity: .42; }
   .turn-text b { font-size: 11px; }
   .turn-text small { font-size: 8px; }
   .turn-transition-title { font-size: 28px; }
+
+  /* --- Result composition, tier 1 (short) -------------------------------
+     Reclaim vertical space by tightening the gaps that do not carry meaning,
+     in the order they appear. The title stays dominant and the cards stay
+     legible; only the air around them compresses. */
+  .result-stage { padding: 16px 20px calc(88px + env(safe-area-inset-bottom, 0px)); }
+  .result-stage .cards-row { margin-top: 30px; }
+  .result-stage .round-verdict { margin-top: 28px; }
+  .result-stage .result-next { margin-top: 14px; }
+}
+
+/* --- Result composition, tier 2 (very short: e.g. 320x568) -------------
+   At this height the four-part stack genuinely has no room to breathe, so the
+   decorative spacing all but disappears and the cards step down one size. The
+   stage is allowed to scroll as the final safety valve, but with these values
+   the content fits without needing to. */
+@media (max-height: 640px) {
+  .result-stage { padding: 10px 16px calc(80px + env(safe-area-inset-bottom, 0px)); }
+  .result-stage .stage-title .eyebrow { margin-bottom: 4px; }
+  .result-stage .stage-title h2 {
+    font-size: clamp(24px, 8vw, 34px);
+    line-height: 1.04;
+  }
+  .result-stage .stage-title p:last-child { margin-top: 5px; font-size: 12px; }
+  .result-stage .ornament { height: 12px; }
+  .result-stage .cards-row { margin-top: 16px; }
+  .result-stage .cards-row .playing-card { flex-basis: 54px; width: 54px; }
+  .result-stage .round-verdict {
+    margin-top: 16px;
+    padding: 9px 12px;
+    font-size: 10px;
+  }
+  .result-stage .result-next { margin-top: 10px; min-height: 42px; }
 }
 
 /* ===========================================================================
