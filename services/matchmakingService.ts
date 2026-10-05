@@ -316,11 +316,18 @@ export async function readMyReadyMatch(
   const database = db();
   try {
     const mine = await findMyPair(database, uid);
-    if (mine && mine.entry.roomCode) {
-      const entry = mine.entry;
-      const peer = entry.members?.find((m) => m !== uid);
-      if (peer) return { roomCode: entry.roomCode, peer };
-    }
+    if (!mine) return null;
+    // Bind the looked-up values to locals before testing them. Reading
+    // `entry.roomCode` after checking `mine.entry.roomCode` loses the narrowing
+    // (they are the same property, but only one is narrowed), which is how this
+    // returned a possibly-undefined roomCode.
+    const { roomCode, members } = mine.entry;
+    const peer = members?.find((m) => m !== uid);
+    // No roomCode yet means the host has claimed the pair but not created the
+    // room. Returning null makes the caller keep polling instead of joining a
+    // room literally named "undefined".
+    if (!roomCode || !peer) return null;
+    return { roomCode, peer };
   } catch {
     /* ignore */
   }
