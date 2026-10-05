@@ -209,11 +209,11 @@ Launch
 
 | Section | Contents |
 | --- | --- |
-| **Identity** | Editable display name, avatar (later), member-since |
+| **Identity** | Editable display name (sourced from the account — see B4), avatar (later), member-since |
 | **Sign-in methods** | Which providers are linked; link an additional one; unlink (blocked if it is the last one) |
 | **Wallet** | **Placeholder only.** Rendered as "coming soon" until item 4 defines currency |
 | **Stats** | Placeholder — not defined yet |
-| **Danger zone** | Sign out; delete account (with typed confirmation) |
+| **Danger zone** | Sign out; delete account (soft delete + typed confirmation, see §5.4) |
 
 ### 5.2 Data model
 
@@ -222,10 +222,13 @@ here, because item 4 is unspecified:
 
 ```jsonc
 users/{uid}: {
-  displayName: string,          // mirrors into room player entries
+  displayName: string,          // mirrors into room player entries (see B4)
   createdAt:   number,          // ms epoch
   updatedAt:   number,
   providers:   ["password", "google.com", "apple.com"],
+  emailVerified: boolean,       // mirrors the Firebase user record (§3.6)
+  // --- soft delete (§5.4) ---
+  deletedAt:   number | null,   // null while active
   // currency / stats intentionally NOT modelled yet — see MOM item 4
 }
 ```
@@ -238,9 +241,35 @@ Account page
   ├─ Link another provider ──→ linkWithPopup → users/{uid}.providers
   ├─ Unlink (blocked if last) ──→ unlink
   ├─ Sign out ──→ back to GUEST (new anonymous uid) — see §6
-  └─ Delete account ──→ typed confirm → users/{uid} removed
+  └─ Delete account ──→ typed confirm → users/{uid}.deletedAt = now
                         + secrets/{uid} purged from live rooms
 ```
+
+### 5.4 Account deletion — soft delete (confirmed)
+
+Deletion is **soft**: the account is marked and purged only after a grace period,
+so an accidental deletion is recoverable.
+
+- Trigger sets `users/{uid}.deletedAt`. The account is treated as inactive
+  immediately (signed out, hidden from the UI).
+- A purge job removes `users/{uid}` and associated data **after the grace
+  period**. Because no scheduled server exists yet, the purge is listed as a
+  future Cloud Function; until then the marker is written and purge is manual.
+- **Open sub-question:** grace period length. Needs a value before S4.
+- **Note:** purging cannot erase `secrets/{uid}` written into rooms the player
+  has already left; those are scoped to their own `uid` and become unreachable
+  once the account is gone. This is acceptable but should be understood.
+
+### 5.5 Cross-device currency (confirmed)
+
+The account **is** the single source of truth for currency across devices.
+
+- Implication: the wallet must live under `users/{uid}` (or a server-authoritative
+  equivalent), never in device-local storage.
+- Implication: signing in on a second device must reflect the same balance.
+- **This does not authorise designing the currency rules.** As stated in §8, a
+  client-writable balance is trivially cheatable and needs server authority.
+  Item 4 must specify that first.
 
 ---
 
@@ -254,7 +283,7 @@ implementation.**
 | B1 | `ensureSignedIn()` gains a "restore permanent session if one exists, else anonymous" branch | Touches the multiplayer entry path |
 | B2 | Sign-out returns the player to a **new guest identity**, not their old one | A signed-out account cannot be resumed as a guest |
 | B3 | Home screen gains the "Sign in" affordance | UI change on the existing entry screen |
-| B4 | Display name may be sourced from the account rather than the per-session field | Affects room `players/{uid}.name` |
+| B4 | Display name is sourced from the account rather than the per-session field | ⚠️ **APPROVED** — account name **replaces** the home-screen per-session name. Affects room `players/{uid}.name` |
 | B5 | New `users/{uid}` node + rules | New RTDB surface (rules diff in §8) |
 
 ---
@@ -307,16 +336,18 @@ Notes:
 - ✅ Apple sign-in scope — **all platforms**, not iOS-only (§3.5)
 - ✅ Email verification — **required** (§3.6)
 - ✅ Verification gate — unverified **may play + set display name, may not hold currency** (§3.6)
+- ✅ Display name (B4) — account name **replaces** the home-screen per-session name
+- ✅ Account deletion — **soft delete** with a grace period (§5.4)
+- ✅ Currency source of truth — **the account**, across all devices (§5.5)
 
 **Still open:**
 
-1. **Display name** — should the account name replace the per-session name
-   players type on the home screen (change B4)?
-2. **Account deletion** — hard delete, or soft-delete with a grace period?
-3. **Cross-device currency** — confirm the account is the single source of truth
-   for it.
-4. **Which Firebase project do local dev and production each point at?** (§3.4)
-5. **S0 project name/ID** — needed to prep the env + config wiring.
+1. **Soft-delete grace period length** — needs a value before S4 (§5.4).
+2. **Which Firebase project do local dev and production each point at?** (§3.4)
+3. **S0 project name/ID** — needed to prep the env + config wiring.
+
+All previously blocking questions are answered. S0 and S1 are now unblocked
+pending a project to point at.
 
 ---
 
