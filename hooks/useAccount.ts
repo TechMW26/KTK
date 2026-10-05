@@ -35,40 +35,65 @@ export function useAccount(): AccountState {
   const [redirectError, setRedirectError] = useState<string | null>(null);
 
   useEffect(() => {
-    // A redirect sign-in navigates away and comes back, so the result is
-    // collected here on load rather than in the dialog that started it. This is
-    // a no-op (resolves null) on a normal page load.
+    let cancelled = false;
+    let unsubscribe: (() => void) | undefined;
+
+    /**
+     * Collect any pending redirect result BEFORE subscribing to auth state.
+     *
+     * This ordering is the whole point. `observeAuth` fires synchronously on
+     * subscribe with `auth.currentUser`, which immediately after a redirect is
+     * still the pre-redirect anonymous guest. Racing the two meant the guest
+     * state won and the completed Google sign-in was discarded, so the player
+     * landed back on the start screen signed out.
+     *
+     * Awaiting first also avoids the harsher failure: if anything calls
+     * `ensureSignedIn()` while an OAuth redirect is still pending, Firebase
+     * cancels the pending redirect entirely and the result is lost for good.
+     */
     void (async () => {
       try {
         const result = await completeRedirectSignIn();
-        if (result && !result.ok) setRedirectError(result.reason);
+        if (!cancelled && result && !result.ok) setRedirectError(result.reason);
       } catch {
         // Never let result collection break the app's boot.
       }
+      if (cancelled) return;
+
+      unsubscribe = observeAuth((next) => {
+        setUser(next);
+        setLoading(false);
+        if (!next) {
+          setProfile(null);
+          return;
+        }
+        // Identity fields (verified state, linked providers) can change outside
+        // our UI, so always reconcile them against the live Firebase user rather
+        // than trusting whatever was first written.
+        void (async () => {
+          try {
+            const existing = await ensureProfile(next);
+            setProfile(existing ? await syncIdentityFields(next) : null);
+          } catch {
+            // A rules rejection or offline read must not break the game.
+            setProfile(null);
+          }
+        })();
+      });
     })();
 
-    // observeAuth fires immediately with the current user (or null), then again
-    // on every sign-in/out and token refresh.
-    return observeAuth((next) => {
-      setUser(next);
-      setLoading(false);
-      if (!next) {
-        setProfile(null);
-        return;
-      }
-      // Identity fields (verified state, linked providers) can change outside
-      // our UI, so always reconcile them against the live Firebase user rather
-      // than trusting whatever was first written.
-      void (async () => {
-        try {
-          const existing = await ensureProfile(next);
-          setProfile(existing ? await syncIdentityFields(next) : null);
-        } catch {
-          // A rules rejection or offline read must not break the game.
-          setProfile(null);
-        }
-      })();
-    });
+    // Safety net: `observeAuth` normally fires straight away, but if redirect
+    // collection threw before subscribing, the app must not sit on "loading"
+    // forever with no way forward.
+    const loadingGuard = window.setTimeout(() => {
+      if (!cancelled) setLoading(false);
+    }, 5000);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(loadingGuard);
+      unsubscribe?.();
+    };
   }, []);
 
   const refresh = useCallback(async () => {
