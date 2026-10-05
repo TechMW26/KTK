@@ -1011,6 +1011,19 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .account-identity { margin: 0 0 6px; color: var(--gold-bright); font-size: 15px; letter-spacing: .04em; word-break: break-word; }
 .account-error { margin: 10px 0 0; color: #e58265; font-size: 11px; line-height: 1.45; }
 .account-notice { margin: 10px 0 0; color: #d4ba79; font-size: 11px; line-height: 1.45; }
+/* Consequence the player is about to accept — deliberately more prominent than
+   .account-notice, because it describes data they will lose. */
+.account-warning {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid #7a4118;
+  border-radius: 3px;
+  background: rgba(92, 41, 12, .22);
+  color: #e0b184;
+  font-size: 11px;
+  line-height: 1.5;
+  text-align: left;
+}
 .account-link {
   margin-top: 2px;
   padding: 6px;

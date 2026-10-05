@@ -82,11 +82,23 @@ an upgrade path rather than a fresh sign-in.
 | Guest → Google | `linkWithPopup` / native equivalent | ✅ yes |
 | Guest → Apple | `linkWithCredential(OAuthProvider(...))` | ✅ yes |
 
-**Collision case:** if the chosen credential already belongs to another account,
-linking fails with `auth/credential-already-in-use`. The flow must then offer:
-*"This Google account already has a profile — sign in to it? Your current guest
-progress stays on this device."* **We must not silently merge two accounts**; a
-merge is a destructive, ambiguous operation and is explicitly out of scope.
+**Collision case (implemented):** if the chosen credential already belongs to
+another account, linking fails with `auth/credential-already-in-use` (or
+`auth/email-already-in-use` for the password path). The dialog then switches to a
+dedicated **collision** view offering to sign in to the existing account.
+**We must not silently merge two accounts**; a merge is destructive and ambiguous
+and is explicitly out of scope.
+
+> **Corrected copy.** An earlier draft told the player *"your guest progress
+> stays on this device"*, which is wrong and was misleading. Signing in to the
+> existing account moves the player to a **different uid**, so the guest identity
+> and anything stored against it are abandoned. The view now says so plainly:
+> *"Signing in will switch you to that account. Your guest progress on this
+> device won't carry over."* The two paths are deliberately distinct —
+> `startGoogleSignIn` links and preserves the uid, `signInToExisting` replaces it.
+
+The email collision has no shortcut: only the player knows the existing password,
+so the collision view routes them to the normal email form to sign in with it.
 
 ### 3.3 Session persistence
 
@@ -391,7 +403,7 @@ pending a project to point at.
 | **S2** | Login page: email/password + Google (link-only, no replace) + verification gate (§3.6) | S1, §9.1 answered |
 | **S3** | Apple sign-in on all platforms + Capacitor native paths | S2, Apple credentials |
 | **S4** | Account page: identity + sign-in methods + sign-out/delete | S2 |
-| **S5** | Collision handling (§3.2) | S2 |
+| **S5** | ✅ **Done** — collision handling (§3.2) | S2 |
 | **S6** | Wallet placeholder, to be filled by item 4 | Item 4 specified |
 
 S0 is now the true starting point: nothing can be tested until a project exists

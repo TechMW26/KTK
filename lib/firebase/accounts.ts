@@ -171,6 +171,43 @@ export async function startGoogleSignIn(): Promise<AuthOutcome> {
 }
 
 /**
+ * Sign in to an EXISTING account, abandoning the current guest identity.
+ *
+ * This is the collision escape hatch: the player tried to link a credential that
+ * already belongs to a profile, so linking is impossible. The only honest option
+ * is to sign in to that profile — which REPLACES the guest uid, and therefore
+ * discards anything stored against it.
+ *
+ * That is why this function is separate from `startGoogleSignIn` and is only
+ * ever reached by an explicit player choice. It deliberately does NOT merge the
+ * two accounts: merging would need to prove ownership of both and decide whose
+ * data wins, and silently fusing them is exactly what the design forbids
+ * (docs/ACCOUNTS_DESIGN.md §3.2).
+ */
+export async function signInToExisting(provider: "google" | "apple"): Promise<AuthOutcome> {
+  const auth = authOrFail();
+  if ("ok" in auth) return auth;
+
+  try {
+    const oauth =
+      provider === "google"
+        ? new GoogleAuthProvider()
+        : (() => {
+            const p = new OAuthProvider("apple.com");
+            p.addScope("email");
+            p.addScope("name");
+            return p;
+          })();
+    // signInWithRedirect, NOT linkWithRedirect: the whole point is to move to
+    // the existing account's uid rather than attach a credential to this one.
+    await signInWithRedirect(auth, oauth);
+    return { ok: true, user: auth.currentUser as User, profile: null };
+  } catch (error) {
+    return { ok: false, reason: reasonFor(codeOf(error)) };
+  }
+}
+
+/**
  * Collect the result of a redirect sign-in after the page reloads.
  *
  * Safe to call on every load: it resolves to null when there is no pending

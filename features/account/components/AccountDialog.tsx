@@ -10,6 +10,7 @@ import {
   startGoogleSignIn,
   startAppleSignIn,
   signInWithEmail,
+  signInToExisting,
   requestPasswordReset,
   resendVerificationEmail,
   type AuthFailureReason,
@@ -28,7 +29,13 @@ import { mayHoldCurrency, type UserProfile } from "@/lib/firebase/profile";
  * why this component never calls a raw Firebase sign-in itself.
  */
 
-type View = "options" | "email" | "reset" | "verify";
+type View = "options" | "email" | "reset" | "verify" | "collision";
+
+/**
+ * Which provider triggered a collision, so the escape hatch can offer to sign in
+ * with the same one. Null when no collision is pending.
+ */
+type CollisionProvider = "google" | "apple" | "email";
 
 /** Player-facing copy for each failure. Raw Firebase codes never reach the UI. */
 const MESSAGES: Record<AuthFailureReason, string> = {
@@ -40,14 +47,20 @@ const MESSAGES: Record<AuthFailureReason, string> = {
   "weak-password": "Use at least 8 characters.",
   "too-many-requests": "Too many attempts. Try again in a few minutes.",
   network: "No connection — check your network.",
-  "credential-in-use":
-    "That account already exists. Sign in to it — your guest progress stays on this device.",
+  // Short form: the collision view carries the full explanation, because this
+  // message is the thing that tells the player their guest data is at stake.
+  "credential-in-use": "That account already exists.",
   "popup-cancelled": "",
   "popup-blocked":
     "Your browser blocked the sign-in window. Allow pop-ups for this site and try again.",
   timeout: "Sign-in took too long. Please try again.",
   unknown: "Something went wrong. Please try again.",
 };
+
+/** Reasons that mean "this credential belongs to an account we can sign into". */
+function isCollision(reason: AuthFailureReason | undefined): boolean {
+  return reason === "credential-in-use" || reason === "email-in-use";
+}
 
 export function AccountDialog({
   user,
@@ -69,6 +82,8 @@ export function AccountDialog({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  /** Set when a collision was detected, so the view can name the provider. */
+  const [collision, setCollision] = useState<CollisionProvider | null>(null);
 
   // A redirect failure arrives as a reason code. Derive the message instead of
   // copying it into state, so no extra render is triggered and the two sources
@@ -86,11 +101,14 @@ export function AccountDialog({
    */
   const run = async (
     action: () => Promise<{ ok: boolean } & Record<string, unknown>>,
+    options: { collisionProvider?: CollisionProvider } = {},
   ): Promise<boolean> => {
     if (busy) return false;
     setBusy(true);
     setError(null);
     setNotice(null);
+    setCollision(null);
+    setView((current) => (current === "collision" ? "options" : current));
     try {
       const result = await action();
       if (result.ok) {
@@ -99,6 +117,15 @@ export function AccountDialog({
         return true;
       }
       const reason = (result as { reason?: AuthFailureReason }).reason ?? "unknown";
+
+      // A collision is not a dead end: offer the sign-in escape hatch rather
+      // than a message the player has no way to act on.
+      if (isCollision(reason) && options.collisionProvider) {
+        setCollision(options.collisionProvider);
+        setView("collision");
+        return false;
+      }
+
       const message = MESSAGES[reason];
       // An empty message means the player backed out of provider UI: say nothing.
       if (message) setError(message);
@@ -113,17 +140,36 @@ export function AccountDialog({
     }
   };
 
-  const submitEmail = async () => {
+  const submitEmail = async (
+    options: { collisionProvider?: CollisionProvider } = {},
+  ) => {
     if (!email.trim() || !password) {
       setError("Enter your email and a password.");
       return;
     }
-    const ok = await run(() =>
-      signedIn
-        ? signInWithEmail(email.trim(), password)
-        : upgradeWithEmail(email.trim(), password),
+    const ok = await run(
+      () =>
+        signedIn
+          ? signInWithEmail(email.trim(), password)
+          : upgradeWithEmail(email.trim(), password),
+      options,
     );
     if (ok && !signedIn) setView("verify");
+  };
+
+  /**
+   * Sign in to the account that blocked a link attempt, abandoning this guest.
+   *
+   * Email has no shortcut: only the player knows the existing password, so the
+   * form is reused. The provider paths have nothing to collect, so they redirect
+   * straight away.
+   */
+  const signInToColliding = async () => {
+    if (collision === "email") {
+      setView("email");
+      return;
+    }
+    await run(() => signInToExisting(collision === "apple" ? "apple" : "google"));
   };
 
   return (
@@ -151,14 +197,18 @@ export function AccountDialog({
           <button
             className="outline-button wide"
             disabled={busy}
-            onClick={() => void run(() => startGoogleSignIn())}
+            onClick={() =>
+              void run(() => startGoogleSignIn(), { collisionProvider: "google" })
+            }
           >
             CONTINUE WITH GOOGLE
           </button>
           <button
             className="outline-button wide"
             disabled={busy}
-            onClick={() => void run(() => startAppleSignIn())}
+            onClick={() =>
+              void run(() => startAppleSignIn(), { collisionProvider: "apple" })
+            }
           >
             CONTINUE WITH APPLE
           </button>
@@ -187,7 +237,11 @@ export function AccountDialog({
             value={password}
             onChange={(event) => setPassword(event.target.value)}
           />
-          <button className="gold-button wide" disabled={busy} onClick={() => void submitEmail()}>
+          <button
+            className="gold-button wide"
+            disabled={busy}
+            onClick={() => void submitEmail({ collisionProvider: "email" })}
+          >
             {busy ? "WORKING…" : signedIn ? "SIGN IN" : "CREATE ACCOUNT"}
           </button>
           <button className="account-link" disabled={busy} onClick={() => setView("reset")}>
@@ -195,6 +249,27 @@ export function AccountDialog({
           </button>
           <button className="account-link" disabled={busy} onClick={() => setView("options")}>
             Back
+          </button>
+        </div>
+      ) : view === "collision" ? (
+        <div className="account-actions">
+          <p className="account-copy">
+            {collision === "email"
+              ? "That email already has a profile."
+              : "That account already has a profile."}
+          </p>
+          {/* The honest consequence: signing in moves the player to the existing
+              account's uid, so this device's guest data does not come along.
+              Merging the two is deliberately not offered. */}
+          <p className="account-warning">
+            Signing in will switch you to that account. Your guest progress on
+            this device won&apos;t carry over.
+          </p>
+          <button className="gold-button wide" disabled={busy} onClick={() => void signInToColliding()}>
+            {busy ? "WORKING…" : "SIGN IN TO THAT ACCOUNT"}
+          </button>
+          <button className="account-link" disabled={busy} onClick={() => setView("options")}>
+            Not now — keep playing as guest
           </button>
         </div>
       ) : view === "reset" ? (
