@@ -1,17 +1,7 @@
 {
-  "//": "PRODUCTION-ish RTDB rules. Multiplayer state lives under /rooms.",
-  "//note1": "Secret-hiding (dealer King) and room-authoring are the ONLY things rules can purely enforce.",
-  "//note2": "Authoritative seat assignment, room status transitions, score updates, turn arbitration",
-  "//note3": "and round timeouts are NOT fully expressible/trustable with client RTDB writes alone.",
-  "//note4": "For a hardened deployment move create/join/advance into Firebase Cloud Functions",
-  "//note5": "and call them from the client (see docs/FIREBASE_MULTIPLAYER.md). Use database.dev.rules.json",
-  "//note6": "only for the local emulator / trusted testing.",
   "rules": {
     ".read": false,
     ".write": false,
-    ".info": {
-      "connected": { ".read": true }
-    },
     "rooms": {
       "$code": {
         ".read": "auth != null",
@@ -44,6 +34,27 @@
           ".read": "auth != null && root.child('rooms').child($code).child('players').child(auth.uid).exists()",
           ".write": "auth != null && root.child('rooms').child($code).child('players').child(auth.uid).exists()"
         }
+      }
+    },
+    "users": {
+      ".read": false,
+      ".write": false,
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && auth.uid === $uid",
+        "displayName": {
+          ".validate": "newData.isString() && newData.val().length <= 24"
+        },
+        "createdAt": { ".validate": "newData.isNumber()" },
+        "updatedAt": { ".validate": "newData.isNumber()" },
+        "emailVerified": { ".validate": "newData.isBoolean()" },
+        "deletedAt": {
+          ".validate": "newData.isNumber() || newData.val() === null"
+        },
+        "providers": {
+          ".validate": "newData.hasChildren()"
+        },
+        "$other": { ".validate": false }
       }
     },
     "matchmaking": {

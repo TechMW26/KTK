@@ -80,18 +80,40 @@ NEXT_PUBLIC_FIREBASE_EMULATOR_PORT=9000
 - `firebase/database.rules.json` — deploy for production (deploy via `firebase deploy --only database`).
 - `firebase/database.dev.rules.json` — use **only** behind the emulator when play‑testing.
 
+> **Deployability note.** The rules file must contain **only** the `rules` object.
+> Earlier revisions carried `"//"` comment keys and a top-level `.info` node;
+> both are rejected by the rules compiler (`Expected 'rules' property`,
+> `String can't contain "."`), which meant the file **could not deploy at all**.
+> Comments now live here in the docs instead. Do not reintroduce comment keys.
+>
+> **Also important:** the root `".read": false, ".write": false` pair is what
+> closes the database. If the database is ever seen accepting unauthenticated
+> reads/writes, check that these two lines are actually present in the deployed
+> revision — a missing root deny leaves RTDB on Firebase's default wide-open
+> ruleset, which exposes `secrets/{uid}` (the dealer's hidden King) publicly.
+
 Highlights that **are** enforceable pure‑client:
 
 - Nobody can read another player's **`secrets/{uid}`** node (dealer's hidden King).
 - A player can write only their **own** `players/{uid}` presence entry.
 - Only room members can read/write the `game` node.
-- `.info/connected` readable for presence.
+- A signed-in user can read/write only their **own** `users/{uid}` profile node.
+
+Note: presence uses the SDK's own connection tracking, so the rules no longer
+declare a `.info` node (it is a read-only system path, not a declarable rule).
 
 ## 5. Authentication setup
 
 Anonymous sign‑in is used so players need no account, but every client still
 carries a stable `uid` that rules use to scope access. The hook calls
 `ensureSignedIn()` before creating/joining a room.
+
+Accounts are **additive** — anonymous play remains the default entry.
+`lib/firebase/accounts.ts` upgrades a guest to email/password, Google or Apple
+using `linkWithCredential`, which **preserves the anonymous uid**, so existing
+`secrets/{uid}` and `players/{uid}` references stay valid. Never replace a guest
+session with a fresh `signIn*` call; that would orphan the player's data.
+See `docs/ACCOUNTS_DESIGN.md` for the full design.
 
 ## 6. How the game state is shared
 
@@ -202,8 +224,16 @@ the Firebase CLI / Vercel credentials, which only you can provide.
 
 1. Open https://console.firebase.google.com/project/killtheking-94396.
 2. **Authentication → Sign‑in method → enable Anonymous** (required for every room).
-3. If not present, **Realtime Database** in native mode (pick the region matching
+3. Enable **Email/Password** and **Google** to support account upgrades
+   (see `docs/ACCOUNTS_DESIGN.md`). Apple needs credentials before it can be
+   enabled; its code path exists but is unverified until then.
+4. If not present, **Realtime Database** in native mode (pick the region matching
    `NEXT_PUBLIC_FIREBASE_DATABASE_URL`; current = asia-southeast1).
+
+> **Check the deployed rules before trusting anything.** If the console's Rules tab
+> shows `{"rules": {".read": true, ".write": true}}`, the database is on Firebase's
+> default wide-open ruleset and is publicly readable/writable — including
+> `secrets/{uid}`. Deploy `firebase/database.rules.json` to close it.
 
 **Deploy rules (one command after installing CLI):**
 
@@ -212,6 +242,12 @@ npm i -g firebase-tools        # or: npx firebase-tools
 firebase login                 # log in with the Firebase account
 firebase deploy --only database
 ```
+
+> **Clock requirement.** If `firebase login` appears to succeed but every command
+> then reports `Your credentials are no longer valid`, check the system clock.
+> Google issues OAuth tokens valid for one real hour; a machine whose clock is
+> skewed (e.g. days ahead) will treat a freshly issued token as expired and can
+> never authenticate. Sync the OS clock and log in again.
 
 `firebase.json` (rules → `firebase/database.rules.json`) and `.firebaserc`
 (project `killtheking-94396`) are already configured, so no flags are needed.

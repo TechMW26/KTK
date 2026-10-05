@@ -1,12 +1,7 @@
 {
-  "//": "DEV/EMULATOR rules. Open-ish so the two-window playtest works without Cloud Functions.",
-  "//": "Never deploy to production as-is.",
   "rules": {
     ".read": false,
     ".write": false,
-    ".info": {
-      "connected": { ".read": true }
-    },
     "rooms": {
       "$code": {
         ".read": "auth != null",
@@ -19,6 +14,13 @@
             ".write": "auth != null"
           }
         }
+      }
+    },
+    "users": {
+      ".read": "auth != null",
+      "$uid": {
+        ".read": "auth != null",
+        ".write": "auth != null"
       }
     },
     "matchmaking": {
