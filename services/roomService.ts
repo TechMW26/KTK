@@ -162,7 +162,10 @@ export async function joinRoom(codeRaw: string, uid: string, name: string): Prom
     const current = snap.val() as RoomData | null;
     const verdict = classifyRoom(current);
     if (verdict !== "OK") {
-      return { ok: false, reason: verdict === "OK" ? "FULL" : verdict };
+      // classifyRoom already distinguishes FULL from the other refusals, so the
+      // verdict is returned as-is. (This previously tested `verdict === "OK"`
+      // here, which can never be true inside the branch.)
+      return { ok: false, reason: verdict };
     }
     if (current!.players?.[uid]) {
       // Already a member (reconnect) - treat as success.

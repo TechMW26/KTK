@@ -168,18 +168,23 @@ export default function SearchOnline({
     };
 
     (async () => {
+      // Bind the signed-in uid to a const. `myUid` is a mutable closure variable,
+      // so its `string | null` type is not narrowed across the awaits below; the
+      // const keeps it `string` for every subsequent use.
+      let uid: string;
       try {
-        myUid = await ensureSignedIn();
+        uid = await ensureSignedIn();
+        myUid = uid;
       } catch {
         setState({ kind: "error", message: "Could not sign you in. Try again." });
         return;
       }
       if (cancelled) return;
-      await announceSearch(myUid, name);
+      await announceSearch(uid, name);
       // Heartbeat so this searcher never looks stale to other devices.
       heartbeat = window.setInterval(() => {
         if (!stoppedRef.current && !enteredRef.current && !cancelled) {
-          void pingSearch(myUid).catch(() => {});
+          void pingSearch(uid).catch(() => {});
         }
       }, 5000);
       await poll();
