@@ -715,4 +715,9 @@ a:focus-visible {
   .power-dock button {
     transition: none;
   }
+  /* The reveal flourish is decorative: drop it entirely rather than shortening
+     it, so the cards simply sit face-up. */
+  .reveal-row .playing-card.face-up {
+    animation: none;
+  }
 }

@@ -489,6 +489,15 @@ button:disabled { cursor: not-allowed; opacity: .42; }
   transform: none;
 }
 .guess-stage.opponent-turn .cards-row .playing-card:hover { transform: none; }
+/* The opponent's aimed / just-committed card must stay legible through the dim
+   `opponent-turn` treatment above: that block is MORE specific than the base
+   `.playing-card.chosen` rule, so without this the lift is cancelled and the gold
+   glow washed out exactly when the highlight needs to be seen. */
+.guess-stage.opponent-turn .cards-row .playing-card.chosen {
+  opacity: 1;
+  transform: translateY(-7px);
+  filter: drop-shadow(0 0 9px rgba(247,194,73,.8));
+}
 .guess-stage.opponent-turn .selection-hand-img { opacity: .42; filter: grayscale(.1) drop-shadow(0 8px 8px rgba(0,0,0,.5)); }
 
 .play-stage, .center-stage {
@@ -562,9 +571,22 @@ button:disabled { cursor: not-allowed; opacity: .42; }
   position: absolute;
   inset: 0;
   transform-style: preserve-3d;
-  transition: transform .65s cubic-bezier(.2,.8,.2,1);
+  transition: transform .65s cubic-bezier(.2,.8,.2,1) var(--flip-delay, 0s);
 }
 .playing-card.face-up .card-inner { transform: rotateY(180deg); }
+/* Reveal flourish: the cards do not snap over in lock-step. Each one leans back
+   a touch and settles, staggered by --flip-delay so the row reads as a hand
+   turning them over one at a time. Scoped to the reveal row so the dealer-hide
+   tiles and the deal choreography keep their existing timing. */
+.reveal-row .playing-card.face-up {
+  animation: card-reveal-settle .62s cubic-bezier(.22,.72,.2,1) both;
+  animation-delay: calc(var(--flip-delay, 0s) + .3s);
+}
+@keyframes card-reveal-settle {
+  0% { transform: translateY(0) scale(1); }
+  55% { transform: translateY(-6px) scale(1.035); }
+  100% { transform: translateY(0) scale(1); }
+}
 .card-back, .card-front {
   position: absolute;
   inset: 0;

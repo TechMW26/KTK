@@ -29,6 +29,8 @@ export interface PlayingCardProps {
   onHover?: (hovered: boolean) => void;
   /** Seconds to wait before this card lands during the deal. */
   dealDelay?: number;
+  /** Seconds to wait before this card flips over at the reveal. */
+  flipDelay?: number;
 }
 
 export function PlayingCard({
@@ -42,6 +44,7 @@ export function PlayingCard({
   onClick,
   onHover,
   dealDelay,
+  flipDelay,
 }: PlayingCardProps) {
   const className = [
     "playing-card",
@@ -68,9 +71,12 @@ export function PlayingCard({
       onFocus={() => onHover?.(true)}
       onBlur={() => onHover?.(false)}
       style={
-        dealDelay === undefined
+        dealDelay === undefined && flipDelay === undefined
           ? undefined
-          : ({ "--deal-delay": `${dealDelay}s` } as React.CSSProperties)
+          : ({
+              ...(dealDelay === undefined ? {} : { "--deal-delay": `${dealDelay}s` }),
+              ...(flipDelay === undefined ? {} : { "--flip-delay": `${flipDelay}s` }),
+            } as React.CSSProperties)
       }
       disabled={disabled}
       aria-label={label}

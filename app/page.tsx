@@ -73,6 +73,11 @@ export default function Home() {
   const [timeLeft, setTimeLeft] = useState<number>(COURTS[0].seconds);
   const [overlay, setOverlay] = useState<OpenDialog>(null);
   const [hoveredCard, setHoveredCard] = useState<number | null>(null);
+  /**
+   * Card the guesser has tapped once but not yet confirmed. The first tap aims
+   * (pointer + highlight), the second tap on the same card commits the pick.
+   */
+  const [targetCard, setTargetCard] = useState<number | null>(null);
   const [opponentActiveCard, setOpponentActiveCard] = useState<number | null>(null);
   const [strategyTab, setStrategyTab] = useState<0 | 1>(0);
   const [sound, setSound] = useState(true);
@@ -106,6 +111,7 @@ export default function Home() {
     setTimeLeft(COURTS[nextLevel].seconds);
     setOverlay(null);
     setHoveredCard(null);
+    setTargetCard(null);
     setOpponentActiveCard(null);
   };
 
@@ -173,6 +179,7 @@ export default function Home() {
       else playSoundCue("wrong");
     }
     setOverlay(null);
+    setTargetCard(null);
     // Local 2-Player 5-Lives: a found hidden King costs its DEALER one life.
     if (mode === "local" && livesOn) {
       const nextLives = applyLifeLoss(lives, outcome, dealer);
@@ -192,6 +199,20 @@ export default function Home() {
   const callBluff = () => {
     const outcome = resolveLocalRound({ isBluff, kingIndex: kingPosition, pick: null, calledBluff: true, dealer });
     finishRound(outcome.kind, outcome.winner, outcome.pick, outcome.calledBluff);
+  };
+
+  /**
+   * Two-step guess: the first tap on a card aims at it (pointer + highlight),
+   * the second tap on that same card commits through `chooseCard`. Tapping a
+   * different card simply moves the aim, so no accidental pick is possible.
+   */
+  const handleCardTap = (index: number) => {
+    if (phase !== "guess" || result) return;
+    if (targetCard !== index) {
+      setTargetCard(index);
+      return;
+    }
+    chooseCard(index);
   };
 
   const confirmDealerChoice = () => {
@@ -314,11 +335,18 @@ export default function Home() {
         resolveTimer = window.setTimeout(() => callBluff(), motion ? BOT_ACCUSE_MS : REDUCED.accuse);
       } else {
         const choice = decision.cardIndex ?? 0;
+        // Land the opponent's finger on the card first. `chooseCard` flips the
+        // phase to "result" and swaps this row out for the reveal, so if the
+        // highlight is applied in the same tick it is never painted: the aim
+        // has to hold independently of the commit.
         setOpponentActiveCard(choice);
+        const aimBeat = motion ? BOT_GUESS_REACH_MS : REDUCED.guessReach;
         resolveTimer = window.setTimeout(() => {
-          setOpponentActiveCard(null);
           chooseCard(choice);
-        }, motion ? BOT_GUESS_REACH_MS : REDUCED.guessReach);
+          // Cleared only once the reveal owns the board, so the beat is visible
+          // without leaving a stale highlight on the next round.
+          resolveTimer = window.setTimeout(() => setOpponentActiveCard(null), aimBeat);
+        }, aimBeat);
       }
     }, thinkDelay);
     return () => {
@@ -574,6 +602,7 @@ export default function Home() {
                       <PlayingCard
                         key={index}
                         index={index}
+                        chosen={index === opponentActiveCard}
                         disabled
                         dealDelay={deal.land(index)}
                       />
@@ -599,15 +628,16 @@ export default function Home() {
                     <PlayingCard
                       key={index}
                       index={index}
+                      chosen={index === (guesserIsBot ? opponentActiveCard : targetCard)}
                       disabled={guesserIsBot}
-                      onClick={() => chooseCard(index)}
+                      onClick={() => handleCardTap(index)}
                       onHover={(hovered) => setHoveredCard(hovered ? index : null)}
                     />
                   ))}
                   {guesserIsBot ? (
                     <SelectionHand index={opponentActiveCard} cardCount={config.cards} faint />
                   ) : (
-                    <SelectionHand index={hoveredCard} cardCount={config.cards} />
+                    <SelectionHand index={targetCard ?? hoveredCard} cardCount={config.cards} />
                   )}
                 </div>
                 <p className="bottom-copy">Find the King.</p>
@@ -634,6 +664,7 @@ export default function Home() {
                       chosen={index === result.pick}
                       wrong={(result.kind === "wrong" || result.kind === "bluff-worked") && index === result.pick}
                       disabled
+                      flipDelay={(index * 70) / 1000}
                     />
                   ))}
                   {result.pick !== null && <SelectionHand index={result.pick} cardCount={config.cards} settled faint={guesserIsBot} />}

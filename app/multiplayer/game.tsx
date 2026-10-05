@@ -6,6 +6,7 @@ import { LEVELS, levelConfig, RESULT_COPY, LEVEL_COUNT } from "@/lib/game/rules"
 import { RULESET_ROUNDS, roundInCourt, consecutiveLabel } from "@/lib/game/flow";
 import { dealTimings, SHUFFLE_MS } from "@/features/game/constants/pacing";
 import { PowerDock } from "@/features/game/components/PowerDock";
+import { SelectionHand } from "@/features/game/components/SelectionHand";
 import { StrategyModal } from "@/features/game/components/StrategyModal";
 import { picksThisCourt, summarisePicks } from "@/features/game/logic/strategy";
 import type useMultiplayer from "@/hooks/useMultiplayer";
@@ -262,8 +263,17 @@ function LiveRound({
     );
   }
 
-  const isGuess = g.phase === "guess";
-  const actingSeconds = isGuess ? cfg.seconds : null;
+const isGuess = g.phase === "guess";
+const actingSeconds = isGuess ? cfg.seconds : null;
+/**
+ * The guesser's committed pick, shown to the OTHER player the moment it lands.
+ * Read straight from the authoritative `pendingGuess` on the reveal beat, so
+ * both clients agree and no extra state has to be synced.
+ */
+const opponentPick =
+  g.phase === "reveal" && g.pendingGuess && g.pendingGuess.guesserSeat !== me
+    ? (g.pendingGuess.calledBluff ? null : g.pendingGuess.cardIndex)
+    : null;
 
   return (
     <MpFrame>
@@ -282,6 +292,14 @@ function LiveRound({
       ) : null}
       {isGuess && !iAct ? (
         <Waiting title="OPPONENT'S TURN" text={`${mp.opponent ?? "Opponent"} is guessing a card…`} />
+      ) : null}
+      {opponentPick !== null ? (
+        <div className="cards-row">
+          {Array.from({ length: cfg.cards }, (_, i) => (
+            <PlayingCard key={i} index={i} chosen={i === opponentPick} disabled />
+          ))}
+          <SelectionHand index={opponentPick} cardCount={cfg.cards} faint />
+        </div>
       ) : null}
 
       {g.phase === "shuffle" || iAct ? null : (
@@ -453,12 +471,16 @@ function GuessStage({
   const [picked, setPicked] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [left, setLeft] = useState(seconds);
+  /** Card aimed at with the first tap, awaiting the confirming second tap. */
+  const [targetCard, setTargetCard] = useState<number | null>(null);
   const done = busy || picked !== null || bluffOpen;
 
   useEffect(() => {
     // Reset the countdown when a new round begins (pre-existing behaviour).
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setLeft(seconds);
+    // Drop any unconfirmed aim so the next round starts from a clean slate.
+    setTargetCard(null);
   }, [seconds, g.round]);
 
   useEffect(() => {
@@ -472,8 +494,17 @@ function GuessStage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [left, done]);
 
+  /**
+   * Two-step guess: the first tap aims at a card (pointer + highlight) and the
+   * second tap on that same card commits. Tapping a different card moves the
+   * aim. Only the second tap writes the pick to Firebase.
+   */
   const pick = async (i: number) => {
     if (done) return;
+    if (targetCard !== i) {
+      setTargetCard(i);
+      return;
+    }
     setPicked(i);
     setBusy(true);
     await mp.guess(i, false);
@@ -490,8 +521,15 @@ function GuessStage({
       </div>
       <div className="cards-row">
         {Array.from({ length: cfg.cards }, (_, i) => (
-          <PlayingCard key={i} index={i} chosen={picked === i} disabled={done} onClick={() => pick(i)} />
+          <PlayingCard
+            key={i}
+            index={i}
+            chosen={picked === i || targetCard === i}
+            disabled={done}
+            onClick={() => pick(i)}
+          />
         ))}
+        {picked === null && <SelectionHand index={targetCard} cardCount={cfg.cards} />}
       </div>
       <button className="outline-button wide mp-wide" onClick={onCallBluff} disabled={done}>
         CALL THE BLUFF
@@ -569,6 +607,7 @@ function Reveal({ mp }: { mp: MP }) {
                 chosen={i === result.pick}
                 wrong={(result.kind === "wrong" || result.kind === "bluff-worked") && i === result.pick}
                 disabled
+                flipDelay={(i * 70) / 1000}
               />
             ))}
           </div>
