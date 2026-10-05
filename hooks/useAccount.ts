@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { User } from "firebase/auth";
 
 import { observeAuth } from "@/lib/firebase/auth";
+import { completeRedirectSignIn } from "@/lib/firebase/accounts";
 import { ensureProfile, loadProfile, syncIdentityFields, type UserProfile } from "@/lib/firebase/profile";
 
 /**
@@ -21,6 +22,8 @@ export interface AccountState {
   loading: boolean;
   /** True when the player is on a throwaway guest identity. */
   isGuest: boolean;
+  /** Set when a redirect sign-in came back with a problem, for the UI to show. */
+  redirectError: string | null;
   /** Re-read the profile after the identity provider changes it. */
   refresh: () => Promise<void>;
 }
@@ -29,8 +32,21 @@ export function useAccount(): AccountState {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [redirectError, setRedirectError] = useState<string | null>(null);
 
   useEffect(() => {
+    // A redirect sign-in navigates away and comes back, so the result is
+    // collected here on load rather than in the dialog that started it. This is
+    // a no-op (resolves null) on a normal page load.
+    void (async () => {
+      try {
+        const result = await completeRedirectSignIn();
+        if (result && !result.ok) setRedirectError(result.reason);
+      } catch {
+        // Never let result collection break the app's boot.
+      }
+    })();
+
     // observeAuth fires immediately with the current user (or null), then again
     // on every sign-in/out and token refresh.
     return observeAuth((next) => {
@@ -65,6 +81,7 @@ export function useAccount(): AccountState {
     profile,
     loading,
     isGuest: !user || user.isAnonymous,
+    redirectError,
     refresh,
   };
 }

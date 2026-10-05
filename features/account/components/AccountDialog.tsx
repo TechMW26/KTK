@@ -7,8 +7,8 @@ import { Modal as DialogShell } from "@/components/ui/Modal";
 import { Eyebrow, Ornament } from "@/components/common/Brand";
 import {
   upgradeWithEmail,
-  upgradeWithGoogle,
-  upgradeWithApple,
+  startGoogleSignIn,
+  startAppleSignIn,
   signInWithEmail,
   requestPasswordReset,
   resendVerificationEmail,
@@ -43,17 +43,23 @@ const MESSAGES: Record<AuthFailureReason, string> = {
   "credential-in-use":
     "That account already exists. Sign in to it — your guest progress stays on this device.",
   "popup-cancelled": "",
+  "popup-blocked":
+    "Your browser blocked the sign-in window. Allow pop-ups for this site and try again.",
+  timeout: "Sign-in took too long. Please try again.",
   unknown: "Something went wrong. Please try again.",
 };
 
 export function AccountDialog({
   user,
   profile,
+  redirectError,
   onClose,
   onSignedIn,
 }: {
   user: User | null;
   profile: UserProfile | null;
+  /** Failure carried back from a redirect sign-in, if any. */
+  redirectError?: string | null;
   onClose: () => void;
   onSignedIn: (user: User) => void;
 }) {
@@ -64,9 +70,20 @@ export function AccountDialog({
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
+  // A redirect failure arrives as a reason code. Derive the message instead of
+  // copying it into state, so no extra render is triggered and the two sources
+  // (inline action vs. redirect) cannot get out of sync.
+  const shownError =
+    error ?? (redirectError ? (MESSAGES[redirectError as AuthFailureReason] ?? MESSAGES.unknown) : null);
+
   const signedIn = Boolean(user && !user.isAnonymous);
 
-  /** Run an auth action, mapping its outcome onto this screen's state. */
+  /**
+   * Run an auth action, mapping its outcome onto this screen's state.
+   *
+   * The busy flag is always cleared via `finally`, because an auth call that
+   * never settles must not leave every button disabled with no explanation.
+   */
   const run = async (
     action: () => Promise<{ ok: boolean } & Record<string, unknown>>,
   ): Promise<boolean> => {
@@ -74,18 +91,26 @@ export function AccountDialog({
     setBusy(true);
     setError(null);
     setNotice(null);
-    const result = await action();
-    setBusy(false);
-    if (result.ok) {
-      const nextUser = (result as { user?: User }).user;
-      if (nextUser) onSignedIn(nextUser);
-      return true;
+    try {
+      const result = await action();
+      if (result.ok) {
+        const nextUser = (result as { user?: User }).user;
+        if (nextUser) onSignedIn(nextUser);
+        return true;
+      }
+      const reason = (result as { reason?: AuthFailureReason }).reason ?? "unknown";
+      const message = MESSAGES[reason];
+      // An empty message means the player backed out of provider UI: say nothing.
+      if (message) setError(message);
+      return false;
+    } catch (error) {
+      // An unexpected throw must be visible, never silent.
+      const code = String((error as { message?: string }).message ?? "");
+      setError(code.includes("timeout") ? MESSAGES["popup-blocked"] : MESSAGES.unknown);
+      return false;
+    } finally {
+      setBusy(false);
     }
-    const reason = (result as { reason?: AuthFailureReason }).reason ?? "unknown";
-    const message = MESSAGES[reason];
-    // An empty message means the player backed out of a popup: say nothing.
-    if (message) setError(message);
-    return false;
   };
 
   const submitEmail = async () => {
@@ -109,9 +134,9 @@ export function AccountDialog({
       <Ornament />
 
       {notice && <p className="account-notice">{notice}</p>}
-      {error && (
+      {shownError && (
         <p className="account-error" role="alert">
-          {error}
+          {shownError}
         </p>
       )}
 
@@ -126,14 +151,14 @@ export function AccountDialog({
           <button
             className="outline-button wide"
             disabled={busy}
-            onClick={() => void run(() => upgradeWithGoogle())}
+            onClick={() => void run(() => startGoogleSignIn())}
           >
             CONTINUE WITH GOOGLE
           </button>
           <button
             className="outline-button wide"
             disabled={busy}
-            onClick={() => void run(() => upgradeWithApple())}
+            onClick={() => void run(() => startAppleSignIn())}
           >
             CONTINUE WITH APPLE
           </button>

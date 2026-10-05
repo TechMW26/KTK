@@ -765,6 +765,7 @@ export default function Home() {
           <AccountDialog
             user={account.user}
             profile={account.profile}
+            redirectError={account.redirectError}
             onClose={() => setOverlay(null)}
             onSignedIn={() => void account.refresh()}
           />

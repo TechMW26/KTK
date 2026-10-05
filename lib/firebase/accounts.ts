@@ -3,12 +3,13 @@ import {
   GoogleAuthProvider,
   OAuthProvider,
   linkWithCredential,
-  linkWithPopup,
+  linkWithRedirect,
+  signInWithRedirect,
+  getRedirectResult,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   sendEmailVerification,
   sendPasswordResetEmail,
-  signInWithPopup,
   updateProfile as updateAuthProfile,
   type Auth,
   type User,
@@ -47,6 +48,8 @@ export type AuthFailureReason =
   | "network"
   | "credential-in-use"
   | "popup-cancelled"
+  | "popup-blocked"
+  | "timeout"
   | "unknown";
 
 /** Map a raw Firebase error code to a reason the UI can render copy for. */
@@ -75,6 +78,10 @@ function reasonFor(code: string): AuthFailureReason {
     case "auth/popup-closed-by-user":
     case "auth/cancelled-popup-request":
       return "popup-cancelled";
+    case "auth/popup-blocked":
+    case "auth/operation-not-supported-in-this-environment":
+    case "auth/web-storage-unsupported":
+      return "popup-blocked";
     default:
       return "unknown";
   }
@@ -130,18 +137,54 @@ export async function upgradeWithEmail(
   }
 }
 
-/** Upgrade the current guest to Google, preserving the uid. */
-export async function upgradeWithGoogle(): Promise<AuthOutcome> {
+/**
+ * Start Google sign-in.
+ *
+ * REDIRECT, NOT POPUP. The popup flow depends on `window.open` and a
+ * cross-origin postMessage handshake, which browsers block outright in the
+ * Capacitor WebView and in many embedded contexts. The popup variant was
+ * confirmed to hang indefinitely there with no rejection, leaving the UI stuck.
+ *
+ * `linkWithRedirect` / `signInWithRedirect` navigate away instead, so there is
+ * no popup to block. This function therefore never returns a signed-in user:
+ * the page unloads and the result is collected by `completeRedirectSignIn()`
+ * when the player comes back.
+ */
+export async function startGoogleSignIn(): Promise<AuthOutcome> {
   const auth = authOrFail();
   if ("ok" in auth) return auth;
 
   try {
     const provider = new GoogleAuthProvider();
     const current = auth.currentUser;
-    const result =
-      current && current.isAnonymous
-        ? await linkWithPopup(current, provider)
-        : await signInWithPopup(auth, provider);
+    // Linking keeps the guest uid, so pre-existing data is preserved.
+    if (current && current.isAnonymous) {
+      await linkWithRedirect(current, provider);
+    } else {
+      await signInWithRedirect(auth, provider);
+    }
+    // Unreachable in practice: the browser is already navigating away.
+    return { ok: true, user: current as User, profile: null };
+  } catch (error) {
+    return { ok: false, reason: reasonFor(codeOf(error)) };
+  }
+}
+
+/**
+ * Collect the result of a redirect sign-in after the page reloads.
+ *
+ * Safe to call on every load: it resolves to null when there is no pending
+ * redirect, which is the normal case. A `credential-already-in-use` here means
+ * the Google account already has a profile, and we surface that rather than
+ * silently merging — see the module note above.
+ */
+export async function completeRedirectSignIn(): Promise<AuthOutcome | null> {
+  const auth = authOrFail();
+  if ("ok" in auth) return auth;
+
+  try {
+    const result = await getRedirectResult(auth);
+    if (!result) return null;
     return completeUpgrade(result.user);
   } catch (error) {
     return { ok: false, reason: reasonFor(codeOf(error)) };
@@ -149,15 +192,13 @@ export async function upgradeWithGoogle(): Promise<AuthOutcome> {
 }
 
 /**
- * Apple sign-in.
+ * Start Apple sign-in.
  *
- * CODE-COMPLETE BUT UNVERIFIED: Apple requires a Service ID, Team ID, Key ID and
- * private key, which are not configured yet. Until they are, Firebase rejects
- * every call here, so this path has never been executed successfully and must
- * not be reported as working. It is written now so enabling it later is a
- * configuration change, not a code change.
+ * Redirect for the same reason as Google. CODE-COMPLETE BUT UNVERIFIED: Apple
+ * requires a Service ID, Team ID, Key ID and private key, none of which are
+ * configured, so this has never completed successfully.
  */
-export async function upgradeWithApple(): Promise<AuthOutcome> {
+export async function startAppleSignIn(): Promise<AuthOutcome> {
   const auth = authOrFail();
   if ("ok" in auth) return auth;
 
@@ -166,11 +207,12 @@ export async function upgradeWithApple(): Promise<AuthOutcome> {
     provider.addScope("email");
     provider.addScope("name");
     const current = auth.currentUser;
-    const result =
-      current && current.isAnonymous
-        ? await linkWithPopup(current, provider)
-        : await signInWithPopup(auth, provider);
-    return completeUpgrade(result.user);
+    if (current && current.isAnonymous) {
+      await linkWithRedirect(current, provider);
+    } else {
+      await signInWithRedirect(auth, provider);
+    }
+    return { ok: true, user: current as User, profile: null };
   } catch (error) {
     return { ok: false, reason: reasonFor(codeOf(error)) };
   }
