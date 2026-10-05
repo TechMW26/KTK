@@ -26,6 +26,31 @@ export function isFirebaseConfigured(): boolean {
   return truthy(API_KEY) && truthy(AUTH_DOMAIN) && truthy(DATABASE_URL) && truthy(PROJECT_ID);
 }
 
+/**
+ * The authDomain to hand the SDK.
+ *
+ * Redirect and popup sign-in run through a hidden cross-origin iframe served
+ * from `authDomain`. When that domain differs from the page's own origin, the
+ * browser applies third-party storage partitioning and the iframe request is
+ * aborted, so no session is ever written and the sign-in silently returns
+ * nothing. Firebase documents this: the flow needs same-origin storage unless
+ * the app itself is hosted on Firebase Hosting.
+ *
+ * The app is hosted on Vercel, so `vercel.json` proxies `/__/auth/*` back to
+ * the Firebase project and we point `authDomain` at the page's own origin to
+ * keep the iframe same-origin. The origin is read at runtime so localhost,
+ * preview deployments and production all resolve to themselves.
+ *
+ * `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN` is kept as the fallback for any context
+ * where `window` is unavailable.
+ */
+function resolveAuthDomain(): string {
+  if (typeof window !== "undefined" && window.location?.host) {
+    return window.location.host;
+  }
+  return AUTH_DOMAIN as string;
+}
+
 let app: FirebaseApp | null = null;
 
 export function getFirebaseApp(): FirebaseApp | null {
@@ -38,7 +63,7 @@ export function getFirebaseApp(): FirebaseApp | null {
   if (!isFirebaseConfigured()) return null;
   app = initializeApp({
     apiKey: API_KEY as string,
-    authDomain: AUTH_DOMAIN as string,
+    authDomain: resolveAuthDomain(),
     databaseURL: DATABASE_URL as string,
     projectId: PROJECT_ID as string,
     storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || undefined,

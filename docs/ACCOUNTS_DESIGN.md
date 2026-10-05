@@ -108,6 +108,37 @@ prerequisite for slice S1.** Required work:
 - Authorised domains for the deployed origin.
 - **Note:** Facebook is *not* in this design; MOM item 9 stays separate.
 
+### 3.4b Redirect sign-in requires a same-origin auth helper
+
+**This is a hard requirement, not a nicety, and it silently broke Google
+sign-in once already.**
+
+Firebase's redirect and popup flows run through a hidden iframe served from
+`authDomain`. When that domain differs from the page's own origin — the default
+case for any app not hosted on Firebase Hosting — browsers apply third-party
+storage partitioning, the iframe request is **aborted**, and **no session is
+ever written**. The sign-in then returns nothing and produces no error.
+
+Firebase documents this: the flow needs same-origin storage unless the app is
+hosted on Firebase Hosting itself.
+
+The app is hosted on Vercel, so `/__/auth/*` and `/__/firebase/*` are proxied
+back to the Firebase project and `authDomain` is set to the app's **own origin**,
+keeping the iframe same-origin:
+
+| Where | Mechanism |
+| --- | --- |
+| Production | `rewrites` in `vercel.json` (a transparent proxy, **not** a redirect) |
+| Local dev | `server.proxy` in `vite.config.ts`; `changeOrigin` must be `true` or Firebase's certificate fails altname validation |
+| Config | `resolveAuthDomain()` in `lib/firebase/config.ts` uses `window.location.host`, so localhost, previews and production each resolve to themselves |
+
+The proxy target must stay in step with `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN`. If
+the Firebase project changes, update `vercel.json` and `vite.config.ts` together.
+
+If sign-in ever regresses to "completes but lands signed out with no error",
+check this first: look for an aborted `/__/auth/iframe` request and an empty
+`firebaseLocalStorage` in the browser.
+
 ### 3.5 All-platform sign-in: scope and cost
 
 Confirmed decision: Google and Apple are offered on **every** platform. This is

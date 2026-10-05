@@ -237,6 +237,13 @@ the Firebase CLI / Vercel credentials, which only you can provide.
 
 **Deploy rules (one command after installing CLI):**
 
+> **Required before deploying:** add **every** origin the app is served from to
+> Firebase → Authentication → Settings → **Authorized domains** — `localhost`
+> for local dev and the Vercel domain(s) for production and previews. Missing
+> entries do not produce an error; the sign-in simply returns nothing. See
+> `docs/ACCOUNTS_DESIGN.md` §3.4b, which also covers the same-origin auth helper
+> the redirect flow depends on.
+
 ```
 npm i -g firebase-tools        # or: npx firebase-tools
 firebase login                 # log in with the Firebase account
