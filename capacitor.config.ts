@@ -17,7 +17,6 @@ const config: CapacitorConfig = {
   appId: "com.kushagrapandey.killtheking",
   appName: "KILL THE KING",
   webDir: "dist/capacitor",
-  bundledWebRuntime: false,
   android: {
     allowMixedContent: false,
     // Keep the app in the foreground default config; adjust if needed.

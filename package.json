@@ -20,7 +20,7 @@
     "test:logic": "node --experimental-strip-types scripts/logic.test.ts",
     "test:single-source": "node --experimental-strip-types scripts/single-source.test.ts",
     "test:rooms": "node --experimental-strip-types scripts/room-verdicts.test.ts",
-    "test": "npm run test:rules && npm run test:bot && npm run test:flow && npm run test:progression && npm run test:logic && npm run test:single-source",
+    "test": "npm run typecheck && npm run test:rules && npm run test:bot && npm run test:flow && npm run test:progression && npm run test:logic && npm run test:single-source",
     "app:build": "node scripts/build-capacitor-web.mjs",
     "app:sync": "cap sync android",
     "app:apk": "cd android && gradlew.bat assembleDebug",

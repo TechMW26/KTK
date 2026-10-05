@@ -40,23 +40,19 @@ pnpm build
 pnpm typecheck
 ```
 
-> **`typecheck` is expected to report 5 errors today.** They are pre-existing and
-> unrelated to the build, which is why it is a separate script rather than part
-> of `test`: wiring it into the test pipeline now would fail every run. The
-> outstanding errors are `app/multiplayer/search.tsx` (a `string | null`),
-> `capacitor.config.ts` (an option that no longer exists in Capacitor 8 and is
-> silently ignored), `services/roomService.ts` (a comparison that can never be
-> true, making the `"FULL"` room reason unreachable) and `worker/index.ts`
-> (Cloudflare types not installed, so the worker is untyped).
->
-> Clear these before adding `typecheck` to CI or to `test`.
+> **`typecheck` now runs as part of `npm test`.** It was added as a separate
+> script first because it reported pre-existing errors unrelated to the tests, so
+> gating the pipeline on it would have failed every run. Those are now cleared:
+> the last one was `bundledWebRuntime` in `capacitor.config.ts` (removed in
+> Capacitor 3 and silently ignored since), and the orphaned `worker/`
+> scaffolding from the Cloudflare template was deleted, as nothing referenced it
+> after the move to Nitro/Vite.
 
 ## Complete package contents
 
 - `app/` — game interface, logic, and styling
 - `public/` — logo, card artwork, hand artwork, favicon, and game audio
 - `scripts/` — reproducible audio generation script
-- `worker/` — production worker entry point
 - `package.json` and `pnpm-lock.yaml` — exact dependencies and scripts
 
 ## GitHub or another computer
