@@ -12,6 +12,7 @@
     "build:node": "cross-env NITRO_PRESET=node vite build",
     "preview:node": "node .output/server/index.mjs",
     "lint": "eslint .",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
     "test:rules": "node --experimental-strip-types scripts/rules.test.ts",
     "test:bot": "node --experimental-strip-types scripts/bot.test.ts",
     "test:flow": "node --experimental-strip-types scripts/flow.test.ts",

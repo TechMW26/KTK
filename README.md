@@ -37,7 +37,19 @@ Open the local address printed in the terminal.
 ```bash
 pnpm lint
 pnpm build
+pnpm typecheck
 ```
+
+> **`typecheck` is expected to report 5 errors today.** They are pre-existing and
+> unrelated to the build, which is why it is a separate script rather than part
+> of `test`: wiring it into the test pipeline now would fail every run. The
+> outstanding errors are `app/multiplayer/search.tsx` (a `string | null`),
+> `capacitor.config.ts` (an option that no longer exists in Capacitor 8 and is
+> silently ignored), `services/roomService.ts` (a comparison that can never be
+> true, making the `"FULL"` room reason unreachable) and `worker/index.ts`
+> (Cloudflare types not installed, so the worker is untyped).
+>
+> Clear these before adding `typecheck` to CI or to `test`.
 
 ## Complete package contents
 
