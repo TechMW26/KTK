@@ -11,6 +11,7 @@ import {
   sendEmailVerification,
   sendPasswordResetEmail,
   updateProfile as updateAuthProfile,
+  unlink,
   type Auth,
   type User,
   type UserCredential,
@@ -49,6 +50,7 @@ export type AuthFailureReason =
   | "credential-in-use"
   | "popup-cancelled"
   | "popup-blocked"
+  | "last-provider"
   | "timeout"
   | "unknown";
 
@@ -75,6 +77,8 @@ function reasonFor(code: string): AuthFailureReason {
     case "auth/credential-already-in-use":
     case "auth/account-exists-with-different-credential":
       return "credential-in-use";
+    case "auth/no-such-provider":
+      return "last-provider";
     case "auth/popup-closed-by-user":
     case "auth/cancelled-popup-request":
       return "popup-cancelled";
@@ -316,4 +320,62 @@ export async function setAccountDisplayName(
 /** The provider ids linked to the current account, for the account screen. */
 export function linkedProviders(user: User | null): string[] {
   return user ? providerIds(user) : [];
+}
+
+/**
+ * Link an ADDITIONAL provider to an existing account.
+ *
+ * Uses linkWithRedirect (not signInWithRedirect) so the account already in use
+ * is kept and the new provider is attached to it. This is the only safe way to
+ * add a sign-in method; a plain sign-in would switch to a different uid.
+ */
+export async function linkAdditionalProvider(
+  provider: "google" | "apple",
+): Promise<AuthOutcome> {
+  const auth = authOrFail();
+  if ("ok" in auth) return auth;
+  const current = auth.currentUser;
+  if (!current) return { ok: false, reason: "not-configured" };
+
+  try {
+    const oauth =
+      provider === "google"
+        ? new GoogleAuthProvider()
+        : (() => {
+            const p = new OAuthProvider("apple.com");
+            p.addScope("email");
+            p.addScope("name");
+            return p;
+          })();
+    await linkWithRedirect(current, oauth);
+    return { ok: true, user: current, profile: null };
+  } catch (error) {
+    return { ok: false, reason: reasonFor(codeOf(error)) };
+  }
+}
+
+/**
+ * Unlink a provider from the account.
+ *
+ * Refuses to remove the LAST sign-in method: doing so would leave an account
+ * that nobody can sign into, which is unrecoverable from the client. The caller
+ * is expected to hide the control in that case too, but the guard lives here so
+ * a UI mistake cannot strand an account.
+ */
+export async function unlinkProvider(providerId: string): Promise<AuthOutcome> {
+  const auth = authOrFail();
+  if ("ok" in auth) return auth;
+  const user = auth.currentUser;
+  if (!user) return { ok: false, reason: "not-configured" };
+
+  if (providerIds(user).length <= 1) {
+    return { ok: false, reason: "last-provider" };
+  }
+
+  try {
+    const next = await unlink(user, providerId);
+    return { ok: true, user: next, profile: null };
+  } catch (error) {
+    return { ok: false, reason: reasonFor(codeOf(error)) };
+  }
 }

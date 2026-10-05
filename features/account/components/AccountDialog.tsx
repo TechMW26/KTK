@@ -53,6 +53,8 @@ const MESSAGES: Record<AuthFailureReason, string> = {
   "popup-cancelled": "",
   "popup-blocked":
     "Your browser blocked the sign-in window. Allow pop-ups for this site and try again.",
+  "last-provider":
+    "That's your only sign-in method — add another before removing it.",
   timeout: "Sign-in took too long. Please try again.",
   unknown: "Something went wrong. Please try again.",
 };

@@ -74,8 +74,13 @@ export function useAccount(): AccountState {
           try {
             const existing = await ensureProfile(next);
             setProfile(existing ? await syncIdentityFields(next) : null);
-          } catch {
-            // A rules rejection or offline read must not break the game.
+          } catch (error) {
+            // A profile failure must not break the game, but it also must not be
+            // invisible: swallowing it renders the account screen as though the
+            // player simply has no profile, which is indistinguishable from a
+            // rules rejection or an offline read. Log it so the cause is
+            // discoverable, then degrade to "no profile".
+            console.error("[account] profile load failed", error);
             setProfile(null);
           }
         })();

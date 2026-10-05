@@ -12,6 +12,7 @@ import { PowerDock } from "@/features/game/components/PowerDock";
 import { SelectionHand } from "@/features/game/components/SelectionHand";
 import { StrategyModal } from "@/features/game/components/StrategyModal";
 import { AccountDialog } from "@/features/account/components/AccountDialog";
+import { AccountScreen } from "@/features/account/components/AccountScreen";
 import { useAccount } from "@/hooks/useAccount";
 import { TurnIndicator, TurnTransition } from "@/features/game/components/TurnIndicator";
 import { COURTS, HIDES_PER_BLOCK, STARTING_LIVES } from "@/features/game/constants/courts";
@@ -761,15 +762,28 @@ export default function Home() {
         )}
 
         {overlay === "rules" && <RulesModal onClose={() => setOverlay(null)} />}
-        {overlay === "account" && (
-          <AccountDialog
-            user={account.user}
-            profile={account.profile}
-            redirectError={account.redirectError}
-            onClose={() => setOverlay(null)}
-            onSignedIn={() => void account.refresh()}
-          />
-        )}
+        {overlay === "account" &&
+          (account.user && !account.user.isAnonymous ? (
+            <AccountScreen
+              user={account.user}
+              profile={account.profile}
+              onClose={() => setOverlay(null)}
+              onChanged={account.refresh}
+              onLeaveRooms={async () => {
+                // Rooms are owned by the multiplayer hook, which is not mounted
+                // from the home screen, so there is nothing to leave here. Kept
+                // as a hook point for when that changes.
+              }}
+            />
+          ) : (
+            <AccountDialog
+              user={account.user}
+              profile={account.profile}
+              redirectError={account.redirectError}
+              onClose={() => setOverlay(null)}
+              onSignedIn={() => void account.refresh()}
+            />
+          ))}
         {overlay === "settings" && (
           <SettingsModal
             sound={sound}

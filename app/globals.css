@@ -1049,6 +1049,35 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 }
 .account-row span { color: #8d7a52; font-size: 10px; letter-spacing: .1em; }
 .account-row strong { color: #d4ba79; font-size: 11px; font-weight: 500; text-align: right; }
+.account-muted { color: #756346 !important; font-weight: 400 !important; }
+
+/* Sectioned account screen: grouped rows with a small header each, so identity,
+   sign-in methods, wallet and the destructive actions read as separate concerns
+   rather than one undifferentiated list. */
+.account-sections { display: grid; gap: 18px; margin: 20px 0; text-align: left; }
+.account-section { display: grid; gap: 8px; }
+.account-section h4 {
+  margin: 0;
+  color: #8d7a52;
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: .18em;
+}
+.account-section input {
+  width: 100%;
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid #775119;
+  border-radius: 3px;
+  background: rgba(0,0,0,.68);
+  color: var(--cream);
+}
+.account-inline-actions { display: flex; gap: 8px; }
+.account-inline-actions .gold-button,
+.account-inline-actions .outline-button { flex: 1; min-height: 40px; }
+.account-inline-actions .quit-confirm { flex: 1; }
+.account-danger { padding-top: 14px; border-top: 1px solid #4c3514; }
+.account-danger h4 { color: #b0532f; }
 .quit-modal { border-color: #ad5730; box-shadow: inset 0 0 0 5px #090806, inset 0 0 0 6px #69301d, 0 0 55px rgba(189,55,26,.3); }
 .quit-confirm {
   min-height: 45px;

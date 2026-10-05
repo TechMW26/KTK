@@ -87,11 +87,16 @@ export async function ensureProfile(user: User): Promise<UserProfile | null> {
   if (existing) return existing;
 
   const displayName = (user.displayName ?? "").slice(0, MAX_DISPLAY_NAME_LENGTH);
+  // `providers` must never be empty. On a fresh sign-up Firebase Auth can report
+  // an empty providerData for a moment, and the rules require the field to have
+  // at least one child — an empty array makes the whole set() fail validation,
+  // which silently drops every field in the write.
+  const providers = providerIds(user);
   await set(profileRef(db, user.uid), {
     displayName,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
-    providers: providerIds(user),
+    providers: providers.length > 0 ? providers : ["anonymous"],
     emailVerified: user.emailVerified,
     deletedAt: null,
   });
@@ -129,9 +134,12 @@ export async function syncIdentityFields(user: User): Promise<UserProfile | null
   if (!profile) return null;
 
   const providers = providerIds(user);
+  // A profile written before `providers` existed, or one whose write partially
+  // failed, has no array here. Reading `.length` on it threw and took the whole
+  // account hook down, leaving the screen showing no profile at all.
+  const known = Array.isArray(profile.providers) ? profile.providers : [];
   const providersChanged =
-    providers.length !== profile.providers.length ||
-    providers.some((id) => !profile.providers.includes(id));
+    providers.length !== known.length || providers.some((id) => !known.includes(id));
 
   if (providersChanged || user.emailVerified !== profile.emailVerified) {
     await updateProfile(user.uid, { providers, emailVerified: user.emailVerified });
