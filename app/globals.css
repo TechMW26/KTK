@@ -990,6 +990,52 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .settings-list small { color: #756346; font-size: 8px; }
 .settings-list input { accent-color: var(--gold); width: 34px; height: 18px; }
 .bluff-modal { box-shadow: inset 0 0 0 5px #090806, inset 0 0 0 6px #634515, 0 0 55px rgba(213,148,32,.42); }
+
+/* --- Account dialog -------------------------------------------------------
+   Reuses the modal shell and the entry-panel input treatment so the sign-in
+   screen reads as the same product as the home screen. */
+.account-modal { text-align: center; }
+.account-actions { display: grid; gap: 9px; margin-top: 18px; }
+.account-actions label { color: #c3a565; font-size: 10px; letter-spacing: .14em; text-align: center; }
+.account-actions input {
+  width: 100%;
+  min-height: 43px;
+  padding: 0 13px;
+  border: 1px solid #775119;
+  border-radius: 3px;
+  background: rgba(0,0,0,.68);
+  color: var(--cream);
+}
+.account-actions input:focus { outline: none; border-color: var(--gold); box-shadow: 0 0 0 2px rgba(200,147,49,.22); }
+.account-copy { margin: 0 0 4px; color: #bfa872; font-size: 12px; line-height: 1.55; }
+.account-identity { margin: 0 0 6px; color: var(--gold-bright); font-size: 15px; letter-spacing: .04em; word-break: break-word; }
+.account-error { margin: 10px 0 0; color: #e58265; font-size: 11px; line-height: 1.45; }
+.account-notice { margin: 10px 0 0; color: #d4ba79; font-size: 11px; line-height: 1.45; }
+.account-link {
+  margin-top: 2px;
+  padding: 6px;
+  border: 0;
+  background: none;
+  color: #8d7a52;
+  font-size: 10px;
+  letter-spacing: .06em;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.account-link:disabled { opacity: .45; cursor: default; }
+.account-link.inline { display: inline; margin: 0; padding: 0; font-size: inherit; }
+.account-rows { display: grid; gap: 8px; margin: 6px 0 12px; text-align: left; }
+.account-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 11px 13px;
+  border: 1px solid #4c3514;
+  background: rgba(0,0,0,.34);
+}
+.account-row span { color: #8d7a52; font-size: 10px; letter-spacing: .1em; }
+.account-row strong { color: #d4ba79; font-size: 11px; font-weight: 500; text-align: right; }
 .quit-modal { border-color: #ad5730; box-shadow: inset 0 0 0 5px #090806, inset 0 0 0 6px #69301d, 0 0 55px rgba(189,55,26,.3); }
 .quit-confirm {
   min-height: 45px;

@@ -24,7 +24,7 @@ export type OpponentKind = "local" | "bot";
 export type Seat = 0 | 1;
 
 /** Modal surfaces stacked above the board. */
-export type OpenDialog = null | "rules" | "strategy" | "settings" | "bluff" | "quit";
+export type OpenDialog = null | "rules" | "strategy" | "settings" | "bluff" | "quit" | "account";
 
 /** How a round was decided. Drives reveal copy, tone and the sound cue. */
 export type RoundOutcomeKind =

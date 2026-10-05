@@ -1,0 +1,273 @@
+"use client";
+
+import { useState } from "react";
+import type { User } from "firebase/auth";
+
+import { Modal as DialogShell } from "@/components/ui/Modal";
+import { Eyebrow, Ornament } from "@/components/common/Brand";
+import {
+  upgradeWithEmail,
+  upgradeWithGoogle,
+  upgradeWithApple,
+  signInWithEmail,
+  requestPasswordReset,
+  resendVerificationEmail,
+  type AuthFailureReason,
+} from "@/lib/firebase/accounts";
+import { mayHoldCurrency, type UserProfile } from "@/lib/firebase/profile";
+
+/**
+ * The sign-in / account-upgrade dialog.
+ *
+ * Guests are the default and never see this unless they ask for it — the game
+ * is fully playable anonymously, so this screen exists only to make progress
+ * durable (which is what currency and the profile will need).
+ *
+ * Every provider path goes through `lib/firebase/accounts`, which LINKS the
+ * credential to the existing anonymous uid rather than replacing it. That is
+ * why this component never calls a raw Firebase sign-in itself.
+ */
+
+type View = "options" | "email" | "reset" | "verify";
+
+/** Player-facing copy for each failure. Raw Firebase codes never reach the UI. */
+const MESSAGES: Record<AuthFailureReason, string> = {
+  "not-configured": "Accounts aren't available right now.",
+  "provider-disabled": "That sign-in method is turned off.",
+  "invalid-email": "That email doesn't look right.",
+  "wrong-credentials": "Email or password is incorrect.",
+  "email-in-use": "That email already has a profile — sign in instead?",
+  "weak-password": "Use at least 8 characters.",
+  "too-many-requests": "Too many attempts. Try again in a few minutes.",
+  network: "No connection — check your network.",
+  "credential-in-use":
+    "That account already exists. Sign in to it — your guest progress stays on this device.",
+  "popup-cancelled": "",
+  unknown: "Something went wrong. Please try again.",
+};
+
+export function AccountDialog({
+  user,
+  profile,
+  onClose,
+  onSignedIn,
+}: {
+  user: User | null;
+  profile: UserProfile | null;
+  onClose: () => void;
+  onSignedIn: (user: User) => void;
+}) {
+  const [view, setView] = useState<View>("options");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const signedIn = Boolean(user && !user.isAnonymous);
+
+  /** Run an auth action, mapping its outcome onto this screen's state. */
+  const run = async (
+    action: () => Promise<{ ok: boolean } & Record<string, unknown>>,
+  ): Promise<boolean> => {
+    if (busy) return false;
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    const result = await action();
+    setBusy(false);
+    if (result.ok) {
+      const nextUser = (result as { user?: User }).user;
+      if (nextUser) onSignedIn(nextUser);
+      return true;
+    }
+    const reason = (result as { reason?: AuthFailureReason }).reason ?? "unknown";
+    const message = MESSAGES[reason];
+    // An empty message means the player backed out of a popup: say nothing.
+    if (message) setError(message);
+    return false;
+  };
+
+  const submitEmail = async () => {
+    if (!email.trim() || !password) {
+      setError("Enter your email and a password.");
+      return;
+    }
+    const ok = await run(() =>
+      signedIn
+        ? signInWithEmail(email.trim(), password)
+        : upgradeWithEmail(email.trim(), password),
+    );
+    if (ok && !signedIn) setView("verify");
+  };
+
+  return (
+    <DialogShell onClose={onClose} className="account-modal">
+      <span className="modal-symbol">♛</span>
+      <Eyebrow>{signedIn ? "YOUR COURT" : "KEEP YOUR PROGRESS"}</Eyebrow>
+      <h3>{signedIn ? "YOUR ACCOUNT" : "SIGN IN"}</h3>
+      <Ornament />
+
+      {notice && <p className="account-notice">{notice}</p>}
+      {error && (
+        <p className="account-error" role="alert">
+          {error}
+        </p>
+      )}
+
+      {signedIn ? (
+        <SignedInPanel user={user as User} profile={profile} onSignOut={onClose} />
+      ) : view === "options" ? (
+        <div className="account-actions">
+          <p className="account-copy">
+            Playing as a guest is fine — but sign in to keep your progress if you
+            reinstall or switch device.
+          </p>
+          <button
+            className="outline-button wide"
+            disabled={busy}
+            onClick={() => void run(() => upgradeWithGoogle())}
+          >
+            CONTINUE WITH GOOGLE
+          </button>
+          <button
+            className="outline-button wide"
+            disabled={busy}
+            onClick={() => void run(() => upgradeWithApple())}
+          >
+            CONTINUE WITH APPLE
+          </button>
+          <button className="gold-button wide" disabled={busy} onClick={() => setView("email")}>
+            CONTINUE WITH EMAIL
+          </button>
+          <button className="account-link" disabled={busy} onClick={onClose}>
+            Not now — keep playing as guest
+          </button>
+        </div>
+      ) : view === "email" ? (
+        <div className="account-actions">
+          <label htmlFor="acct-email">EMAIL</label>
+          <input
+            id="acct-email"
+            type="email"
+            autoComplete="email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+          />
+          <label htmlFor="acct-password">PASSWORD</label>
+          <input
+            id="acct-password"
+            type="password"
+            autoComplete={signedIn ? "current-password" : "new-password"}
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+          />
+          <button className="gold-button wide" disabled={busy} onClick={() => void submitEmail()}>
+            {busy ? "WORKING…" : signedIn ? "SIGN IN" : "CREATE ACCOUNT"}
+          </button>
+          <button className="account-link" disabled={busy} onClick={() => setView("reset")}>
+            Forgot your password?
+          </button>
+          <button className="account-link" disabled={busy} onClick={() => setView("options")}>
+            Back
+          </button>
+        </div>
+      ) : view === "reset" ? (
+        <div className="account-actions">
+          <p className="account-copy">We&apos;ll email you a link to set a new password.</p>
+          <label htmlFor="reset-email">EMAIL</label>
+          <input
+            id="reset-email"
+            type="email"
+            autoComplete="email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+          />
+          <button
+            className="gold-button wide"
+            disabled={busy}
+            onClick={() =>
+              void run(async () => {
+                const result = await requestPasswordReset(email.trim());
+                if (result.ok) {
+                  setNotice("If that address has an account, a reset link is on its way.");
+                }
+                return result;
+              })
+            }
+          >
+            SEND RESET LINK
+          </button>
+          <button className="account-link" disabled={busy} onClick={() => setView("email")}>
+            Back
+          </button>
+        </div>
+      ) : (
+        <div className="account-actions">
+          <p className="account-copy">
+            We sent a verification link to <strong>{email}</strong>. You can play
+            right away — verifying just unlocks currency later.
+          </p>
+          <button
+            className="outline-button wide"
+            disabled={busy}
+            onClick={() =>
+              void run(async () => {
+                const result = await resendVerificationEmail();
+                if (result.ok) setNotice("Verification email sent again.");
+                return result;
+              })
+            }
+          >
+            RESEND EMAIL
+          </button>
+          <button className="gold-button wide" disabled={busy} onClick={onClose}>
+            CONTINUE PLAYING
+          </button>
+        </div>
+      )}
+    </DialogShell>
+  );
+}
+
+/** Summary shown once a real account is linked. */
+function SignedInPanel({
+  user,
+  profile,
+  onSignOut,
+}: {
+  user: User;
+  profile: UserProfile | null;
+  onSignOut: () => void;
+}) {
+  const canHoldCurrency = mayHoldCurrency(user, profile);
+  const label = user.email ?? user.displayName ?? "Signed in";
+
+  return (
+    <div className="account-actions">
+      <p className="account-identity">{label}</p>
+      <div className="account-rows">
+        <div className="account-row">
+          <span>Wallet</span>
+          <strong>{canHoldCurrency ? "Ready" : "Locked until verified"}</strong>
+        </div>
+        <div className="account-row">
+          <span>Sign-in methods</span>
+          <strong>{(profile?.providers ?? []).map(providerLabel).join(", ") || "—"}</strong>
+        </div>
+      </div>
+      <button className="gold-button wide" onClick={onSignOut}>
+        DONE
+      </button>
+    </div>
+  );
+}
+
+/** Provider ids are Firebase's; players should see words. */
+function providerLabel(id: string): string {
+  if (id === "password") return "Email";
+  if (id === "google.com") return "Google";
+  if (id === "apple.com") return "Apple";
+  if (id === "anonymous") return "Guest";
+  return id;
+}

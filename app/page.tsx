@@ -11,6 +11,8 @@ import { RulesModal, SettingsModal } from "@/features/game/components/InfoDialog
 import { PowerDock } from "@/features/game/components/PowerDock";
 import { SelectionHand } from "@/features/game/components/SelectionHand";
 import { StrategyModal } from "@/features/game/components/StrategyModal";
+import { AccountDialog } from "@/features/account/components/AccountDialog";
+import { useAccount } from "@/hooks/useAccount";
 import { TurnIndicator, TurnTransition } from "@/features/game/components/TurnIndicator";
 import { COURTS, HIDES_PER_BLOCK, STARTING_LIVES } from "@/features/game/constants/courts";
 import {
@@ -72,6 +74,7 @@ export default function Home() {
   const [history, setHistory] = useState<RoundHistoryEntry[]>([]);
   const [timeLeft, setTimeLeft] = useState<number>(COURTS[0].seconds);
   const [overlay, setOverlay] = useState<OpenDialog>(null);
+  const account = useAccount();
   const [hoveredCard, setHoveredCard] = useState<number | null>(null);
   /**
    * Card the guesser has tapped once but not yet confirmed. The first tap aims
@@ -462,6 +465,8 @@ export default function Home() {
             startMatch={startMatch}
             openRules={() => setOverlay("rules")}
             openSettings={() => setOverlay("settings")}
+            openAccount={() => setOverlay("account")}
+            accountLabel={account.isGuest ? "SIGN IN" : "YOUR ACCOUNT"}
           />
         ) : (
           <>
@@ -756,6 +761,14 @@ export default function Home() {
         )}
 
         {overlay === "rules" && <RulesModal onClose={() => setOverlay(null)} />}
+        {overlay === "account" && (
+          <AccountDialog
+            user={account.user}
+            profile={account.profile}
+            onClose={() => setOverlay(null)}
+            onSignedIn={() => void account.refresh()}
+          />
+        )}
         {overlay === "settings" && (
           <SettingsModal
             sound={sound}
@@ -809,6 +822,7 @@ export default function Home() {
 
 function HomeScreen({
   mode, setMode, names, setNames, livesOn, setLivesOn, startMatch, openRules, openSettings,
+  openAccount, accountLabel,
 }: {
   mode: OpponentKind;
   setMode: (mode: OpponentKind) => void;
@@ -819,6 +833,9 @@ function HomeScreen({
   startMatch: () => void;
   openRules: () => void;
   openSettings: () => void;
+  openAccount: () => void;
+  /** "SIGN IN" for a guest, "YOUR ACCOUNT" once an account is linked. */
+  accountLabel: string;
 }) {
   return (
     <section className="home-screen" aria-labelledby="game-title">
@@ -870,6 +887,7 @@ function HomeScreen({
           ONLINE MULTIPLAYER
         </button>
         <button className="outline-button" onClick={openRules}>HOW TO PLAY</button>
+        <button className="outline-button account-entry" onClick={openAccount}>{accountLabel}</button>
       </div>
       <div className="level-route"><span>5 CARDS</span><i>→</i><span>3 CARDS</span><i>→</i><span>2 CARDS</span></div>
       <p className="round-note">10 rounds per level · one bluff each</p>
