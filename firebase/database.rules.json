@@ -10,6 +10,19 @@
         "hostId": { ".write": "!data.exists() || data.val() === auth.uid" },
         "code": { ".validate": "newData.isString() && newData.val().length >= 4 && newData.val().length <= 8" },
 
+        "order": {
+          "$seat": { ".write": "auth != null" }
+        },
+        "status": {
+          ".write": "auth != null"
+        },
+        "settings": {
+          ".write": "auth != null"
+        },
+        "updatedAt": {
+          ".write": "auth != null"
+        },
+
         "players": {
           "$uid": {
             ".read": "auth != null",
@@ -53,6 +66,21 @@
         },
         "providers": {
           ".validate": "newData.hasChildren()"
+        },
+        "name": {
+          ".validate": "newData.isString() && newData.val().length <= 32"
+        },
+        "country": {
+          ".validate": "newData.isString() && newData.val().length <= 2"
+        },
+        "dateOfBirth": {
+          ".validate": "newData.isString() && (newData.val() === '' || newData.val().matches(/^\\d{4}-\\d{2}-\\d{2}$/))"
+        },
+        "matchesPlayed": {
+          ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() % 1 === 0 && newData.val() >= data.val()"
+        },
+        "matchesWon": {
+          ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() % 1 === 0 && newData.val() >= data.val()"
         },
         "$other": { ".validate": false }
       }

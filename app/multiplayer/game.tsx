@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
-import { LEVELS, levelConfig, RESULT_COPY, LEVEL_COUNT } from "@/lib/game/rules";
+import { LEVELS, levelConfig, RESULT_COPY, LEVEL_COUNT, roundsPerLevel } from "@/lib/game/rules";
 import { RULESET_ROUNDS, roundInCourt, consecutiveLabel } from "@/lib/game/flow";
 import { dealTimings, SHUFFLE_MS } from "@/features/game/constants/pacing";
 import { PowerDock } from "@/features/game/components/PowerDock";
@@ -42,10 +42,11 @@ export default function GameView({ mp, onLeave }: { mp: MP; onLeave: () => void 
 
   const me = mp.mySeat ?? 0;
   const cfg = levelConfig(g.level);
-  // The online engine counts rounds globally (1..30); the strategy panel charts a
-  // COURT, so ask for the court-relative round just like the local panel does.
-  const strategyLevel = g.level;
-  const entries = picksThisCourt(g.history ?? [], strategyLevel, strategyTab);
+  // The panel charts a COURT, and the engine already records each history row
+  // against the court it was played in — the optional engine maps its global
+  // 1..RULESET_ROUNDS counter back through `strategyEntryFor`. So the row's own
+  // `level` is the court, which is what the local panel filters on too.
+  const entries = picksThisCourt(g.history ?? [], g.level, strategyTab);
   const frequency = summarisePicks(entries, cfg.cards);
   const canCallBluff = g.phase === "guess" && g.actingSeat === me;
 
@@ -446,7 +447,11 @@ function HideStage({ mp }: { mp: MP }) {
         >
           <span>☵</span>
           <b>{bluffUsed ? "BLUFF ALREADY USED" : "USE YOUR BLUFF"}</b>
-          <small>{bluffUsed ? "Available next level" : "Place empty cards. Once this level."}</small>
+          <small>
+            {bluffUsed
+              ? "One per court. Ready in the next court."
+              : "Place only empty cards. Once this court."}
+          </small>
         </button>
         <button className="gold-button" disabled={!canLock || busy} onClick={lock}>
           {busy ? "LOCKING…" : "LOCK THE CARDS"}
@@ -566,12 +571,12 @@ function Reveal({ mp }: { mp: MP }) {
   const copy = RESULT_COPY[result.kind];
   const meWon = result.winnerSeat === mp.mySeat;
   const [busy, setBusy] = useState(false);
-  // Classic: play "round" lives within a court; optional engine runs continuous
-  // rounds, so the final reveal is the last hide round of the match.
-  const lastOfGame = mp.useOptionalFlow
-    ? g.round >= RULESET_ROUNDS
-    : g.round >= 10 && g.level >= LEVEL_COUNT - 1;
-  const lastOfLevel = mp.useOptionalFlow ? lastOfGame : g.round >= 10;
+  // Classic: play "round" hides within a court, and each court has its own
+  // length (10, 6, 4), so the boundary is read from the shared resolver rather
+  // than compared against a literal. Optional engine runs continuous rounds, so
+  // the final reveal is the last hide round of the match.
+  const lastOfLevel = mp.useOptionalFlow ? g.round >= RULESET_ROUNDS : g.round >= roundsPerLevel(g.level);
+  const lastOfGame = lastOfLevel && g.level >= LEVEL_COUNT - 1;
   // Lives: when the hidden King was found, the Dealer lost a life.
   const lifeLost = mp.livesMode && result.kind === "king";
 
@@ -746,7 +751,7 @@ function MatchEnd({ mp, onLeave }: { mp: MP; onLeave: () => void }) {
             )}
           </>
         ) : (
-          <p>Thirty rounds. Three courts. One ruler.</p>
+          <p>Twenty rounds. Three courts. One ruler.</p>
         )}
         <div className="score-board large final">
           <div>

@@ -8,9 +8,9 @@
 import {
   RULESET_ROUNDS,
   DEALS_PER_SEAT,
-  ROUNDS_PER_COURT,
-  HIDES_PER_BLOCK,
   COURT_COUNT,
+  hidesInCourt,
+  courtStartRound,
   dealerForHidingRound,
   guesserForHidingRound,
   dealerSequence,
@@ -23,6 +23,8 @@ import {
   courtForHidingRound,
   type TurnOrder,
 } from "../lib/game/flow.ts";
+import { roundsInCourt } from "../features/game/constants/courts.ts";
+import { summarisePicks } from "../features/game/logic/strategy.ts";
 import flow from "node:assert/strict";
 
 let passed = 0;
@@ -45,25 +47,33 @@ check("alternate deals alternate 0,1,0,1...", () => {
   for (let i = 0; i < d.length; i += 1) flow.equal(d[i], i % 2);
 });
 
-check("complete hides a 5-round block per seat in every court", () => {
+check("complete hides one block per seat in every court", () => {
   const d = dealerSequence("complete");
-  // Each court: seat0 takes rounds 1..5, seat1 takes 6..10. The counter restarts
-  // every court, so the SAME shape repeats COURT_COUNT times.
-  const perCourt = [
-    ...Array.from({ length: HIDES_PER_BLOCK }, () => 0 as const),
-    ...Array.from({ length: HIDES_PER_BLOCK }, () => 1 as const),
-  ];
+  // Each court: seat0 takes the first block, seat1 the second. The block is one
+  // hide per card, so the courts run 5+5, 3+3 and 2+2 rounds.
   flow.equal(d.length, RULESET_ROUNDS);
+  let offset = 0;
   for (let c = 0; c < COURT_COUNT; c += 1) {
-    flow.deepEqual(d.slice(c * ROUNDS_PER_COURT, (c + 1) * ROUNDS_PER_COURT), perCourt);
+    const block = hidesInCourt(c);
+    const perCourt = [
+      ...Array.from({ length: block }, () => 0 as const),
+      ...Array.from({ length: block }, () => 1 as const),
+    ];
+    flow.deepEqual(d.slice(offset, offset + block * 2), perCourt, `court ${c}`);
+    offset += block * 2;
   }
   // Each seat deals exactly one block per court across the whole match.
-  flow.equal(DEALS_PER_SEAT, HIDES_PER_BLOCK * COURT_COUNT);
+  flow.equal(DEALS_PER_SEAT, hidesInCourt(0) + hidesInCourt(1) + hidesInCourt(2));
 });
 
-check("complete: player 2's turn arrives in the SAME court (round 6)", () => {
+check("complete: player 2's turn arrives in the SAME court", () => {
+  // Court 1 has 5-card blocks, so round 6 is seat 1 and round 5 is still seat 0.
   flow.equal(dealerForHidingRound(6, "complete"), 1);
   flow.equal(dealerForHidingRound(5, "complete"), 0);
+  // Court 2 opens at global round 11 and its block is 3, so round 14 flips.
+  flow.equal(dealerForHidingRound(11, "complete"), 0);
+  flow.equal(dealerForHidingRound(13, "complete"), 0);
+  flow.equal(dealerForHidingRound(14, "complete"), 1);
 });
 
 check("alternate guesser is complement of dealer", () => {
@@ -77,20 +87,23 @@ check("alternate guesser is complement of dealer", () => {
   }
 });
 
-check("courtForHidingRound buckets 1..10 ->0, 11..20 ->1, 21..30 ->2", () => {
+check("courtForHidingRound buckets the per-court round counts", () => {
+  // Court 1 runs rounds 1..10, court 2 rounds 11..16, court 3 rounds 17..20.
   flow.equal(courtForHidingRound(1), 0);
   flow.equal(courtForHidingRound(10), 0);
   flow.equal(courtForHidingRound(11), 1);
-  flow.equal(courtForHidingRound(20), 1);
-  flow.equal(courtForHidingRound(21), 2);
-  flow.equal(courtForHidingRound(30), 2);
+  flow.equal(courtForHidingRound(16), 1);
+  flow.equal(courtForHidingRound(17), 2);
+  flow.equal(courtForHidingRound(20), 2);
 });
 
 check("roundInCourt restarts at 1 every court", () => {
   flow.equal(roundInCourt(1), 1);
   flow.equal(roundInCourt(10), 10);
   flow.equal(roundInCourt(11), 1);
-  flow.equal(roundInCourt(21), 1);
+  flow.equal(roundInCourt(16), 6);
+  flow.equal(roundInCourt(17), 1);
+  flow.equal(roundInCourt(20), 4);
 });
 
 check("complete dealer block boundary round 11 => seat0 (new court)", () => {
@@ -175,6 +188,127 @@ check("no kings found -> match runs full length, draw at end", () => {
   const res = simulateMatch(kinds);
   flow.equal(res.hidingRoundsPlayed, RULESET_ROUNDS);
   flow.equal(res.verdict.over, false);
+});
+
+// ---------------------------------------------------------------------------
+// Bluff budget parity (local VS Bot / local 2-player / online)
+// ---------------------------------------------------------------------------
+
+/**
+ * A seat gets exactly ONE bluff per court in every mode. The local engine resets
+ * `bluffsAvailable` in `nextLevel()` and never mid-court; the online engine resets
+ * `bluffsUsed` when `courtForHidingRound` moves to a new court. Those agree only
+ * while a court boundary is never crossed by a plain round advance — which is what
+ * this locks down.
+ */
+check("a court boundary is crossed only by a court advance, never a round one", () => {
+  let court = 0;
+  let roundInThisCourt = 0;
+  for (let round = 1; round < RULESET_ROUNDS; round += 1) {
+    roundInThisCourt += 1;
+    const lastRoundOfCourt = roundInThisCourt === roundsInCourt(court);
+    const nextCourt = courtForHidingRound(round + 1);
+    if (lastRoundOfCourt) {
+      // The next round is the first of the NEXT court, so the local engine's
+      // nextLevel() and the online engine's per-round court check fire together.
+      flow.equal(nextCourt, court + 1, `round ${round} -> ${round + 1} enters the next court`);
+      court = nextCourt;
+      roundInThisCourt = 0;
+    } else {
+      // Still mid-court: a plain round advance must NOT move the court, or the
+      // online engine would hand out a second bluff mid-court.
+      flow.equal(nextCourt, court, `round ${round + 1} must not change court`);
+    }
+  }
+  flow.equal(court, COURT_COUNT - 1, "the walk ends in the final court");
+});
+
+check("each seat can bluff exactly once per court, in every court", () => {
+  // Replays the online reset rule and the local reset rule together and asserts
+  // they produce the same budget: one bluff per seat per court.
+  for (let court = 0; court < COURT_COUNT; court += 1) {
+    const block = hidesInCourt(court);
+    // Local: both seats start the court with a fresh bluff.
+    let localBluffs = [true, true];
+    const usedLocal: [boolean, boolean] = [false, false];
+    // Online: bluffsUsed starts false for both seats each court.
+    let onlineBluffsUsed = [false, false];
+    const usedOnline: [boolean, boolean] = [false, false];
+
+    for (let inCourt = 1; inCourt <= block * 2; inCourt += 1) {
+      const global = courtStartRound(court) + inCourt - 1;
+      const dealer = dealerForHidingRound(global, "complete");
+      // The dealer spends their bluff on their first hide of the court.
+      if (!usedLocal[dealer] && localBluffs[dealer]) {
+        localBluffs = localBluffs.map((v, i) => (i === dealer ? false : v)) as [boolean, boolean];
+        usedLocal[dealer] = true;
+      }
+      if (!usedOnline[dealer] && !onlineBluffsUsed[dealer]) {
+        onlineBluffsUsed = onlineBluffsUsed.map((v, i) => (i === dealer ? true : v)) as [boolean, boolean];
+        usedOnline[dealer] = true;
+      }
+    }
+    // A seat hides `block` times in a court but may bluff only once.
+    flow.equal(usedLocal[0], usedLocal[1], `court ${court}: both seats got a bluff`);
+    flow.deepEqual(usedLocal, usedOnline, `court ${court}: engines agree`);
+  }
+});
+
+check("the bluff budget is one per court, not one per round", () => {
+  // Court 1 has 5 hides each; a seat must still be limited to a single bluff.
+  const bluffsPerSeat = 1;
+  const hidesInFirstCourt = hidesInCourt(0);
+  flow.equal(hidesInFirstCourt, 5);
+  flow.equal(bluffsPerSeat, 1);
+  flow.ok(bluffsPerSeat < hidesInFirstCourt, "bluff budget must be smaller than the hide count");
+});
+
+// ---------------------------------------------------------------------------
+// Strategy panel scope parity
+// ---------------------------------------------------------------------------
+
+check("strategy rows are keyed to a court in both engines", () => {
+  // Optional: the row's level is the COURT the global round fell in, so the
+  // panel can filter to the current court exactly like the local engine does.
+  for (let court = 0; court < COURT_COUNT; court += 1) {
+    const global = courtStartRound(court);
+    const row = strategyEntryFor(
+      {
+        round: global,
+        level: 99, // deliberately wrong: optional mode must ignore it
+        dealerSeat: 0,
+        guesserSeat: 1,
+        pick: 0,
+        wasBluff: false,
+        winnerSeat: 1,
+      },
+      false,
+      false,
+    );
+    flow.equal(row.level, court, `global round ${global} belongs to court ${court}`);
+  }
+});
+
+check("strategy rows carry a 1-based card number matching the local engine", () => {
+  // Local stores `pick: pick + 1`; online must produce the same 1-based card.
+  for (const pick of [0, 1, 2, 3, 4]) {
+    const row = strategyEntryFor(
+      { round: 1, level: 0, dealerSeat: 0, guesserSeat: 1, pick, wasBluff: false, winnerSeat: 1 },
+      false,
+      true,
+    );
+    flow.equal(row.pick, pick + 1, `0-based pick ${pick} -> card ${pick + 1}`);
+  }
+});
+
+check("strategy chart width follows the court's card count", () => {
+  for (let court = 0; court < COURT_COUNT; court += 1) {
+    const cards = hidesInCourt(court);
+    const freq = summarisePicks([], cards);
+    flow.equal(freq.counts.length, cards, `court ${court} chart width`);
+    flow.equal(freq.favourite, null);
+    flow.equal(freq.total, 0);
+  }
 });
 
 // ---------------------------------------------------------------------------

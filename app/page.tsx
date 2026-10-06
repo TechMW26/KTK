@@ -14,8 +14,9 @@ import { StrategyModal } from "@/features/game/components/StrategyModal";
 import { AccountDialog } from "@/features/account/components/AccountDialog";
 import { AccountScreen } from "@/features/account/components/AccountScreen";
 import { useAccount } from "@/hooks/useAccount";
+import { recordMatchResult } from "@/lib/firebase/profile";
 import { TurnIndicator, TurnTransition } from "@/features/game/components/TurnIndicator";
-import { COURTS, HIDES_PER_BLOCK, STARTING_LIVES } from "@/features/game/constants/courts";
+import { COURTS, hidesPerBlock, setCurrentCourtIndex, STARTING_LIVES } from "@/features/game/constants/courts";
 import {
   RESULT_COPY,
   turnAnnouncement,
@@ -89,6 +90,8 @@ export default function Home() {
   const [turnTransition, setTurnTransition] = useState<TurnAnnouncement | null>(null);
   const prevTurnKey = useRef<string | null>(null);
   const transitionTimer = useRef<number | undefined>(undefined);
+  /** Guards the stats write so one match is counted exactly once. */
+  const recordedMatch = useRef<MatchPhase | null>(null);
 
   const config = COURTS[level];
   const dealer = dealerForRound(round);
@@ -97,8 +100,9 @@ export default function Home() {
   const guesserIsBot = mode === "bot" && guesser === 1;
   // Complete-turn blocks: which hide this is inside the current player's run.
   // Round resets to 1 each court, so the block restarts there too.
+  const hidesThisCourt = hidesPerBlock(level);
   const hideNumber = hidesIntoBlock(round);
-  const hideLabel = `HIDING ${hideNumber}/${HIDES_PER_BLOCK}`;
+  const hideLabel = `HIDING ${hideNumber}/${hidesThisCourt}`;
   // Even, window-fitted deal choreography for the current court's card count.
   const deal = useMemo(
     () => dealTimings(config.cards, motion ? SHUFFLE_MS : REDUCED.shuffle),
@@ -228,7 +232,7 @@ export default function Home() {
   };
 
   const nextRound = () => {
-    const step = afterRound({ round, livesEnabled: mode === "local" && livesOn, hasLifeWinner: lifeWinner !== null });
+    const step = afterRound({ round, level, livesEnabled: mode === "local" && livesOn, hasLifeWinner: lifeWinner !== null });
     if (step.action === "match-complete") {
       setPhase("match-end");
       return;
@@ -447,6 +451,52 @@ export default function Home() {
     };
   }, []);
 
+  /**
+   * Keep the shared court rotation pointed at the live court.
+   *
+   * The seat helpers are called from render without a court argument, so the
+   * module needs to know which court the match is on to pick the right block
+   * size (5, 3 or 2 hides). This runs before those reads in the same commit.
+   */
+  useEffect(() => {
+    setCurrentCourtIndex(level);
+  }, [level]);
+
+  /**
+   * Record the finished match against the signed-in account.
+   *
+   * Burns once per match: `recordedMatch.current` holds the phase transition
+   * that was already counted, so re-renders, a StrictMode double-invoke or
+   * "PLAY AGAIN" restarting the match cannot inflate the totals.
+   *
+   * The winner is the same comparison the match-end screen displays, so the
+   * statistic and the result the player just saw can never disagree. In
+   * 2-Player mode both humans share one account, so that account is credited
+   * with the seat that won; with no account signed in the effect does nothing.
+   */
+  useEffect(() => {
+    if (phase !== "match-end") return;
+    if (recordedMatch.current === phase) return;
+    recordedMatch.current = phase;
+
+    const user = account.user;
+    if (!user || user.isAnonymous) return;
+
+    const localLivesWin = mode === "local" && livesOn && lifeWinner !== null;
+    const won = localLivesWin
+      ? lifeWinner === 0
+      : scores[0] !== scores[1] && scores[0] > scores[1];
+
+    void recordMatchResult(user.uid, won).then((result) => {
+      if (!result.ok && result.reason !== "no-profile") {
+        console.warn("[account] match result not recorded", result.reason);
+        return;
+      }
+      void account.refresh();
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase]);
+
   return (
     <main className={["game-shell", motion ? "" : "reduced-motion"].join(" ")}>
       <section className={["game-screen", phase === "result" && result ? RESULT_COPY[result.kind].tone : ""].join(" ")}>
@@ -535,7 +585,7 @@ export default function Home() {
                       >
                         <span>☵</span>
                         <b>{bluffsAvailable[dealer] ? "USE YOUR BLUFF" : "BLUFF ALREADY USED"}</b>
-                        <small>Place five empty cards. Once this level.</small>
+                        <small>Place only empty cards. Once this court.</small>
                       </button>
                       <button className="gold-button" disabled={!isBluff && kingPosition === null} onClick={confirmDealerChoice}>
                         LOCK THE CARDS
@@ -729,7 +779,7 @@ export default function Home() {
                   <>
                     <h2>{scores[0] === scores[1] ? "A ROYAL DRAW" : `${displayNames[scores[0] > scores[1] ? 0 : 1]} WINS!`}</h2>
                     <Ornament />
-                    <p>Thirty rounds. Three courts. One ruler.</p>
+                    <p>Twenty rounds. Three courts. One ruler.</p>
                   </>
                 )}
                 <div className="score-board large final">
@@ -854,7 +904,16 @@ function HomeScreen({
 }) {
   return (
     <section className="home-screen" aria-labelledby="game-title">
-      <button className="settings-button" onClick={openSettings} aria-label="Open settings">⚙</button>
+      <div className="home-topbar">
+        <button className="topbar-button" onClick={openAccount} aria-label={accountLabel}>
+          <span aria-hidden="true">👤</span>
+          <span className="topbar-label">{accountLabel}</span>
+        </button>
+        <button className="topbar-button" onClick={openSettings} aria-label="Settings">
+          <span aria-hidden="true">⚙️</span>
+          <span className="topbar-label">SETTINGS</span>
+        </button>
+      </div>
       <Logo />
       <p className="tagline">Outsmart. Bluff. Win.</p>
       <div className="king-emblem">
@@ -902,10 +961,9 @@ function HomeScreen({
           ONLINE MULTIPLAYER
         </button>
         <button className="outline-button" onClick={openRules}>HOW TO PLAY</button>
-        <button className="outline-button account-entry" onClick={openAccount}>{accountLabel}</button>
       </div>
       <div className="level-route"><span>5 CARDS</span><i>→</i><span>3 CARDS</span><i>→</i><span>2 CARDS</span></div>
-      <p className="round-note">10 rounds per level · one bluff each</p>
+      <p className="round-note">5 · 3 · 2 hides each · one bluff each</p>
     </section>
   );
 }

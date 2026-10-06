@@ -3,11 +3,11 @@ import type { ResultKind, RoundResultRecord, Seat } from "@/lib/multiplayer/type
 // from the bare-Node test harness, which cannot resolve path aliases.
 import {
   COURTS,
-  ROUNDS_PER_COURT,
   COURT_COUNT,
   courtAt,
   dealerForRound,
   guesserForRound,
+  roundsInCourt,
 } from "../../features/game/constants/courts.ts";
 
 export type { ResultKind, RoundResultRecord, Seat };
@@ -47,9 +47,19 @@ export const LEVELS: LevelConfig[] = COURTS.map((court, index) => ({
   points: court.points,
 }));
 
-export const ROUNDS_PER_LEVEL = ROUNDS_PER_COURT;
+/**
+ * Rounds in a level. NOT a single number: a court runs two blocks of `cards`
+ * hides, so the three levels run 10, 6 and 4 rounds respectively. Kept as a
+ * function so no caller can assume the courts share a length.
+ */
+export function roundsPerLevel(level: number): number {
+  return roundsInCourt(level);
+}
 export const LEVEL_COUNT = COURT_COUNT;
-export const TOTAL_ROUNDS = ROUNDS_PER_COURT * COURT_COUNT;
+export const TOTAL_ROUNDS = COURTS.reduce(
+  (total, _court, index) => total + roundsInCourt(index),
+  0,
+);
 
 /** The court for a zero-based index, clamped to the table. */
 export function levelConfig(index: number): LevelConfig {
@@ -70,8 +80,8 @@ export function levelConfig(index: number): LevelConfig {
  * Classic online play always alternates the dealer every round (seat
  * (round-1) % 2, with the round resetting to 1 each court), so it passes
  * block = 1 to the shared rotation. The single-player game uses the DEFAULT
- * blocked rotation (HIDES_PER_BLOCK) from the same function, so the two can
- * never drift into two separate copies of the formula.
+ * per-court blocked rotation from the same function, so the two can never drift
+ * into two separate copies of the formula.
  */
 export function dealerSeatFor(round: number): Seat {
   return dealerForRound(round, 1);

@@ -10,7 +10,7 @@
  */
 import {
   LEVELS,
-  ROUNDS_PER_LEVEL,
+  roundsPerLevel,
   LEVEL_COUNT,
   TOTAL_ROUNDS,
   levelConfig,
@@ -65,10 +65,12 @@ check("court table matches the shipped 5/3/2 · 20/15/9 · 1/2/3 progression", (
   );
 });
 
-check("ten rounds per court, three courts, thirty rounds total", () => {
-  flow.equal(ROUNDS_PER_LEVEL, 10);
+check("one block per seat per court: 10 + 6 + 4 = twenty rounds total", () => {
+  flow.equal(roundsPerLevel(0), 10);
+  flow.equal(roundsPerLevel(1), 6);
+  flow.equal(roundsPerLevel(2), 4);
   flow.equal(LEVEL_COUNT, 3);
-  flow.equal(TOTAL_ROUNDS, 30);
+  flow.equal(TOTAL_ROUNDS, 20);
 });
 
 check("levelConfig clamps out-of-range court indices", () => {
@@ -79,7 +81,8 @@ check("levelConfig clamps out-of-range court indices", () => {
 
 check("classic online dealer alternates every round starting at seat 0", () => {
   // dealerSeatFor is the ONLINE classic alias: block = 1, i.e. alternate turns.
-  // (The single-player default is a block of HIDES_PER_BLOCK; see logic.test.ts.)
+  // (The single-player default is a per-court block sized to the card count;
+  // see logic.test.ts.)
   for (let round = 1; round <= 10; round += 1) {
     flow.equal(dealerSeatFor(round), ((round - 1) % 2) as Seat);
   }

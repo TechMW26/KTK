@@ -13,6 +13,11 @@ import { ensureProfile, loadProfile, syncIdentityFields, type UserProfile } from
  * Guests are the default: this hook never forces a sign-in, it only reports who
  * the player currently is so the UI can offer an upgrade. Existing multiplayer
  * code keeps calling `ensureSignedIn()` directly and is unaffected.
+ *
+ * Anonymous guests deliberately get NO `users/{uid}` node. Guests are throwaway
+ * identities that the player never chose to keep, so persisting one would only
+ * litter the database with rows that can never be reclaimed — a profile is
+ * written only once an account is real (a linked or signed-in provider).
  */
 
 export interface AccountState {
@@ -63,7 +68,7 @@ export function useAccount(): AccountState {
       unsubscribe = observeAuth((next) => {
         setUser(next);
         setLoading(false);
-        if (!next) {
+        if (!next || next.isAnonymous) {
           setProfile(null);
           return;
         }

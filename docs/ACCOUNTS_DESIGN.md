@@ -253,9 +253,10 @@ Launch
 | Section | Contents |
 | --- | --- |
 | **Identity** | Editable display name (sourced from the account — see B4), avatar (later), member-since |
+| **Profile** | Editable name, country, date of birth; read-only email taken from Firebase Auth |
+| **Statistics** | Matches played / won, derived winning ratio. Written only by the game loop |
 | **Sign-in methods** | Which providers are linked; link an additional one; unlink (blocked if it is the last one) |
 | **Wallet** | **Placeholder only.** Rendered as "coming soon" until item 4 defines currency |
-| **Stats** | Placeholder — not defined yet |
 | **Danger zone** | Sign out; delete account (soft delete + typed confirmation, see §5.4) |
 
 ### 5.2 Data model
@@ -272,15 +273,92 @@ users/{uid}: {
   emailVerified: boolean,       // mirrors the Firebase user record (§3.6)
   // --- soft delete (§5.4) ---
   deletedAt:   number | null,   // null while active
-  // currency / stats intentionally NOT modelled yet — see MOM item 4
+  // --- profile (§5.5) ---
+  name:        string,          // <= 32 chars; kept in step with displayName
+  country:     string,          // ISO 3166-1 alpha-2, "" when unset
+  dateOfBirth: string,          // "YYYY-MM-DD", "" when unset
+  // --- statistics (§5.6) ---
+  matchesPlayed: number,        // non-decreasing, integer
+  matchesWon:    number,        // non-decreasing, integer
+  // currency intentionally NOT modelled yet — see MOM item 4
 }
 ```
+
+There is deliberately **no `email` field**. Identity is the Firebase Auth
+record; a stored copy would be a second source of truth that could drift from
+it, and an editable one would be a spoofing vector.
+
+### 5.2.1 Why Realtime Database and not Firestore
+
+The account data lives in RTDB because the whole app already does: rooms,
+matchmaking, secrets and the profile node are all RTDB behind
+`firebase/database.rules.json`. Introducing Firestore for one collection would
+mean a second database, a second rules file, and two places to look for a user.
+The requested `users/{uid}` document maps exactly onto the existing node.
+
+### 5.5 Editable profile fields
+
+Written by `saveProfileDetails()` in `lib/firebase/profile.ts`, reached from the
+Account screen's **Save Changes**. Validation lives in that function, not the
+component, so the rules and the UI cannot drift apart.
+
+| Field | Stored as | Rules |
+| --- | --- | --- |
+| `name` | string | non-empty after trim, ≤ 32 chars |
+| `country` | ISO alpha-2 | must be a code from `lib/profile/countries.ts`, ≤ 2 chars |
+| `dateOfBirth` | `YYYY-MM-DD` | real calendar date, not future, not > 120 years ago |
+
+`name` also updates `displayName` (truncated to 24 chars) in the same write:
+the home screen and room entries still read `displayName`, and letting the two
+diverge would show the player a different name on each screen.
+
+### 5.6 Statistics integrity
+
+`matchesPlayed`/`matchesWon` have exactly one writer: `recordMatchResult()`.
+
+- **No UI accepts a number.** The statistics section is read-only and the fields
+  are absent from the `ProfilePatch` allow-list, so the Account screen has no
+  code path that can set them.
+- **The rules enforce monotonicity.** Both fields validate as non-negative
+  integers that are `>= data.val()`, so even a hand-crafted client cannot lower
+  a total or set a fractional value.
+- **Recorded once per match.** `app/page.tsx` watches `phase === "match-end"`
+  and guards with a ref, so re-renders, StrictMode double-invokes and "PLAY
+  AGAIN" cannot inflate the counts.
+- **The winner matches the screen.** The same score/lives comparison the
+  match-end screen renders decides win vs loss, so the statistic can never
+  contradict the result the player just saw.
+- **Best-effort.** A failed stats write is logged and never breaks the
+  match-end screen.
+
+Winning ratio is derived at render time and never stored:
+
+```
+matchesPlayed === 0 ? "0%" : (matchesWon / matchesPlayed * 100).toFixed(1) + "%"
+```
+
+Zero matches renders **0%**, not `NaN%` — the state every new player starts in.
+
+### 5.7 Anonymous guests are never persisted
+
+`ensureProfile()` returns `null` without writing when `user.isAnonymous`, and
+`useAccount` does not call it for a guest at all. Guests are throwaway
+identities the player never chose to keep, so persisting one would only litter
+the database with rows that can never be reclaimed. A profile appears when the
+guest links a provider — `linkWithCredential` preserves `auth.uid`, so the
+account inherits the identity it already had.
+
+The rules cannot enforce this (an anonymous token still carries a `uid`), so the
+guard is client-side, in the one function that creates profiles.
+
 
 ### 5.3 Account flow
 
 ```
 Account page
   ├─ Edit display name ──→ users/{uid}.displayName
+  ├─ Save profile (name/country/DOB) ──→ users/{uid} (+ displayName in step)
+  ├─ Match ends ──→ users/{uid}.matchesPlayed++ / matchesWon++ (game loop only)
   ├─ Link another provider ──→ linkWithPopup → users/{uid}.providers
   ├─ Unlink (blocked if last) ──→ unlink
   ├─ Sign out ──→ back to GUEST (new anonymous uid) — see §6

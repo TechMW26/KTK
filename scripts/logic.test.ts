@@ -15,7 +15,6 @@ import {
 } from "../features/game/logic/seats.ts";
 import {
   blockStartForRound,
-  HIDES_PER_BLOCK,
   hidesIntoBlock,
 } from "../features/game/constants/courts.ts";
 import {
@@ -47,7 +46,14 @@ import {
   summarisePicks,
   describePattern,
 } from "../features/game/logic/strategy.ts";
-import { COURTS, ROUNDS_PER_COURT, STARTING_LIVES } from "../features/game/constants/courts.ts";
+import {
+  COURTS,
+  STARTING_LIVES,
+  TOTAL_ROUNDS,
+  hidesPerBlock,
+  roundsInCourt,
+  setCurrentCourtIndex,
+} from "../features/game/constants/courts.ts";
 import { TURN_VEIL_MS, BOT_THINK_AFTER_VEIL_MS, REDUCED } from "../features/game/constants/pacing.ts";
 import type { RoundHistoryEntry, Seat } from "../features/game/types/game.ts";
 import flow from "node:assert/strict";
@@ -80,7 +86,10 @@ check("courts keep the shipped card counts, clocks and stakes", () => {
       ["FINAL DUEL", 2, 9, 3],
     ],
   );
-  flow.equal(ROUNDS_PER_COURT, 10);
+  flow.equal(roundsInCourt(0), 10);
+  flow.equal(roundsInCourt(1), 6);
+  flow.equal(roundsInCourt(2), 4);
+  flow.equal(TOTAL_ROUNDS, 20);
   flow.equal(STARTING_LIVES, 5);
 });
 
@@ -97,13 +106,26 @@ check("pacing constants match the original inline literals", () => {
 // Seats
 // ---------------------------------------------------------------------------
 
-check("seat math: complete turns gives each player a block of 5 per court", () => {
-  // DEFAULT rotation: seat 0 hides rounds 1..5, seat 1 hides rounds 6..10.
+check("seat math: each court gives each player a block sized to its cards", () => {
+  // DEFAULT rotation: within a court, seat 0 hides the first block and seat 1 the
+  // second. Block size follows the card count, so 5 / 3 / 2 across the courts.
+  setCurrentCourtIndex(0);
   for (let round = 1; round <= 10; round += 1) {
-    const expectedDealer = (round <= HIDES_PER_BLOCK ? 0 : 1) as Seat;
+    const expectedDealer = (round <= 5 ? 0 : 1) as Seat;
     flow.equal(dealerForRound(round), expectedDealer, `dealer round ${round}`);
     flow.equal(guesserForRound(round), (expectedDealer === 0 ? 1 : 0) as Seat, `guesser round ${round}`);
   }
+  setCurrentCourtIndex(1);
+  for (let round = 1; round <= 6; round += 1) {
+    const expectedDealer = (round <= 3 ? 0 : 1) as Seat;
+    flow.equal(dealerForRound(round), expectedDealer, `court 2 dealer round ${round}`);
+  }
+  setCurrentCourtIndex(2);
+  for (let round = 1; round <= 4; round += 1) {
+    const expectedDealer = (round <= 2 ? 0 : 1) as Seat;
+    flow.equal(dealerForRound(round), expectedDealer, `court 3 dealer round ${round}`);
+  }
+  setCurrentCourtIndex(0);
 });
 
 check("seat math: passing block=1 restores the classic alternating rotation", () => {
@@ -114,24 +136,35 @@ check("seat math: passing block=1 restores the classic alternating rotation", ()
   }
 });
 
-check("block 5 rotation gives both seats an equal share of a court", () => {
-  const seats = Array.from({ length: ROUNDS_PER_COURT }, (_, i) => dealerForRound(i + 1));
-  flow.equal(seats.filter((s) => s === 0).length, HIDES_PER_BLOCK);
-  flow.equal(seats.filter((s) => s === 1).length, ROUNDS_PER_COURT - HIDES_PER_BLOCK);
-  // No alternation: exactly ONE swap across the whole court.
-  const swaps = seats.slice(1).filter((s, i) => s !== seats[i]).length;
-  flow.equal(swaps, 1);
+check("every court gives both seats an equal share, with exactly one swap", () => {
+  for (let court = 0; court < 3; court += 1) {
+    const rounds = roundsInCourt(court);
+    const block = hidesPerBlock(court);
+    setCurrentCourtIndex(court);
+    const seats = Array.from({ length: rounds }, (_, i) => dealerForRound(i + 1));
+    flow.equal(seats.filter((s) => s === 0).length, block, `court ${court} seat 0`);
+    flow.equal(seats.filter((s) => s === 1).length, rounds - block, `court ${court} seat 1`);
+    // No alternation: exactly ONE swap across the whole court.
+    const swaps = seats.slice(1).filter((s, i) => s !== seats[i]).length;
+    flow.equal(swaps, 1, `court ${court} swaps`);
+  }
+  setCurrentCourtIndex(0);
 });
 
 check("blockStartForRound and hidesIntoBlock describe the current block", () => {
-  flow.equal(blockStartForRound(1), 1);
-  flow.equal(blockStartForRound(5), 1);
-  flow.equal(blockStartForRound(6), 6);
-  flow.equal(blockStartForRound(10), 6);
-  flow.equal(hidesIntoBlock(1), 1);
-  flow.equal(hidesIntoBlock(5), 5);
-  flow.equal(hidesIntoBlock(6), 1);
-  flow.equal(hidesIntoBlock(10), 5);
+  // Explicit block sizes, so the assertions do not depend on the live court.
+  flow.equal(blockStartForRound(1, 5), 1);
+  flow.equal(blockStartForRound(5, 5), 1);
+  flow.equal(blockStartForRound(6, 5), 6);
+  flow.equal(blockStartForRound(10, 5), 6);
+  flow.equal(hidesIntoBlock(1, 5), 1);
+  flow.equal(hidesIntoBlock(5, 5), 5);
+  flow.equal(hidesIntoBlock(6, 5), 1);
+  flow.equal(hidesIntoBlock(10, 5), 5);
+  // A smaller court's block, e.g. court 3 (2 cards -> blocks of 2).
+  flow.equal(blockStartForRound(3, 2), 3);
+  flow.equal(hidesIntoBlock(3, 2), 1);
+  flow.equal(hidesIntoBlock(4, 2), 2);
 });
 
 check("only seat 1 is the bot, and only in bot mode", () => {
@@ -181,35 +214,40 @@ check("the first player out of hearts loses, and the other wins", () => {
 // Progression
 // ---------------------------------------------------------------------------
 
-check("rounds 1..9 advance, round 10 completes the court", () => {
-  for (let round = 1; round <= 9; round += 1) {
+check("rounds 1..N-1 advance, round N completes the court, per court", () => {
+  for (let court = 0; court < 3; court += 1) {
+    const last = roundsInCourt(court);
+    for (let round = 1; round < last; round += 1) {
+      flow.deepEqual(
+        afterRound({ round, level: court, livesEnabled: false, hasLifeWinner: false }),
+        { action: "next-round", round: round + 1 },
+        `court ${court} round ${round}`,
+      );
+    }
     flow.deepEqual(
-      afterRound({ round, livesEnabled: false, hasLifeWinner: false }),
-      { action: "next-round", round: round + 1 },
+      afterRound({ round: last, level: court, livesEnabled: false, hasLifeWinner: false }),
+      { action: "court-complete" },
+      `court ${court} last round`,
     );
   }
-  flow.deepEqual(
-    afterRound({ round: 10, livesEnabled: false, hasLifeWinner: false }),
-    { action: "court-complete" },
-  );
 });
 
 check("a decided lives match ends the game before the round boundary is read", () => {
-  // Original code returned early on the life winner, so round 10 + a winner
-  // must still be a match-complete, not a court-complete.
+  // Original code returned early on the life winner, so the court's last round
+  // plus a winner must still be a match-complete, not a court-complete.
   flow.deepEqual(
-    afterRound({ round: 10, livesEnabled: true, hasLifeWinner: true }),
+    afterRound({ round: 10, level: 0, livesEnabled: true, hasLifeWinner: true }),
     { action: "match-complete" },
   );
   flow.deepEqual(
-    afterRound({ round: 3, livesEnabled: true, hasLifeWinner: true }),
+    afterRound({ round: 3, level: 0, livesEnabled: true, hasLifeWinner: true }),
     { action: "match-complete" },
   );
 });
 
 check("a stale life winner is ignored unless lives mode is on", () => {
   flow.deepEqual(
-    afterRound({ round: 3, livesEnabled: false, hasLifeWinner: true }),
+    afterRound({ round: 3, level: 0, livesEnabled: false, hasLifeWinner: true }),
     { action: "next-round", round: 4 },
   );
 });
@@ -223,8 +261,10 @@ check("the final court ends the match", () => {
   flow.deepEqual(afterCourt(2), { action: "match-complete" });
   flow.equal(isFinalCourt(2), true);
   flow.equal(isFinalCourt(1), false);
-  flow.equal(isFinalRoundOfCourt(10), true);
-  flow.equal(isFinalRoundOfCourt(9), false);
+  flow.equal(isFinalRoundOfCourt(10, 0), true);
+  flow.equal(isFinalRoundOfCourt(9, 0), false);
+  flow.equal(isFinalRoundOfCourt(6, 1), true);
+  flow.equal(isFinalRoundOfCourt(4, 2), true);
 });
 
 // ---------------------------------------------------------------------------

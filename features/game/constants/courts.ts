@@ -27,23 +27,39 @@ export const COURTS = [
 /** A court's configuration. */
 export type Court = (typeof COURTS)[number];
 
-/** Rounds played in every court before advancing. */
-export const ROUNDS_PER_COURT = 10;
-
 /**
  * How many consecutive rounds each player hides for inside a court.
  *
- * The default game is "complete turns": one player hides the first half of the
- * court, then the other hides the second half. With ROUNDS_PER_COURT = 10 this
- * is a block of 5 per player — seat 0 hides rounds 1..5, seat 1 hides 6..10.
+ * Derivable at any time from the court's card count — see `hidesPerBlock(index)`.
+ * A court with N cards runs blocks of N hides, so each player hides once per
+ * card position and both always get an equal share. This is why
+ * `ROUNDS_PER_COURT` is not a single number: see `roundsInCourt(index)`.
  */
-export const HIDES_PER_BLOCK = ROUNDS_PER_COURT / 2;
+
+/**
+ * Hides per player in a court: one per card on the table.
+ *
+ * Never more than `cards`, which is the load-bearing constraint. A round is a
+ * single hide, so an 11th round would re-use one of the 10 pre-baked dealer
+ * positions and deal a duplicate pair of cards for that round number.
+ */
+export function hidesPerBlock(courtIndex: number): number {
+  return courtAt(courtIndex).cards;
+}
+
+/** Rounds in a court — both players' blocks. */
+export function roundsInCourt(courtIndex: number): number {
+  return hidesPerBlock(courtIndex) * 2;
+}
 
 /** How many courts a full match runs through. */
 export const COURT_COUNT = COURTS.length;
 
-/** Total rounds in a full match. */
-export const TOTAL_ROUNDS = ROUNDS_PER_COURT * COURT_COUNT;
+/** Total rounds in a full match, summed across the per-court round counts. */
+export const TOTAL_ROUNDS = COURTS.reduce(
+  (total, _court, index) => total + roundsInCourt(index),
+  0,
+);
 
 /** Starting hearts in the optional local 5-Lives rule. */
 export const STARTING_LIVES = 5;
@@ -63,21 +79,22 @@ export function courtAt(index: number): Court {
  *
  * DEFAULT — "complete turns": each player hides for a BLOCK of consecutive
  * rounds instead of trading every round. Seat 0 takes the first block of the
- * court (rounds 1..5), seat 1 takes the second (rounds 6..10). The round
+ * court (rounds 1..N), seat 1 takes the second (rounds N+1..2N). The round
  * counter restarts at 1 in each court, so the same player hides first in all
  * three courts and both always get an equal share of the hides.
  *
- * The two rotations are identical in shape — `floor((round - 1) / block) % 2`
- * with block = 1 degenerates to the classic `(round - 1) % 2` — so alternate
- * turns remain available by passing block = 1.
+ * `block` defaults to the CURRENT court's block, so callers that already know
+ * which court they are in get the right rotation without passing anything. Pass
+ * an explicit value to ask about a different court, or `block = 1` for the
+ * classic alternating rotation: `floor((round - 1) / block) % 2` degenerates to
+ * `(round - 1) % 2`.
  */
-export function dealerForRound(round: number, block: number = HIDES_PER_BLOCK): Seat {
-  const size = Math.max(1, Math.floor(block));
-  return (Math.floor((round - 1) / size) % 2) as Seat;
+export function dealerForRound(round: number, block?: number): Seat {
+  return seatForRound(round, currentBlock(block));
 }
 
 /** Who guesses on a given round — always the other chair. */
-export function guesserForRound(round: number, block: number = HIDES_PER_BLOCK): Seat {
+export function guesserForRound(round: number, block?: number): Seat {
   return (dealerForRound(round, block) === 0 ? 1 : 0) as Seat;
 }
 
@@ -85,19 +102,50 @@ export function guesserForRound(round: number, block: number = HIDES_PER_BLOCK):
  * The round number the current block starts on (1-based), which is what the UI
  * shows as "hiding N of HIDES_PER_BLOCK".
  */
-export function blockStartForRound(round: number, block: number = HIDES_PER_BLOCK): number {
-  const size = Math.max(1, Math.floor(block));
+export function blockStartForRound(round: number, block?: number): number {
+  const size = currentBlock(block);
   return Math.floor((round - 1) / size) * size + 1;
 }
 
 /** How many hides the given seat has already completed in the current block. */
-export function hidesIntoBlock(round: number, block: number = HIDES_PER_BLOCK): number {
-  const size = Math.max(1, Math.floor(block));
+export function hidesIntoBlock(round: number, block?: number): number {
+  const size = currentBlock(block);
   return ((round - 1) % size) + 1;
 }
 
 /** True when the given seat is the AI opponent. The bot always sits in seat 1. */
 export function isBotSeat(seat: Seat, opponent: "local" | "bot"): boolean {
   return opponent === "bot" && seat === 1;
+}
+
+/** Shared rotation maths; `size` is already normalised by the caller. */
+function seatForRound(round: number, size: number): Seat {
+  return (Math.floor((round - 1) / size) % 2) as Seat;
+}
+
+/** Resolve an optional block argument to the current court's, normalised. */
+function currentBlock(block?: number): number {
+  const size = block ?? hidesPerBlock(currentCourtIndex());
+  return Math.max(1, Math.floor(size));
+}
+
+/**
+ * The court the live match is on.
+ *
+ * The rotation helpers are called from render paths that do not pass a court, so
+ * they read the level the game loop is currently on. Kept as a module-level
+ * variable rather than threaded through every call because the match is a
+ * single sequential state machine — a court is never mid-advance when a hide is
+ * being resolved.
+ */
+let liveCourtIndex = 0;
+
+export function currentCourtIndex(): number {
+  return liveCourtIndex;
+}
+
+/** Set the live court. Called by the game loop when it advances a court. */
+export function setCurrentCourtIndex(index: number): void {
+  liveCourtIndex = Math.max(0, Math.min(COURT_COUNT - 1, index));
 }
 

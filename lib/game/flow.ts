@@ -31,16 +31,36 @@
  * copy of the court table.
  */
 
-/** Round the dealer ROTATION restarts at, within a court. */
-export const ROUNDS_PER_COURT = 10;
+/**
+ * Round the dealer ROTATION restarts at, within a court.
+ *
+ * A court now runs two blocks of `hidesPerBlock(court)` hides — one per seat —
+ * so this is NOT a single number: court 1 runs 10 rounds, court 2 runs 6 and
+ * court 3 runs 4. Kept as the court-1 value for callers that only need the
+ * opening court's shape, and because `COURTS[0].cards` is the same 5.
+ */
+export const ROUNDS_PER_COURT = 5 * 2; // court 1: 10
 /** Consecutive hides each seat takes inside one court (half the court). */
-export const HIDES_PER_BLOCK = ROUNDS_PER_COURT / 2; // 5
+export const HIDES_PER_BLOCK = ROUNDS_PER_COURT / 2; // court 1: 5
 /** Number of courts in a match (matches the shared COURTS table length). */
 export const COURT_COUNT = 3;
-/** Total hiding rounds in a match (3 courts x 10 rounds). */
-export const RULESET_ROUNDS = ROUNDS_PER_COURT * COURT_COUNT; // 30
+/** Total hiding rounds in a match (10 + 6 + 4). */
+export const RULESET_ROUNDS = 20;
 /** Rounds each seat deals across a whole match (one block in every court). */
-export const DEALS_PER_SEAT = RULESET_ROUNDS / 2; // 15
+export const DEALS_PER_SEAT = RULESET_ROUNDS / 2; // 10
+
+/** Cards on the table in a given court — drives that court's block size. */
+const COURT_CARDS = [5, 3, 2] as const;
+
+/** Rounds in a court: both seats' blocks. */
+export function roundsInCourt(courtIndex: number): number {
+  return COURT_CARDS[Math.max(0, Math.min(COURT_COUNT - 1, courtIndex))] * 2;
+}
+
+/** Hides per seat in a court: one per card on the table. */
+export function hidesInCourt(courtIndex: number): number {
+  return COURT_CARDS[Math.max(0, Math.min(COURT_COUNT - 1, courtIndex))];
+}
 
 // ---------------------------------------------------------------------------
 // Types (kept local & inline so this module stays import-free)
@@ -117,36 +137,52 @@ export interface RoundOutcome {
 // ---------------------------------------------------------------------------
 
 /**
- * Round WITHIN the current court (1..ROUNDS_PER_COURT) for a 1-based global
+ * Round WITHIN the current court (1..roundsInCourt(court)) for a 1-based global
  * hiding round. The dealer rotation restarts here every court, mirroring the
  * local engine where `round` resets to 1 on a new court.
+ *
+ * Courts no longer share a length, so the round is found by walking the court
+ * boundaries rather than taking a modulo.
  */
 export function roundInCourt(hidingRound: number): number {
-  const zero = hidingRound - 1;
-  return (zero % ROUNDS_PER_COURT) + 1;
+  return hidingRound - courtStartRound(courtForHidingRound(hidingRound)) + 1;
+}
+
+/** The 1-based global hiding round a court opens on. */
+export function courtStartRound(courtIndex: number): number {
+  let start = 1;
+  for (let index = 0; index < courtIndex; index++) start += roundsInCourt(index);
+  return start;
 }
 
 /** Zero-based court (level) index for a 1-based global hiding round. */
 export function courtForHidingRound(hidingRound: number): number {
-  const zero = hidingRound - 1;
-  return Math.min(COURT_COUNT - 1, Math.floor(zero / ROUNDS_PER_COURT));
+  let remaining = Math.max(1, hidingRound);
+  for (let index = 0; index < COURT_COUNT; index++) {
+    const rounds = roundsInCourt(index);
+    if (remaining <= rounds) return index;
+    remaining -= rounds;
+  }
+  return COURT_COUNT - 1;
 }
 
 /**
  * Dealer seat for a 1-based global hiding round under a turn-order mode.
  *
  * COMPLETE — "complete turns": the hides INSIDE a court are split into two
- * consecutive blocks of HIDES_PER_BLOCK (5). Seat 0 takes rounds 1..5 of the
- * court and seat 1 takes 6..10, so each seat hides a whole block before the
- * table turns. The counter restarts each court, so seat 0 opens every court and
- * both seats deal an equal number of rounds.
+ * consecutive blocks of `hidesInCourt(court)` — 5, 3 and 2 for the three courts.
+ * Seat 0 takes the first block of the court and seat 1 the second, so each seat
+ * hides a whole block before the table turns. The counter restarts each court,
+ * so seat 0 opens every court and both seats deal an equal number of rounds.
  *
  * ALTERNATE — the dealer flips every single hiding round.
  */
 export function dealerForHidingRound(hidingRound: number, turnOrder: TurnOrder): Seat {
   if (turnOrder === "complete") {
+    const court = courtForHidingRound(hidingRound);
+    const block = hidesInCourt(court);
     const inCourt = roundInCourt(hidingRound);
-    return (Math.floor((inCourt - 1) / HIDES_PER_BLOCK) % 2) as Seat;
+    return (Math.floor((inCourt - 1) / block) % 2) as Seat;
   }
   // alternate: dealer alternates each hiding round (global parity).
   return (((hidingRound - 1) % 2) as Seat) as Seat;
@@ -165,15 +201,17 @@ export function hidesDealtBy(seat: Seat, hidingRound: number, turnOrder: TurnOrd
   // hidingRound is 1-based; rounds before it that are fully done:
   const done = hidingRound - 1;
   if (turnOrder === "complete") {
-    const block = HIDES_PER_BLOCK; // 5
-    const cycle = ROUNDS_PER_COURT; // 10: block for seat 0, then block for seat 1
-    const fullCourts = Math.floor(done / cycle);
-    let count = fullCourts * block;
-    const within = done % cycle;
-    if (seat === 0) {
-      count += Math.min(within, block);
-    } else {
-      count += Math.max(0, Math.min(within - block, block));
+    let count = 0;
+    let remaining = done;
+    for (let court = 0; court < COURT_COUNT && remaining > 0; court++) {
+      const block = hidesInCourt(court);
+      const within = Math.min(remaining, block * 2);
+      if (seat === 0) {
+        count += Math.min(within, block);
+      } else {
+        count += Math.max(0, within - block);
+      }
+      remaining -= within;
     }
     return count;
   }
@@ -272,12 +310,12 @@ export function dealerSequence(turnOrder: TurnOrder): Seat[] {
 export function consecutiveLabel(seat: Seat, nextHidingRound: number, turnOrder: TurnOrder): string {
   if (turnOrder !== "complete") return `${nextHidingRound}/${RULESET_ROUNDS}`;
   // Position of this seat inside its current block of the court it is dealing.
+  const court = courtForHidingRound(nextHidingRound);
+  const block = hidesInCourt(court);
   const inCourt = roundInCourt(nextHidingRound);
   const isMyBlock = dealerForHidingRound(nextHidingRound, turnOrder) === seat;
-  const slot = isMyBlock
-    ? ((inCourt - 1) % HIDES_PER_BLOCK) + 1
-    : 0;
-  return `${Math.max(0, slot)}/${HIDES_PER_BLOCK}`;
+  const slot = isMyBlock ? ((inCourt - 1) % block) + 1 : 0;
+  return `${Math.max(0, slot)}/${block}`;
 }
 
 // ---------------------------------------------------------------------------

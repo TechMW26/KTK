@@ -12,15 +12,15 @@
  * editing a card count in one place is immediately visible in the other and a
  * re-introduced second copy fails loudly.
  */
-import { LEVELS, ROUNDS_PER_LEVEL, LEVEL_COUNT, TOTAL_ROUNDS, levelConfig, dealerSeatFor, guesserSeatFor } from "../lib/game/rules.ts";
+import { LEVELS, roundsPerLevel, LEVEL_COUNT, TOTAL_ROUNDS, levelConfig, dealerSeatFor, guesserSeatFor } from "../lib/game/rules.ts";
 import {
   COURTS,
-  ROUNDS_PER_COURT,
   COURT_COUNT,
   TOTAL_ROUNDS as SHARED_TOTAL_ROUNDS,
   courtAt,
   dealerForRound,
   guesserForRound,
+  roundsInCourt,
 } from "../features/game/constants/courts.ts";
 import { readFileSync } from "node:fs";
 import flow from "node:assert/strict";
@@ -51,8 +51,10 @@ check("the multiplayer LEVELS view is derived from the shared COURTS table", () 
   }
 });
 
-check("round counts are the same value, not two coincidentally-equal literals", () => {
-  flow.equal(ROUNDS_PER_LEVEL, ROUNDS_PER_COURT);
+check("round counts are derived, not two coincidentally-equal literals", () => {
+  for (let i = 0; i < COURTS.length; i += 1) {
+    flow.equal(roundsPerLevel(i), roundsInCourt(i), `court ${i}`);
+  }
   flow.equal(LEVEL_COUNT, COURT_COUNT);
   flow.equal(TOTAL_ROUNDS, SHARED_TOTAL_ROUNDS);
 });

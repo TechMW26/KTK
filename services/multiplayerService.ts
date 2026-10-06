@@ -14,7 +14,7 @@ import {
   levelConfig,
   dealerSeatFor,
   guesserSeatFor,
-  ROUNDS_PER_LEVEL,
+  roundsPerLevel,
   LEVEL_COUNT,
   type GuessInput,
 } from "@/lib/game/rules";
@@ -363,7 +363,7 @@ function advanceClassic(cur: GameState): GameState {
       actingSeat: dealerSeatFor(1),
     };
   }
-  const isLastRoundOfLevel = cur.round >= ROUNDS_PER_LEVEL;
+  const isLastRoundOfLevel = cur.round >= roundsPerLevel(cur.level);
   if (isLastRoundOfLevel && cur.level >= LEVEL_COUNT - 1) {
     const s = cur.scores;
     return {

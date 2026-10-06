@@ -96,7 +96,8 @@ export type ResultKind =
  * Two engine flavours share this one shape:
  *  - CLASSIC  (settings.winMode === "classic" && turnOrder === "alternate", the
  *    opt-in "Alternate Turns" format): the scored 3-court game. `level` 0..2,
- *    `round` 1..10 resets each level, the dealer alternates every round.
+ *    `round` resets each level and runs 1..roundsPerLevel(level) — 10, 6 and 4
+ *    for the three courts — and the dealer alternates every round.
  *  - OPTIONAL (any other config: the default Complete Turns, and/or 5-lives):
  *    an additive continuous engine of RULESET_ROUNDS (20) hiding rounds.
  *    `round` runs 1..20 continuously, `level` is derived from the hiding round
@@ -109,8 +110,8 @@ export interface GameState {
   /** Level index 0..2 -> card count / time / points (per hiding round in optional). */
   level: number;
   /**
-   * Round. CLASSIC: 1..10 within the current level. OPTIONAL: continuous global
-   * hiding round 1..RULESET_ROUNDS.
+   * Round. CLASSIC: within the current level, up to roundsPerLevel(level).
+   * OPTIONAL: continuous global hiding round 1..RULESET_ROUNDS.
    */
   round: number;
   /** Live score per seat (kept for flavour; decides classic winner). */
@@ -227,6 +228,12 @@ export interface RoomPlayerSecret {
 
 export const ROOM_CODE_LENGTH = 6;
 export const ROOM_CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+/**
+ * Rounds in the opening court. The courts no longer share a length — a court
+ * runs two blocks of `cards` hides, so 10, 6 and 4 — so this is only the court-1
+ * value used to size clients' round visuals. Read `roundsPerLevel(level)` from
+ * `lib/game/rules` for the authoritative per-court count.
+ */
 export const ROUNDS_PER_LEVEL = 10;
 export const MATCH_TIMEOUT_MS = 1000 * 60 * 60; // rooms expire after 1h idle
 /** How long "Search Online Players" keeps looking before giving up. */

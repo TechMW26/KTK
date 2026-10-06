@@ -13,10 +13,15 @@ import {
 } from "@/lib/firebase/accounts";
 import {
   mayHoldCurrency,
+  saveProfileDetails,
   softDeleteProfile,
+  winningRatio,
   MAX_DISPLAY_NAME_LENGTH,
+  MAX_NAME_LENGTH,
   type UserProfile,
 } from "@/lib/firebase/profile";
+import { COUNTRIES, countryName } from "@/lib/profile/countries";
+import { isValidDateOfBirth, parseFriendlyDate, toFriendlyDate } from "@/lib/profile/dates";
 
 /**
  * The signed-in player's account screen.
@@ -58,9 +63,33 @@ export function AccountScreen({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleteText, setDeleteText] = useState("");
 
+  /**
+   * The editable profile fields, held as one draft.
+   *
+   * `dateOfBirthInput` is kept as the player's typed text rather than a parsed
+   * date: reformatting mid-keystroke fights the keyboard on mobile, so the field
+   * is only normalised on save.
+   */
+  const [draft, setDraft] = useState(() => ({
+    name: profile?.name || profile?.displayName || user.displayName || "",
+    country: profile?.country ?? "",
+    // A native date input needs the ISO form; a text input needs DD/MM/YYYY.
+    dateOfBirth: profile?.dateOfBirth ?? "",
+    dateOfBirthInput: toFriendlyDate(profile?.dateOfBirth ?? ""),
+  }));
+  const [saved, setSaved] = useState(false);
+
   const providers = profile?.providers ?? [];
   const canHoldCurrency = mayHoldCurrency(user, profile);
   const isLastProvider = providers.length <= 1;
+
+  /**
+   * The authenticated email, read straight from Firebase Auth.
+   *
+   * Deliberately never part of `draft` and never written back: identity comes
+   * from the auth record, so there is no editable copy that could drift from it.
+   */
+  const email = user.email ?? "";
 
   /** Run an action, always clearing busy and never leaving the screen stuck. */
   const act = async (fn: () => Promise<void>) => {
@@ -88,6 +117,42 @@ export function AccountScreen({
       await onChanged();
       setEditingName(false);
       setNotice("Display name updated.");
+    });
+
+  /**
+   * Persist the editable profile fields.
+   *
+   * The typed date is converted to ISO here, so an unparseable value is caught
+   * before it reaches the database and reported on the field itself rather than
+   * as a generic failure.
+   */
+  const saveDetails = () =>
+    act(async () => {
+      const typed = draft.dateOfBirthInput.trim();
+      const iso = typed ? parseFriendlyDate(typed) : "";
+      if (typed && !iso) {
+        setError("Enter your date of birth as DD / MM / YYYY.");
+        return;
+      }
+      if (iso && !isValidDateOfBirth(iso)) {
+        setError("That date of birth is not valid.");
+        return;
+      }
+
+      const failure = await saveProfileDetails(user.uid, {
+        name: draft.name,
+        country: draft.country,
+        dateOfBirth: iso ?? "",
+      });
+      if (failure) {
+        setError(failure);
+        return;
+      }
+
+      await onChanged();
+      setSaved(true);
+      setNotice("Profile saved.");
+      window.setTimeout(() => setSaved(false), 2000);
     });
 
   const linkProvider = (provider: "google" | "apple") =>
@@ -183,6 +248,106 @@ export function AccountScreen({
               {profile?.createdAt ? new Date(profile.createdAt).toLocaleDateString() : "—"}
             </strong>
           </div>
+        </section>
+
+        {/* ---- Profile ---- */}
+        <section className="account-section">
+          <h4>PROFILE</h4>
+
+          <label className="account-field" htmlFor="profile-name">
+            <span>Name</span>
+            <input
+              id="profile-name"
+              value={draft.name}
+              maxLength={MAX_NAME_LENGTH}
+              autoComplete="name"
+              placeholder="Your name"
+              onChange={(event) => setDraft((prev) => ({ ...prev, name: event.target.value }))}
+            />
+          </label>
+
+          <label className="account-field" htmlFor="profile-country">
+            <span>Country</span>
+            <select
+              id="profile-country"
+              value={draft.country}
+              onChange={(event) => setDraft((prev) => ({ ...prev, country: event.target.value }))}
+            >
+              <option value="">Not set</option>
+              {COUNTRIES.map((country) => (
+                <option key={country.code} value={country.code}>
+                  {country.name}
+                </option>
+              ))}
+              {/* A stored code outside our list must not silently reset to "Not
+                  set" when the screen opens, which would lose the value on save. */}
+              {draft.country && !COUNTRIES.some((c) => c.code === draft.country) && (
+                <option value={draft.country}>{countryName(draft.country)}</option>
+              )}
+            </select>
+          </label>
+
+          <label className="account-field" htmlFor="profile-dob">
+            <span>Date of Birth</span>
+            <input
+              id="profile-dob"
+              value={draft.dateOfBirthInput}
+              inputMode="numeric"
+              autoComplete="bday"
+              placeholder="DD / MM / YYYY"
+              onChange={(event) =>
+                setDraft((prev) => ({ ...prev, dateOfBirthInput: event.target.value }))
+              }
+            />
+          </label>
+
+          <div className="account-field">
+            <span>Email</span>
+            <output className="account-locked" aria-label="Email (read-only)">
+              <span className="account-locked-value">{email || "—"}</span>
+              <span className="account-lock" aria-hidden="true">
+                🔒
+              </span>
+            </output>
+            <small className="account-hint">
+              {providers.length > 0
+                ? `Locked to your ${providerLabel(providers[0])} sign-in. Email can't be changed here.`
+                : "Email can't be changed here."}
+            </small>
+          </div>
+
+          <button
+            className={["gold-button", "wide", saved ? "saved" : ""].filter(Boolean).join(" ")}
+            disabled={busy || !profile}
+            onClick={() => void saveDetails()}
+          >
+            {busy ? "SAVING…" : saved ? "✓ SAVED" : "SAVE CHANGES"}
+          </button>
+          {!profile && (
+            <small className="account-hint">Your profile is still loading. Try again in a moment.</small>
+          )}
+        </section>
+
+        {/* ---- Statistics ---- */}
+        <section className="account-section">
+          <h4>STATISTICS</h4>
+          <div className="account-rows">
+            <div className="account-row">
+              <span>Matches Played</span>
+              <strong>{profile?.matchesPlayed ?? 0}</strong>
+            </div>
+            <div className="account-row">
+              <span>Matches Won</span>
+              <strong>{profile?.matchesWon ?? 0}</strong>
+            </div>
+            <div className="account-row account-row-highlight">
+              <span>Winning Ratio</span>
+              <strong>{winningRatio(profile ?? { matchesPlayed: 0, matchesWon: 0 })}</strong>
+            </div>
+          </div>
+          <small className="account-hint">
+            Recorded automatically when a match ends. Statistics can&apos;t be edited.
+          </small>
         </section>
 
         {/* ---- Sign-in methods ---- */}

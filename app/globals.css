@@ -111,6 +111,42 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 }
 .settings-button { position: absolute; top: 24px; right: 24px; width: 60px; height: 60px; z-index: 5; font-size: 32px; }
 
+/* --- Home top bar --------------------------------------------------------
+   Account + Settings, replacing the single floating cog. Glass pills rather
+   than icon-only circles so the two are distinguishable at a glance and both
+   clear a 44px touch target at the smallest supported width. */
+.home-topbar {
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  right: 20px;
+  z-index: 5;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+.topbar-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid rgba(158,108,29,.5);
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(28,20,7,.6), rgba(0,0,0,.62));
+  color: var(--gold-bright);
+  font-size: 10px;
+  letter-spacing: .13em;
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  backdrop-filter: blur(14px) saturate(140%);
+  box-shadow: inset 0 1px rgba(255,255,255,.06), 0 4px 14px rgba(0,0,0,.4);
+  transition: border-color .2s ease, box-shadow .2s ease, transform .2s ease;
+}
+.topbar-button span[aria-hidden] { font-size: 16px; line-height: 1; }
+.topbar-button:hover { border-color: var(--gold); box-shadow: inset 0 1px rgba(255,255,255,.09), 0 5px 18px rgba(200,147,49,.18); }
+.topbar-button:active { transform: scale(.97); }
+
 .logo {
   display: grid;
   justify-items: center;
@@ -995,6 +1031,13 @@ button:disabled { cursor: not-allowed; opacity: .42; }
    Reuses the modal shell and the entry-panel input treatment so the sign-in
    screen reads as the same product as the home screen. */
 .account-modal { text-align: center; }
+/* The account screen carries labelled fields, a picker and a stats table, so it
+   needs more room than the single-column sign-in dialogs. Height is capped and
+   scrolled inside the backdrop, so a short viewport never clips the footer. */
+.account-modal {
+  width: min(100%, 420px);
+  padding: 33px 24px 24px;
+}
 .account-actions { display: grid; gap: 9px; margin-top: 18px; }
 .account-actions label { color: #c3a565; font-size: 10px; letter-spacing: .14em; text-align: center; }
 .account-actions input {
@@ -1076,6 +1119,74 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .account-inline-actions .gold-button,
 .account-inline-actions .outline-button { flex: 1; min-height: 40px; }
 .account-inline-actions .quit-confirm { flex: 1; }
+
+/* --- Profile fields ------------------------------------------------------
+   Labelled inputs. Unlike the sign-in dialog the label sits above the control
+   rather than being centred, because a profile has several fields of different
+   kinds (text, picker, date) and centring them would make the section harder to
+   scan. Controls reuse the entry-panel input treatment so they read as native. */
+.account-field { display: grid; gap: 5px; }
+.account-field > span {
+  color: #8d7a52;
+  font-size: 9px;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+}
+.account-field input,
+.account-field select {
+  width: 100%;
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid #775119;
+  border-radius: 3px;
+  background: rgba(0,0,0,.68);
+  color: var(--cream);
+  font-family: inherit;
+  font-size: 13px;
+}
+.account-field input:focus,
+.account-field select:focus {
+  outline: none;
+  border-color: var(--gold);
+  box-shadow: 0 0 0 2px rgba(200,147,49,.22);
+}
+.account-field input::placeholder { color: #6d5c3d; }
+/* The native picker popup inherits the OS palette; without this the open list
+   renders light-on-light against the dark card. */
+.account-field select option { background: #14100a; color: var(--cream); }
+
+/* Email is a fact, not a field: rendered as static text with a lock so it is
+   obvious the value comes from the sign-in rather than from this form. */
+.account-locked {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px dashed #4c3514;
+  border-radius: 3px;
+  background: rgba(0,0,0,.42);
+}
+.account-locked-value {
+  overflow: hidden;
+  color: #a4906a;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.account-lock { font-size: 12px; line-height: 1; filter: grayscale(.35); }
+.account-hint { color: #756346; font-size: 9px; line-height: 1.5; letter-spacing: .04em; }
+
+/* Winning ratio reads as the headline of the three, since it is derived. */
+.account-row-highlight strong { color: var(--gold-bright); font-size: 14px; }
+
+/* Saved acknowledgement: a brief, unmistakable confirmation on the button
+   itself, next to the text notice, without stealing focus with a toast. */
+.gold-button.saved {
+  filter: brightness(1.18);
+  box-shadow: inset 0 1px rgba(255,255,255,.2), 0 0 18px rgba(200,147,49,.34);
+}
 .account-danger { padding-top: 14px; border-top: 1px solid #4c3514; }
 .account-danger h4 { color: #b0532f; }
 .quit-modal { border-color: #ad5730; box-shadow: inset 0 0 0 5px #090806, inset 0 0 0 6px #69301d, 0 0 55px rgba(189,55,26,.3); }
@@ -1200,10 +1311,21 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 @media (max-width: 460px) {
   .game-shell { padding: 0; }
   .game-screen { width: 100%; height: 100svh; min-height: 650px; border-left: 0; border-right: 0; }
+  /* Icon-only top bar on narrow phones: at 320px two labelled pills would be
+     wider than the screen allows alongside each other. The aria-label still
+     names each button for assistive tech. */
+  .home-topbar { top: 14px; left: 12px; right: 12px; }
+  .topbar-button { min-height: 44px; min-width: 44px; justify-content: center; padding: 0 12px; }
+  .topbar-button .topbar-label { display: none; }
+  .topbar-button span[aria-hidden] { font-size: 19px; }
 }
 
 @media (max-height: 760px) {
-  .home-screen { padding-top: 28px; }
+  .home-topbar { top: 12px; }
+  .topbar-button { min-height: 38px; }
+  /* Clear the fixed top bar: at this height the logo would otherwise sit
+     underneath it. */
+  .home-screen { padding-top: 60px; }
   .logo strong { font-size: 38px; }
   .king-emblem { height: 115px; margin-bottom: 8px; }
   .home-app-logo { width: 108px; }

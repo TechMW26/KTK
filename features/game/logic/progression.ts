@@ -1,4 +1,4 @@
-import { COURTS, ROUNDS_PER_COURT } from "../constants/courts.ts";
+import { COURT_COUNT, roundsInCourt } from "../constants/courts.ts";
 
 /**
  * Moving through the match: round → court → final result.
@@ -19,16 +19,19 @@ export type RoundStep =
  * What happens when a round's result is dismissed.
  *
  * 1. A decided lives match goes straight to the final result.
- * 2. The tenth round completes the court.
+ * 2. The LAST round of the court completes it. How many rounds that is depends
+ *    on the court, because a court runs two blocks of `cards` hides — 10, 6 and
+ *    4 for the three courts in order.
  * 3. Otherwise the next round begins.
  */
 export function afterRound(input: {
   round: number;
+  level: number;
   livesEnabled: boolean;
   hasLifeWinner: boolean;
 }): RoundStep {
   if (input.livesEnabled && input.hasLifeWinner) return { action: "match-complete" };
-  if (input.round === ROUNDS_PER_COURT) return { action: "court-complete" };
+  if (input.round === roundsInCourt(input.level)) return { action: "court-complete" };
   return { action: "next-round", round: input.round + 1 };
 }
 
@@ -43,16 +46,16 @@ export type CourtStep =
  * counter and restores both players' one-per-court bluff.
  */
 export function afterCourt(level: number): CourtStep {
-  if (level === COURTS.length - 1) return { action: "match-complete" };
+  if (level === COURT_COUNT - 1) return { action: "match-complete" };
   return { action: "next-court", level: level + 1, round: 1, refreshBluffs: true };
 }
 
 /** Whether a court is the last one, i.e. clearing it ends the match. */
 export function isFinalCourt(level: number): boolean {
-  return level === COURTS.length - 1;
+  return level === COURT_COUNT - 1;
 }
 
 /** Whether a round number is the last of its court. */
-export function isFinalRoundOfCourt(round: number): boolean {
-  return round === ROUNDS_PER_COURT;
+export function isFinalRoundOfCourt(round: number, level: number): boolean {
+  return round === roundsInCourt(level);
 }
