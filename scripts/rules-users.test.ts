@@ -104,10 +104,20 @@ async function main(): Promise<void> {
     providers: ["anonymous"],
     emailVerified: false,
     deletedAt: null,
+    // The full first-time profile as ensureProfile writes it. The statistics
+    // MUST be included here: their "never decrease" clause reads data.val(),
+    // which is null on a brand-new node, so an unguarded rule rejects the whole
+    // write and no profile is ever created. This is the regression that test.
+    name: "",
+    country: "",
+    dateOfBirth: "",
+    matchesPlayed: 0,
+    matchesWon: 0,
   });
   const snap = await get(node);
   check("owner write accepted", snap.exists());
   check("displayName persisted", snap.val()?.displayName === "Rules Probe");
+  check("first-time statistics accepted at zero", snap.val()?.matchesPlayed === 0);
 
   console.log("\nB. Validation rejects bad values");
   await expectDenied(
@@ -121,6 +131,36 @@ async function main(): Promise<void> {
   await expectDenied(
     "rejects a non-boolean emailVerified",
     () => set(ref(db, `users/${uid}/emailVerified`), "yes"),
+  );
+  await expectDenied(
+    "rejects a negative matchesPlayed",
+    () => set(ref(db, `users/${uid}/matchesPlayed`), -1),
+  );
+  await expectDenied(
+    "rejects a fractional matchesWon",
+    () => set(ref(db, `users/${uid}/matchesWon`), 1.5),
+  );
+  await expectDenied(
+    "rejects a name longer than 32 chars",
+    () => set(ref(db, `users/${uid}/name`), "x".repeat(33)),
+  );
+  await expectDenied(
+    "rejects a malformed dateOfBirth",
+    () => set(ref(db, `users/${uid}/dateOfBirth`), "17/04/2001"),
+  );
+  await expectDenied(
+    "rejects a country longer than 2 chars",
+    () => set(ref(db, `users/${uid}/country`), "India"),
+  );
+
+  console.log("\nB2. Statistics may rise but never fall");
+  await set(ref(db, `users/${uid}/matchesPlayed`), 1);
+  await set(ref(db, `users/${uid}/matchesWon`), 1);
+  const bumped = await get(node);
+  check("matchesPlayed may increase 0 -> 1", bumped.val()?.matchesPlayed === 1);
+  await expectDenied(
+    "rejects a decrease 1 -> 0",
+    () => set(ref(db, `users/${uid}/matchesPlayed`), 0),
   );
 
   console.log("\nC. Cross-user access is denied");

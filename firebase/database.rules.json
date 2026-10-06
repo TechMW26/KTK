@@ -77,10 +77,10 @@
           ".validate": "newData.isString() && (newData.val() === '' || newData.val().matches(/^\\d{4}-\\d{2}-\\d{2}$/))"
         },
         "matchesPlayed": {
-          ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() % 1 === 0 && newData.val() >= data.val()"
+          ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() % 1 === 0 && (!data.exists() || newData.val() >= data.val())"
         },
         "matchesWon": {
-          ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() % 1 === 0 && newData.val() >= data.val()"
+          ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() % 1 === 0 && (!data.exists() || newData.val() >= data.val())"
         },
         "$other": { ".validate": false }
       }
