@@ -12,98 +12,114 @@ export const TURN_VEIL_MS = 2800;
 /** Pause after the veil lifts before the bot commits to a card. */
 export const BOT_THINK_AFTER_VEIL_MS = 1500;
 
-/** How long the held hand takes to flick across the table during the deal. */
-export const SHUFFLE_MS = 800;
+/** How long the hand takes to rise and disperse the cards. */
+export const SHUFFLE_MS = 780;
 
 /**
- * Deal choreography, expressed as fractions of the window so the hand flicks
- * and the phase change stay in lock-step no matter the card count or the motion
- * setting.
+ * Deal choreography, expressed as fractions of the window so the hand and the
+ * phase change stay in lock-step no matter the card count or the motion setting.
  *
- * The throw is DELIBERATELY decoupled from the hand. An earlier version pinned
- * each card's flight to the hand's per-slot travel so the card rode the hand at
- * the hand's speed — physically tidy, but it made every deal look like a slow
- * slide. A dealer THROWS: the hand snaps across and each card leaves it almost
- * at once, travelling much faster than the hand does.
- *
- * So `DEAL_CARD_FLIGHT_FRACTION` is now independent of how long the sweep takes.
+ * The motion is two beats: the hand RISES from the bottom of the frame, then
+ * disperses every card almost simultaneously. There is no lateral sweep.
  */
+
+/**
+ * When the hand has finished RISING into place, as a fraction of the window.
+ *
+ * The hand is already on its way up when this stage mounts, so this is short —
+ * the deal is meant to feel like the cards are scattered the moment the hand
+ * appears, not dealt one at a time. Mirrors the `hand-rise` keyframe.
+ */
+export const DEAL_HAND_RISE_FRACTION = 0.3;
+
+/**
+ * When the first card leaves the hand, as a fraction of the window.
+ *
+ * The hand is still rising when the cards go, so there is no held beat to sit
+ * through: the volley is already in the air by the time the hand settles. This
+ * is what makes the release feel like a snap rather than a deliberate deal.
+ */
+export const DEAL_START_FRACTION = 0.16;
+
+/**
+ * Fraction of the window over which the cards are released.
+ *
+ * ZERO: every card leaves the hand on the SAME frame. There is deliberately no
+ * stagger at all, because even a 40ms offset is visible as a ripple and makes
+ * the spread read as "dealt one at a time". The card count does not affect the
+ * timing — only the distance each card travels.
+ */
+export const DEAL_RELEASE_SPAN_FRACTION = 0;
 
 /**
  * How long ONE card is in the air, as a fraction of the window.
  *
- * Short on purpose — this is the snap that makes it a throw. Bounded so it can
- * never run past the hand's arrival (see `dealTimings`), otherwise the final
- * card would still be travelling when the stage flips to the guess phase.
+ * Short: the cards cover their whole path in a fraction of a second, so the
+ * spread reads as a burst instead of a glide. This is the "ninja" part — most of
+ * the card's travel happens in the first few frames (see the keyframe spacing).
  */
-export const DEAL_CARD_FLIGHT_FRACTION = 0.3;
+export const DEAL_CARD_FLIGHT_FRACTION = 0.34;
 
 /**
- * Fraction of the whole sequence over which the cards are RELEASED.
+ * How long a card's land-fade takes, as a fraction of the window.
  *
- * The cards fire out in a tight burst rather than one per sweep slot: the whole
- * volley leaves the hand by the time it is ~60% across. Combined with a short
- * per-card flight this is what reads as "thrown" instead of "placed".
+ * This MUST leave headroom: the card's reveal animation is cancelled the moment
+ * the stage leaves `dealing` (the class is what scopes `.dealing .playing-card`),
+ * so a card whose fade is still running at the window's end never appears.
  */
-export const DEAL_RELEASE_SPAN_FRACTION = 0.6;
+export const DEAL_LAND_FADE_FRACTION = 0.14;
 
-/** When the first card leaves the Dealer's hand, as a fraction of the window. */
-export const DEAL_START_FRACTION = 0.06;
+/** Fraction of the window reserved after the cards land, to settle. */
+export const DEAL_SETTLE_FRACTION = 0.06;
 
 /**
- * When the hand has finished travelling, as a fraction of the window.
+ * Timings for a simultaneous spread inside `windowMs`.
  *
- * The sweep animation is percentage-based (see `dealer-sweep`), so this must
- * match the keyframe where the hand reaches its far position.
- */
-export const DEAL_HAND_ARRIVE_FRACTION = 0.82;
-
-/** Fraction of the window reserved after the last card lands, to settle. */
-export const DEAL_SETTLE_FRACTION = 0.1;
-
-/**
- * Per-card delays (in seconds) for a throw of `cards` cards inside `windowMs`.
+ * The hand appears holding the cards, then EVERY card moves to its slot at the
+ * same instant. `launch` is therefore a constant, not a function of the index —
+ * the only per-card difference is the distance travelled (driven by `--slot-x`
+ * in the CSS), so the cards fan out along different paths that all take the same
+ * time. That is what makes it read as one motion rather than a sequence.
  *
- * The hand flicks across once and the cards fire out in a burst: card `index`
- * launches a fraction of the release span after the previous one, and each card
- * is in the air for `flight` — a time INDEPENDENT of the hand's own travel, so
- * the cards visibly outrun the hand.
+ * `cards` no longer changes the timing — the spread is deliberately
+ * card-count independent — but it is kept in the signature because callers pass
+ * it and it documents that the deal is sized for a whole hand, not one card.
  *
- * `flight` is capped so the last card always lands before the hand arrives, which
- * is what guarantees the stage switches to the guess phase with every card
- * already in its slot.
+ * The flight and fade are budgeted so the whole sequence fits INSIDE the window:
+ * a card still animating when the stage flips loses its animation and vanishes.
  */
 export function dealTimings(cards: number, windowMs: number = SHUFFLE_MS) {
+  void cards;
   const windowSec = windowMs / 1000;
-  const count = Math.max(1, cards);
   const start = windowSec * DEAL_START_FRACTION;
   const settle = windowSec * DEAL_SETTLE_FRACTION;
-  const arrive = windowSec * DEAL_HAND_ARRIVE_FRACTION;
+  const rise = windowSec * DEAL_HAND_RISE_FRACTION;
+  const fade = windowSec * DEAL_LAND_FADE_FRACTION;
 
-  // Cards launch across the release span; the first leaves at `start`.
-  const releaseSpan = windowSec * DEAL_RELEASE_SPAN_FRACTION;
-  const gap = count > 1 ? releaseSpan / (count - 1) : 0;
-  const launch = (index: number) => start + index * gap;
+  // Simultaneous release: one launch time for every card, so the signature
+  // takes no index at all — there is nothing per-card to vary.
+  const launch = () => start;
 
-  // Cap the flight so no card can land after the hand reaches the far side.
-  const lastLaunch = launch(count - 1);
-  const maxFlight = Math.max(0.06, arrive - lastLaunch);
+  // Cap the flight so the fade still completes inside the window.
+  const maxFlight = Math.max(0.04, windowSec - fade - settle - start);
   const desired = windowSec * DEAL_CARD_FLIGHT_FRACTION;
   const flight = Math.min(desired, maxFlight);
 
   return {
-    /** The full window, in seconds (also drives the CSS sweep). */
+    /** The full window, in seconds (also drives the CSS animations). */
     windowSec,
-    /** The hand's whole flick across the table. */
-    sweep: arrive,
-    /** One card's flight — independent of the hand's speed. */
+    /** When the hand has finished rising into place. */
+    rise,
+    /** One card's flight — the same for every card. */
     flight,
-    /** When card `index` leaves the hand. */
+    /** How long a landed card takes to fade in. */
+    fade,
+    /** When every card leaves the hand — identical for all of them. */
     launch,
-    /** When card `index` finishes its flight and lands in the slot. */
-    land: (index: number) => launch(index) + flight,
+    /** When every card finishes its flight and lands in its slot. */
+    land: () => launch() + flight,
     /** Total time the sequence occupies, including the settle reserve. */
-    total: launch(Math.max(0, count - 1)) + flight + settle,
+    total: launch() + flight + settle,
   };
 }
 

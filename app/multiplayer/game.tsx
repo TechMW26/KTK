@@ -378,7 +378,7 @@ function ShuffleStage({ mp }: { mp: MP }) {
                 className="flying-deal-card"
                 style={{
                   "--slot-x": `${offset * 76}px`,
-                  "--flight-delay": `${deal.launch(index)}s`,
+                  "--flight-delay": `${deal.launch()}s`,
                   "--flight-duration": `${deal.flight}s`,
                 } as React.CSSProperties}
               />
@@ -386,7 +386,7 @@ function ShuffleStage({ mp }: { mp: MP }) {
           })}
         </div>
         {Array.from({ length: cfg.cards }, (_, index) => (
-          <PlayingCard key={index} index={index} disabled dealDelay={deal.land(index)} />
+          <PlayingCard key={index} index={index} disabled dealDelay={deal.land()} />
         ))}
       </div>
       <p className="bottom-copy">Cards are being placed.<br />Watch closely.</p>

@@ -615,10 +615,6 @@ export default function Home() {
                 <div
                   className="dealer-hand-rig"
                   aria-hidden="true"
-                  style={{
-                    "--deal-start": `${-((config.cards - 1) * 38)}px`,
-                    "--deal-end": `${(config.cards - 1) * 38}px`,
-                  } as React.CSSProperties}
                 >
                   <span className="held-card-mini"><i>♛</i></span>
                   <Image
@@ -636,7 +632,7 @@ export default function Home() {
                   <Ornament />
                   <p>Dealer is arranging the cards…</p>
                 </div>
-                <div className="cards-row dealing">
+                <div className="cards-row dealing" style={{ "--deal-fade": `${deal.fade}s` } as React.CSSProperties}>
                   <div className="deal-flight-layer" aria-hidden="true">
                     {Array.from({ length: config.cards }, (_, index) => {
                       const offset = index - (config.cards - 1) / 2;
@@ -646,13 +642,12 @@ export default function Home() {
                           className="flying-deal-card"
                           style={{
                             "--slot-x": `${offset * 76}px`,
-                            "--flight-delay": `${deal.launch(index)}s`,
+                            "--flight-delay": `${deal.launch()}s`,
                             "--flight-duration": `${deal.flight}s`,
-                            // Cards flick AWAY from the hand's centre line, and
-                            // alternate their spin, so the volley fans out
-                            // instead of every card veering the same way.
-                            "--throw-dir": offset < 0 ? -1 : 1,
-                            "--throw-spin": `${index % 2 === 0 ? 14 : -11}deg`,
+                            // Spin alternates only so the fan looks hand-thrown
+                            // rather than mechanically uniform. Every card shares
+                            // the launch time and the flight duration.
+                            "--throw-spin": `${index % 2 === 0 ? 13 : -10}deg`,
                           } as React.CSSProperties}
                         />
                       );
@@ -665,7 +660,7 @@ export default function Home() {
                         index={index}
                         chosen={index === opponentActiveCard}
                         disabled
-                        dealDelay={deal.land(index)}
+                        dealDelay={deal.land()}
                       />
                     );
                   })}

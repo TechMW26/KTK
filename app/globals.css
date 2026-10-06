@@ -603,6 +603,43 @@ button:disabled { cursor: not-allowed; opacity: .42; }
   transition: transform .22s ease, filter .22s ease;
 }
 .playing-card:not(:disabled):hover { z-index: 3; transform: translateY(-9px); filter: drop-shadow(0 0 8px rgba(245,195,83,.7)); }
+
+/* --- Mystical edge glow on selectable cards ------------------------------
+   A THIN golden rim on the card's edge, not a halo. Two separate animations on
+   two different properties (a soft outer bloom via box-shadow, and a crisp rim
+   via ::after opacity) run on deliberately mismatched periods — 3.4s and 4.7s —
+   so the composite never repeats on an obvious cycle and reads as an organic
+   flicker rather than a pulse.
+
+   Scoped to cards the player can actually pick: face-down and enabled. That
+   excludes the dealer's finished tiles, the reveal row and the scene where the
+   opponent is choosing. */
+.playing-card:not(.face-up):not(:disabled) .card-back {
+  animation: card-aura-soft 3.4s ease-in-out infinite;
+}
+.playing-card:not(.face-up):not(:disabled) .card-inner::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  border: 1px solid rgba(255, 214, 130, .9);
+  border-radius: 6px;
+  pointer-events: none;
+  box-shadow: 0 0 1px rgba(255,226,150,.9);
+  animation: card-aura-rim 4.7s ease-in-out infinite;
+}
+@keyframes card-aura-soft {
+  0%, 100% { box-shadow: inset 0 0 0 3px #080706, inset 0 0 0 4px #6d4917, 0 8px 16px rgba(0,0,0,.46); }
+  50% { box-shadow: inset 0 0 0 3px #080706, inset 0 0 0 4px #8a5c1c, 0 8px 16px rgba(0,0,0,.46), 0 0 9px 1px rgba(226,172,60,.55); }
+}
+@keyframes card-aura-rim {
+  0%, 100% { opacity: .38; border-color: rgba(255, 214, 130, .5); }
+  22% { opacity: 1; border-color: rgba(255, 236, 186, .98); }
+  47% { opacity: .52; border-color: rgba(233, 183, 79, .7); }
+  68% { opacity: .95; border-color: rgba(255, 226, 150, .92); }
+  85% { opacity: .45; border-color: rgba(240, 196, 96, .6); }
+}
+
 .card-inner {
   position: absolute;
   inset: 0;
@@ -749,31 +786,44 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 
 .shuffle-stage { isolation: isolate; }
 .shuffle-stage .cards-row { position: relative; z-index: 1; margin-top: 135px; }
-/* --shuffle-ms mirrors SHUFFLE_MS (pacing.ts) so the hand flick, the card
-   volley and the switch to the guess stage all finish on the same beat. The
-   real value is set inline from dealTimings(); this is only the fallback. */
-.shuffle-stage { --shuffle-ms: 800ms; }
+/* --shuffle-ms mirrors SHUFFLE_MS (pacing.ts) so the hand rise, the card burst
+   and the switch to the guess stage all finish on the same beat. The real value
+   is set inline from dealTimings(); this is only the fallback. */
+.shuffle-stage { --shuffle-ms: 780ms; }
 .dealer-hand-rig {
-  --deal-start: -152px;
-  --deal-end: 152px;
   position: absolute;
   z-index: 4;
-  top: 122px;
-  left: calc(50% + var(--deal-start));
+  /* The sprite is 104x253 with a lot of transparent padding below the visible
+     fingers, so its BOX always reached down over the card row (row top ~439px):
+     at top:60 the box bottom was 471px, a 32px overlap, which is why raising
+     `top` did not lengthen the throw at all — the grip end never moved clear.
+     The rig is therefore scaled down, which shortens the box so the grip sits
+     above the row and the cards genuinely have further to travel. */
+  top: 26px;
+  left: 50%;
   width: 104px;
   height: 253px;
   transform-origin: top center;
+  /* scale is applied to the rise keyframes' own transform, so it is baked into
+     hand-rise rather than set here (a static transform would be overwritten). */
   filter: drop-shadow(0 13px 12px rgba(0,0,0,.72));
-  animation: dealer-sweep var(--shuffle-ms) cubic-bezier(.22,.61,.36,1) both;
+  animation: hand-rise var(--shuffle-ms) cubic-bezier(.16,.84,.3,1) both;
   pointer-events: none;
-  will-change: left, transform;
+  will-change: transform;
 }
 .dealer-hand-img {
   position: absolute;
   z-index: 2;
-  inset: 0 auto auto 0;
-  width: 104px;
+  top: 0;
+  left: 0;
+  /* Fill the RIG's width and let the height follow the image's own aspect ratio.
+     Do NOT use object-fit here: the sprite is 392x952 (≈1:2.43) and the rig is
+     104x253, so `contain` scaled it to the rig's height and let it spill ~4x
+     wider than the rig, drawing the hand far outside its box. `width: 100%`
+     with an automatic height is both simpler and correct. */
+  width: 100%;
   height: auto;
+  display: block;
 }
 .held-card-mini {
   position: absolute;
@@ -805,13 +855,14 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .held-card-mini::before { transform: translate(4px,-3px) rotate(4deg); }
 .held-card-mini::after { transform: translate(8px,-6px) rotate(7deg); }
 .held-card-mini i { display:none; }
+/* The held card is a shallow 43x70 box, so a drop-shadow on the rig above was
+   never needed for it; it keeps its own box-shadow, which follows the box. */
 .above-hand { z-index: 6; }
 .deal-flight-layer { position: absolute; z-index: 3; inset: 0; overflow: visible; pointer-events: none; }
 .flying-deal-card {
   --slot-x: 0px;
-  --flight-delay: .24s;
-  --flight-duration: .64s;
-  --throw-dir: 1;
+  --flight-delay: .234s;
+  --flight-duration: .328s;
   --throw-spin: 14deg;
   position: absolute;
   left: 50%;
@@ -822,66 +873,86 @@ button:disabled { cursor: not-allowed; opacity: .42; }
   background: #000 url("/card-back.png") center / 100% 100% no-repeat;
   filter: drop-shadow(0 9px 12px rgba(0,0,0,.75)) drop-shadow(0 0 5px rgba(211,151,43,.28));
   opacity: 0;
-  /* linear-ish entry then a hard settle; the curve is in the keyframes so the
-     flick reads as acceleration rather than easing out of the hand. */
-  animation: deal-card-throw var(--flight-duration) cubic-bezier(.1,.55,.2,1) var(--flight-delay) both;
+  /* Hard deceleration. The travel is already front-loaded by the keyframes; this
+     curve finishes the job so the card is at full speed out of the hand and
+     brakes into its slot. `linear` made the spread read as a glide. */
+  animation: deal-card-throw var(--flight-duration) cubic-bezier(.05,.85,.15,1) var(--flight-delay) both;
   will-change: transform, opacity;
 }
-.dealing .playing-card { opacity: 0; animation: card-land-reveal .16s ease-out var(--deal-delay,.88s) forwards; }
-/* The throw: the card leaves the hand SIDEWAYS and hard, then curls down into
-   its slot. The lateral burst at the start is what sells it as a flick rather
-   than a placement — the card travels further sideways in the first 30% than
-   the hand does in the whole sweep.
+/* Deal landing.
+   `both` is required, and the reasoning is subtle:
 
-   --throw-dir is +1 or -1 (set per card) so cards on the left flick left and
-   cards on the right flick right, away from the hand, instead of every card
-   veering the same way. */
-@keyframes deal-card-throw {
-  0% {
-    opacity: 0;
-    transform: translate(calc(-50% + var(--slot-x) + var(--throw-dir) * 12px), -92px) rotate(var(--throw-spin)) scale(.9);
-  }
-  6% { opacity: 1; }
-  30% {
-    opacity: 1;
-    transform: translate(calc(-50% + var(--slot-x) + var(--throw-dir) * 62px), -62px) rotate(calc(var(--throw-spin) * 1.5)) scale(1.02);
-  }
-  58% {
-    opacity: 1;
-    transform: translate(calc(-50% + var(--slot-x) + var(--throw-dir) * 30px), -20px) rotate(calc(var(--throw-spin) * .6)) scale(1.04);
-  }
-  80% {
-    opacity: 1;
-    transform: translate(calc(-50% + var(--slot-x) - var(--throw-dir) * 7px), 5px) rotate(calc(var(--throw-spin) * -.35)) scale(1.005);
-  }
-  93% { opacity: 1; transform: translate(calc(-50% + var(--slot-x)), 0) rotate(0) scale(1); }
-  100% { opacity: 0; transform: translate(calc(-50% + var(--slot-x)), 0) rotate(0) scale(1); }
-}
+   - `forwards` alone leaves the card at its UN-ANIMATED state during the delay.
+     Since no base rule hides .playing-card, that meant every slot card was fully
+     visible from the first frame, so the player saw five ghost cards sitting
+     under the incoming throws. That was a real reported bug.
+   - `backwards` alone pins the card at the `from` keyframe during the delay
+     (correct) but REVERTS after the animation ends, so a landed card faded back
+     out.
+   - `both` does each half correctly: hidden through the delay, landed and held
+     after it.
+
+   `both` is only safe because --deal-delay is now generated by dealTimings() to
+   complete inside the window. The earlier attempt with `backwards` looked broken
+   purely because the fallback delay (0.88s) outlasted the 0.8s window, so the
+   animation was cancelled before it ever ran. */
 @keyframes card-land-reveal {
   from { opacity: 0; transform: scale(.985); }
   to { opacity: 1; transform: scale(1); }
 }
-/* The hand flicks across ONCE, left -> right, and the cards are thrown from it
-   in a burst (see dealTimings in pacing.ts). The 82% keyframe is where the hand
-   REACHES the far side and is mirrored by DEAL_HAND_ARRIVE_FRACTION — the card
-   flights are capped to it so nothing is still in the air when the stage flips.
-   If you move 82%, update DEAL_HAND_ARRIVE_FRACTION to match. */
-@keyframes dealer-sweep {
-  0% { left: calc(50% + var(--deal-start)); transform: translate(-50%,-14px) rotate(-4deg); }
-  18% { transform: translate(-50%,1px) rotate(-1deg); }
-  45% { transform: translate(-50%,2px) rotate(.6deg); }
-  82% { left: calc(50% + var(--deal-end)); transform: translate(-50%,0) rotate(1.4deg); }
-  92% { left: calc(50% + var(--deal-end)); transform: translate(-50%,3px) rotate(2deg); }
-  100% { left: calc(50% + var(--deal-end)); transform: translate(-50%,-8px) rotate(3deg); }
+.dealing .playing-card {
+  animation: card-land-reveal var(--deal-fade, .1s) ease-out var(--deal-delay, 0s) both;
 }
-/* The held card is gone almost immediately: it is the first thing thrown, so
-   holding it for 90% of the window (as it used to) left a card floating in an
-   empty hand while the volley was already in the air. */
+/* The burst: every card leaves the hand on the SAME frame and covers its whole
+   path almost instantly. The keyframe spacing is the "ninja" — the card is ~78%
+   of the way to its slot by 22% of the flight, then decelerates hard into place.
+   A linear or eased-out spread reads as a glide; front-loading the travel is
+   what makes it snap.
+
+   All cards start from the hand's own centre (translate 0, lifted into the grip)
+   and diverge, so they visibly originate from one point rather than being
+   pre-positioned. */
+@keyframes deal-card-throw {
+  0% {
+    opacity: 0;
+    transform: translate(calc(-50% + var(--slot-x) * .03), -8px) rotate(var(--throw-spin)) scale(.8);
+  }
+  8% { opacity: 1; }
+  22% {
+    opacity: 1;
+    transform: translate(calc(-50% + var(--slot-x) * .78), -22px) rotate(calc(var(--throw-spin) * 1.35)) scale(1.05);
+  }
+  46% {
+    opacity: 1;
+    transform: translate(calc(-50% + var(--slot-x) * .97), -6px) rotate(calc(var(--throw-spin) * .35)) scale(1.03);
+  }
+  72% {
+    opacity: 1;
+    transform: translate(calc(-50% + var(--slot-x)), 3px) rotate(calc(var(--throw-spin) * -.18)) scale(1.005);
+  }
+  92% { opacity: 1; transform: translate(calc(-50% + var(--slot-x)), 0) rotate(0) scale(1); }
+  100% { opacity: 0; transform: translate(calc(-50% + var(--slot-x)), 0) rotate(0) scale(1); }
+}
+/* The hand RISES from the bottom of the frame and settles, then the cards burst
+   out from it. There is no lateral sweep.
+
+   The scale is baked into every keyframe because `transform` is fully owned by
+   this animation — a static transform on .dealer-hand-rig would be replaced.
+   Scaling the rig shortens its box so the grip clears the card row, which is what
+   gives the thrown cards a real distance to cover. */
+@keyframes hand-rise {
+  0% { transform: translate(-50%, 100px) rotate(2deg) scale(.55); opacity: 0; }
+  12% { opacity: 1; }
+  55% { transform: translate(-50%, -6px) rotate(-1.2deg) scale(.6); opacity: 1; }
+  100% { transform: translate(-50%, 0) rotate(0) scale(.59); opacity: 1; }
+}
+/* The held card is thrown almost immediately — the hand has nothing left in it
+   by the time it settles. */
 @keyframes held-card-release {
-  0%,22% { opacity:1; transform:translate(0,0) rotate(6deg) scale(1); }
-  34% { opacity:.85; transform:translate(-6px,12px) rotate(1deg) scale(.92); }
-  46% { opacity:0; transform:translate(-10px,26px) rotate(-3deg) scale(.86); }
-  100% { opacity:0; transform:translate(-10px,26px) rotate(-3deg) scale(.86); }
+  0%, 26% { opacity: 1; transform: translate(0,0) rotate(7deg) scale(1); }
+  40% { opacity: .7; transform: translate(-8px,10px) rotate(2deg) scale(.9); }
+  52% { opacity: 0; transform: translate(-14px,22px) rotate(-3deg) scale(.84); }
+  100% { opacity: 0; transform: translate(-14px,22px) rotate(-3deg) scale(.84); }
 }
 
 .guess-stage .cards-row { margin-top: 74px; }
