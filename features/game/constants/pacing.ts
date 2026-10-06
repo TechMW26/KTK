@@ -12,70 +12,91 @@ export const TURN_VEIL_MS = 2800;
 /** Pause after the veil lifts before the bot commits to a card. */
 export const BOT_THINK_AFTER_VEIL_MS = 1500;
 
-/** How long the held hand takes to sweep the table during the shuffle. */
-export const SHUFFLE_MS = 1450;
+/** How long the held hand takes to flick across the table during the deal. */
+export const SHUFFLE_MS = 800;
 
 /**
- * Deal choreography, expressed as fractions of the shuffle window so the throw
- * and the phase change stay in lock-step no matter the card count or the
- * motion setting.
+ * Deal choreography, expressed as fractions of the window so the hand flicks
+ * and the phase change stay in lock-step no matter the card count or the motion
+ * setting.
  *
- * The whole sequence is a fraction of SHUFFLE_MS, so the hand sweep, the card
- * flights and the switch to the guess stage always finish on the same beat.
+ * The throw is DELIBERATELY decoupled from the hand. An earlier version pinned
+ * each card's flight to the hand's per-slot travel so the card rode the hand at
+ * the hand's speed — physically tidy, but it made every deal look like a slow
+ * slide. A dealer THROWS: the hand snaps across and each card leaves it almost
+ * at once, travelling much faster than the hand does.
+ *
+ * So `DEAL_CARD_FLIGHT_FRACTION` is now independent of how long the sweep takes.
  */
 
 /**
- * The card rides the SAME pass as the hand.
+ * How long ONE card is in the air, as a fraction of the window.
  *
- * The dealer hand sweeps left -> right once across the table, launching one card
- * per slot as it goes. So a card's flight is not an arbitrary duration: it is
- * the time the hand takes to cover that card's share of the sweep. Coupling the
- * two through DEAL_SWEEP_FRACTION (the portion of the window the hand spends
- * travelling) keeps the card pinned to the hand for the whole throw — the card
- * and the hand arrive at each slot together, at the same speed.
+ * Short on purpose — this is the snap that makes it a throw. Bounded so it can
+ * never run past the hand's arrival (see `dealTimings`), otherwise the final
+ * card would still be travelling when the stage flips to the guess phase.
  */
+export const DEAL_CARD_FLIGHT_FRACTION = 0.3;
+
 /**
- * When the hand has finished travelling, as a fraction of the shuffle window.
+ * Fraction of the whole sequence over which the cards are RELEASED.
  *
- * The sweep animation is percentage-based (see `dealer-sweep`), so this must
- * match the keyframe where the hand reaches its far position. Keeping it here
- * lets the card flights be derived from the hand's REAL travel time instead of
- * guessing, so the two stay in sync if the sweep is ever re-timed.
+ * The cards fire out in a tight burst rather than one per sweep slot: the whole
+ * volley leaves the hand by the time it is ~60% across. Combined with a short
+ * per-card flight this is what reads as "thrown" instead of "placed".
  */
-export const DEAL_HAND_ARRIVE_FRACTION = 0.88;
+export const DEAL_RELEASE_SPAN_FRACTION = 0.6;
 
 /** When the first card leaves the Dealer's hand, as a fraction of the window. */
-export const DEAL_START_FRACTION = 0.05;
-
-/** Fraction of the window reserved after the last card lands, to settle. */
-export const DEAL_SETTLE_FRACTION = 0.06;
+export const DEAL_START_FRACTION = 0.06;
 
 /**
- * Per-card delays (in seconds) for a deal of `cards` cards inside `windowMs`.
+ * When the hand has finished travelling, as a fraction of the window.
  *
- * The hand makes ONE pass across the table and releases one card per slot. The
- * card's flight is therefore the hand's REAL per-slot travel time
- * (`arrive - start` divided by the number of slots), so each card is pinned to
- * the hand for its whole journey and moves at exactly the hand's speed. The
- * last card lands on the very beat the hand finishes its pass.
+ * The sweep animation is percentage-based (see `dealer-sweep`), so this must
+ * match the keyframe where the hand reaches its far position.
+ */
+export const DEAL_HAND_ARRIVE_FRACTION = 0.82;
+
+/** Fraction of the window reserved after the last card lands, to settle. */
+export const DEAL_SETTLE_FRACTION = 0.1;
+
+/**
+ * Per-card delays (in seconds) for a throw of `cards` cards inside `windowMs`.
+ *
+ * The hand flicks across once and the cards fire out in a burst: card `index`
+ * launches a fraction of the release span after the previous one, and each card
+ * is in the air for `flight` — a time INDEPENDENT of the hand's own travel, so
+ * the cards visibly outrun the hand.
+ *
+ * `flight` is capped so the last card always lands before the hand arrives, which
+ * is what guarantees the stage switches to the guess phase with every card
+ * already in its slot.
  */
 export function dealTimings(cards: number, windowMs: number = SHUFFLE_MS) {
   const windowSec = windowMs / 1000;
   const count = Math.max(1, cards);
   const start = windowSec * DEAL_START_FRACTION;
   const settle = windowSec * DEAL_SETTLE_FRACTION;
-  // The hand's real travel time, and the per-slot slice of it a card rides.
-  const travel = windowSec * (DEAL_HAND_ARRIVE_FRACTION - DEAL_START_FRACTION);
-  const sweep = windowSec * DEAL_HAND_ARRIVE_FRACTION;
-  const flight = travel / count;
-  const gap = flight;
+  const arrive = windowSec * DEAL_HAND_ARRIVE_FRACTION;
+
+  // Cards launch across the release span; the first leaves at `start`.
+  const releaseSpan = windowSec * DEAL_RELEASE_SPAN_FRACTION;
+  const gap = count > 1 ? releaseSpan / (count - 1) : 0;
   const launch = (index: number) => start + index * gap;
+
+  // Cap the flight so no card can land after the hand reaches the far side.
+  const lastLaunch = launch(count - 1);
+  const maxFlight = Math.max(0.06, arrive - lastLaunch);
+  const desired = windowSec * DEAL_CARD_FLIGHT_FRACTION;
+  const flight = Math.min(desired, maxFlight);
+
   return {
-    /** The full shuffle window, in seconds (also drives the CSS sweep). */
+    /** The full window, in seconds (also drives the CSS sweep). */
     windowSec,
-    /** The hand's whole pass across the table. */
-    sweep,
-    /** One card's flight — identical to the hand's per-slot travel. */
+    /** The hand's whole flick across the table. */
+    sweep: arrive,
+    /** One card's flight — independent of the hand's speed. */
     flight,
     /** When card `index` leaves the hand. */
     launch,

@@ -749,10 +749,10 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 
 .shuffle-stage { isolation: isolate; }
 .shuffle-stage .cards-row { position: relative; z-index: 1; margin-top: 135px; }
-/* --shuffle-ms mirrors SHUFFLE_MS (pacing.ts) so the hand sweep, the held-card
-   release and the switch to the guess stage all finish on the same beat. The
+/* --shuffle-ms mirrors SHUFFLE_MS (pacing.ts) so the hand flick, the card
+   volley and the switch to the guess stage all finish on the same beat. The
    real value is set inline from dealTimings(); this is only the fallback. */
-.shuffle-stage { --shuffle-ms: 1450ms; }
+.shuffle-stage { --shuffle-ms: 800ms; }
 .dealer-hand-rig {
   --deal-start: -152px;
   --deal-end: 152px;
@@ -811,6 +811,8 @@ button:disabled { cursor: not-allowed; opacity: .42; }
   --slot-x: 0px;
   --flight-delay: .24s;
   --flight-duration: .64s;
+  --throw-dir: 1;
+  --throw-spin: 14deg;
   position: absolute;
   left: 50%;
   top: 0;
@@ -820,41 +822,66 @@ button:disabled { cursor: not-allowed; opacity: .42; }
   background: #000 url("/card-back.png") center / 100% 100% no-repeat;
   filter: drop-shadow(0 9px 12px rgba(0,0,0,.75)) drop-shadow(0 0 5px rgba(211,151,43,.28));
   opacity: 0;
-  animation: deal-card-throw var(--flight-duration) cubic-bezier(.17,.72,.24,1) var(--flight-delay) both;
+  /* linear-ish entry then a hard settle; the curve is in the keyframes so the
+     flick reads as acceleration rather than easing out of the hand. */
+  animation: deal-card-throw var(--flight-duration) cubic-bezier(.1,.55,.2,1) var(--flight-delay) both;
   will-change: transform, opacity;
 }
 .dealing .playing-card { opacity: 0; animation: card-land-reveal .16s ease-out var(--deal-delay,.88s) forwards; }
+/* The throw: the card leaves the hand SIDEWAYS and hard, then curls down into
+   its slot. The lateral burst at the start is what sells it as a flick rather
+   than a placement — the card travels further sideways in the first 30% than
+   the hand does in the whole sweep.
+
+   --throw-dir is +1 or -1 (set per card) so cards on the left flick left and
+   cards on the right flick right, away from the hand, instead of every card
+   veering the same way. */
 @keyframes deal-card-throw {
-  0% { opacity: 0; transform: translate(calc(-50% + var(--slot-x) + 30px),-86px) rotate(12deg) scale(.88); }
-  9% { opacity: 1; }
-  45% { opacity: 1; transform: translate(calc(-50% + var(--slot-x) - 11px),-38px) rotate(-5deg) scale(.97); }
-  78% { opacity: 1; transform: translate(calc(-50% + var(--slot-x) + 4px),4px) rotate(1.5deg) scale(1.012); }
-  94% { opacity: 1; transform: translate(calc(-50% + var(--slot-x)),0) rotate(0) scale(1); }
-  100% { opacity: 0; transform: translate(calc(-50% + var(--slot-x)),0) rotate(0) scale(1); }
+  0% {
+    opacity: 0;
+    transform: translate(calc(-50% + var(--slot-x) + var(--throw-dir) * 12px), -92px) rotate(var(--throw-spin)) scale(.9);
+  }
+  6% { opacity: 1; }
+  30% {
+    opacity: 1;
+    transform: translate(calc(-50% + var(--slot-x) + var(--throw-dir) * 62px), -62px) rotate(calc(var(--throw-spin) * 1.5)) scale(1.02);
+  }
+  58% {
+    opacity: 1;
+    transform: translate(calc(-50% + var(--slot-x) + var(--throw-dir) * 30px), -20px) rotate(calc(var(--throw-spin) * .6)) scale(1.04);
+  }
+  80% {
+    opacity: 1;
+    transform: translate(calc(-50% + var(--slot-x) - var(--throw-dir) * 7px), 5px) rotate(calc(var(--throw-spin) * -.35)) scale(1.005);
+  }
+  93% { opacity: 1; transform: translate(calc(-50% + var(--slot-x)), 0) rotate(0) scale(1); }
+  100% { opacity: 0; transform: translate(calc(-50% + var(--slot-x)), 0) rotate(0) scale(1); }
 }
 @keyframes card-land-reveal {
   from { opacity: 0; transform: scale(.985); }
   to { opacity: 1; transform: scale(1); }
 }
-/* The hand makes ONE pass, left -> right, releasing a card per slot.
-   The 88% keyframe is where the hand REACHES the far side and is mirrored by
-   DEAL_HAND_ARRIVE_FRACTION (pacing.ts) — the card flights are derived from it
-   so each card rides the hand at exactly the hand's speed. If you move 88%,
-   update DEAL_HAND_ARRIVE_FRACTION to match. */
+/* The hand flicks across ONCE, left -> right, and the cards are thrown from it
+   in a burst (see dealTimings in pacing.ts). The 82% keyframe is where the hand
+   REACHES the far side and is mirrored by DEAL_HAND_ARRIVE_FRACTION — the card
+   flights are capped to it so nothing is still in the air when the stage flips.
+   If you move 82%, update DEAL_HAND_ARRIVE_FRACTION to match. */
 @keyframes dealer-sweep {
-  0% { left: calc(50% + var(--deal-start)); transform: translate(-50%,-16px) rotate(-3deg); }
-  12% { transform: translate(-50%,-1px) rotate(-1deg); }
-  30% { transform: translate(-50%,2px) rotate(.5deg); }
-  50% { transform: translate(-50%,0) rotate(-.4deg); }
-  70% { transform: translate(-50%,2px) rotate(.5deg); }
-  88% { left: calc(50% + var(--deal-end)); transform: translate(-50%,1px) rotate(1.1deg); }
-  96% { left: calc(50% + var(--deal-end)); transform: translate(-50%,2px) rotate(1.3deg); }
-  100% { left: calc(50% + var(--deal-end)); transform: translate(-50%,-10px) rotate(2.2deg); }
+  0% { left: calc(50% + var(--deal-start)); transform: translate(-50%,-14px) rotate(-4deg); }
+  18% { transform: translate(-50%,1px) rotate(-1deg); }
+  45% { transform: translate(-50%,2px) rotate(.6deg); }
+  82% { left: calc(50% + var(--deal-end)); transform: translate(-50%,0) rotate(1.4deg); }
+  92% { left: calc(50% + var(--deal-end)); transform: translate(-50%,3px) rotate(2deg); }
+  100% { left: calc(50% + var(--deal-end)); transform: translate(-50%,-8px) rotate(3deg); }
 }
+/* The held card is gone almost immediately: it is the first thing thrown, so
+   holding it for 90% of the window (as it used to) left a card floating in an
+   empty hand while the volley was already in the air. */
 @keyframes held-card-release {
-  0%,90% { opacity:1; transform:translate(0,0) rotate(6deg) scale(1); }
-  96% { opacity:.8; transform:translate(-4px,10px) rotate(2deg) scale(.93); }
-  100% { opacity:0; transform:translate(-7px,22px) rotate(0) scale(.88); }
+  0%,22% { opacity:1; transform:translate(0,0) rotate(6deg) scale(1); }
+  34% { opacity:.85; transform:translate(-6px,12px) rotate(1deg) scale(.92); }
+  46% { opacity:0; transform:translate(-10px,26px) rotate(-3deg) scale(.86); }
+  100% { opacity:0; transform:translate(-10px,26px) rotate(-3deg) scale(.86); }
 }
 
 .guess-stage .cards-row { margin-top: 74px; }

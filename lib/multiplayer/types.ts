@@ -251,7 +251,7 @@ export const OPPONENT_GRACE_MS = 8 * 1000;
  * Upper bound on the card-distribution ("shuffle") beat. The dealing client
  * advances the phase the moment its animation lands; this is the fallback so a
  * dropped client can never leave the other one stuck watching the Dealer's hand.
- * Must stay ABOVE the animation length (SHUFFLE_MS = 1450ms) plus a little slack.
+ * Must stay ABOVE the animation length (SHUFFLE_MS = 800ms) plus a little slack.
  */
 export const SHUFFLE_GRACE_MS = 2200;
 

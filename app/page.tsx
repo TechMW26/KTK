@@ -648,6 +648,11 @@ export default function Home() {
                             "--slot-x": `${offset * 76}px`,
                             "--flight-delay": `${deal.launch(index)}s`,
                             "--flight-duration": `${deal.flight}s`,
+                            // Cards flick AWAY from the hand's centre line, and
+                            // alternate their spin, so the volley fans out
+                            // instead of every card veering the same way.
+                            "--throw-dir": offset < 0 ? -1 : 1,
+                            "--throw-spin": `${index % 2 === 0 ? 14 : -11}deg`,
                           } as React.CSSProperties}
                         />
                       );
