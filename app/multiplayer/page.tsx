@@ -7,6 +7,7 @@ import { RESULT_COPY } from "@/lib/game/rules";
 import { OPPONENT_GRACE_MS } from "@/lib/multiplayer/types";
 import GameView from "./game";
 import SearchOnline from "./search";
+import { FriendsScreen } from "./friends";
 import { MpEyebrow, MpLogo, MpOrnament } from "./ui";
 
 /**
@@ -15,6 +16,11 @@ import { MpEyebrow, MpLogo, MpOrnament } from "./ui";
  * Internal step navigation (menu -> waiting -> game) mirrors how the single-
  * player keeps every screen in one page. All Firebase access lives in the hook /
  * services; this file only renders.
+ *
+ * The home screen deep-links here with a `?mode=` flag:
+ *   - `challenge` starts online matchmaking immediately.
+ *   - `friends`   opens the Play With Friend list.
+ *   - absent      shows the lobby menu (create / join / search).
  */
 export default function MultiplayerPage() {
   const mp = useMultiplayer();
@@ -28,6 +34,23 @@ export default function MultiplayerPage() {
   // every time we (re)enter search — including after an opponent disconnect.
   const [searchKey, setSearchKey] = useState(0);
   const [notice, setNotice] = useState<string | null>(null);
+  /** Which screen the friends flow owns while no room is active. */
+  const [friendsOpen, setFriendsOpen] = useState(false);
+  /** True once we have consumed the initial ?mode= flag (guards re-runs). */
+  const deepLinkRef = useRef(false);
+  /**
+   * False until the URL's `?mode=` flag has been read (on mount) and the initial
+   * screen chosen. Rendering is held behind a neutral veil while false so a deep
+   * link never flashes the lobby menu before the requested screen appears.
+   */
+  const [deepLinkResolved, setDeepLinkResolved] = useState(false);
+  /**
+   * Where this visit started. A `deepLink` arrival (Challenge / Play With
+   * Friend from the home screen) has no lobby in its flow, so backing out must
+   * return Home — showing the lobby would be a dead-end screen the player never
+   * asked for. Arriving at the lobby directly keeps the lobby as the back target.
+   */
+  const [entryOrigin, setEntryOrigin] = useState<"deepLink" | "lobby">("lobby");
 
   // ------------------------------------------------------------------ states
   const inMatch =
@@ -64,6 +87,7 @@ export default function MultiplayerPage() {
 
   const leaveToMenu = async () => {
     setSearching(false);
+    setFriendsOpen(false);
     setNotice(null);
     await mp.leave();
     setJoinDraft("");
@@ -85,9 +109,85 @@ export default function MultiplayerPage() {
   /** Menu button wrapper: do NOT forward the click event as the notice string. */
   const menuSearch = () => startSearch();
 
+  /**
+   * Back out of matchmaking.
+   *
+   * A deep-link arrival (Challenge) has no lobby in its flow, so backing out
+   * returns Home. A lobby-arrival returns to the lobby, as before.
+   */
   const cancelSearch = async () => {
-    setSearching(false);
     setNotice(null);
+    if (entryOrigin === "deepLink" && typeof window !== "undefined") {
+      window.location.assign("/");
+      return;
+    }
+    setSearching(false);
+  };
+
+  /**
+   * Leave the Play With Friend screen. Same rule as cancelSearch: a deep-link
+   * arrival returns Home, a lobby arrival returns to the lobby.
+   */
+  const closeFriends = () => {
+    if (entryOrigin === "deepLink" && typeof window !== "undefined") {
+      window.location.assign("/");
+      return;
+    }
+    setFriendsOpen(false);
+  };
+
+  /**
+   * Consume the home-screen deep link on mount.
+   *
+   * `?mode=challenge` drops straight into matchmaking; `?mode=friends` opens the
+   * friends list. This runs on the FIRST mount (not gated on Firebase init), so
+   * the challenge/friends screen is selected in the same commit that the page
+   * first paints — the lobby menu never flashes in between. The search screen
+   * itself waits for `mp.configured` internally, so it is safe to open it before
+   * Firebase has finished initialising.
+   */
+  useEffect(() => {
+    if (deepLinkRef.current || typeof window === "undefined") return;
+    deepLinkRef.current = true;
+    const mode = new URLSearchParams(window.location.search).get("mode");
+    // Batch the screen choice and the "resolved" flip in one commit so the
+    // target screen is what first paints after the veil.
+    if (mode === "challenge") {
+      // Mount-time sync from the URL: the deep link owns the initial screen.
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- URL is an external system
+      setEntryOrigin("deepLink");
+      setSearching(true);
+      setSearchKey((k) => k + 1);
+      setDeepLinkResolved(true);
+      return;
+    }
+    if (mode === "friends") {
+      setEntryOrigin("deepLink");
+      setFriendsOpen(true);
+      setDeepLinkResolved(true);
+      return;
+    }
+    setDeepLinkResolved(true);
+  }, []);
+
+  /** Restart matchmaking with a fresh screen (and therefore a fresh 30s window). */
+  const retrySearch = () => {
+    setNotice(null);
+    setSearchKey((k) => k + 1);
+  };
+
+  /** Play With Friend: start a challenge against a chosen friend. */
+  const challengeFriend = async () => {
+    // Reuse the SAME online matchmaking path: a friend challenge is an online
+    // game, so we drop into the existing search rather than a parallel system.
+    setFriendsOpen(false);
+    setSearching(true);
+    setSearchKey((k) => k + 1);
+  };
+
+  const openCreateRoom = async () => {
+    setFriendsOpen(false);
+    await create();
   };
 
   // ------------------------------------------------------------------
@@ -182,6 +282,18 @@ export default function MultiplayerPage() {
           </div>
         )}
 
+        {/*
+          Hold the first paint behind a neutral veil until the ?mode= deep link
+          has been resolved, so a Challenge/Friends deep link shows its target
+          screen directly instead of flashing the lobby menu first.
+        */}
+        {!deepLinkResolved && (
+          <div className="mp-veil">
+            <span className="mp-pulse">◖◗</span>
+            <MpOrnament />
+          </div>
+        )}
+
         {/* Reconnecting veil covers everything while the socket is down */}
         {!mp.meConnected && (
           <div className="mp-veil">
@@ -192,7 +304,7 @@ export default function MultiplayerPage() {
           </div>
         )}
 
-        {inMatch ? (
+        {!deepLinkResolved ? null : inMatch ? (
           <GameView mp={mp} onLeave={leaveToMenu} />
         ) : waiting ? (
           <WaitingScreen
@@ -207,8 +319,18 @@ export default function MultiplayerPage() {
             name={name}
             settings={mp.draftSettings}
             notice={notice}
+            onRetry={retrySearch}
+            backLabel={entryOrigin === "deepLink" ? "BACK TO HOME" : "BACK TO MULTIPLAYER"}
             onEnterRoom={(code, pairKey) => void enterRoomFromSearch(code, pairKey)}
             onBack={cancelSearch}
+          />
+        ) : friendsOpen ? (
+          <FriendsScreen
+            name={name}
+            notice={notice}
+            onChallengeFriend={() => void challengeFriend()}
+            onCreateRoom={() => void openCreateRoom()}
+            onBack={closeFriends}
           />
         ) : noRoom ? (
           <MenuScreen
@@ -220,6 +342,7 @@ export default function MultiplayerPage() {
             onCreate={create}
             onJoin={join}
             onSearch={menuSearch}
+            onFriends={() => setFriendsOpen(true)}
           />
         ) : null}
       </section>
@@ -239,6 +362,7 @@ function MenuScreen({
   onCreate,
   onJoin,
   onSearch,
+  onFriends,
 }: {
   mp: ReturnType<typeof useMultiplayer>;
   name: string;
@@ -248,6 +372,8 @@ function MenuScreen({
   onCreate: () => void;
   onJoin: () => void;
   onSearch: () => void;
+  /** Open the Play With Friend list. */
+  onFriends: () => void;
 }) {
   const err = errorCopy(mp.roomError);
   const draft = mp.draftSettings;
@@ -363,6 +489,9 @@ function MenuScreen({
         >
           SEARCH ONLINE PLAYERS
         </button>
+        <button className="outline-button" onClick={onFriends} disabled={!mp.configured}>
+          PLAY WITH FRIEND
+        </button>
       </div>
       <p className="round-note">Create a room and share the code, search for a rival, or enter a friend’s code.</p>
     </div>
@@ -386,6 +515,9 @@ function WaitingScreen({
   const others = (mp.room?.order?.filter(Boolean).length ?? 1) - 1;
   return (
     <div className="mp-frame mp-flow">
+      <button className="mp-back home-link" onClick={onLeave}>
+        ← Back
+      </button>
       <div className="stage-title">
         <MpEyebrow>YOU ARE THE HOST</MpEyebrow>
         <h2 className="mp-title">WAITING FOR OPPONENT</h2>

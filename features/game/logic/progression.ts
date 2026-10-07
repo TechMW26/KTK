@@ -20,8 +20,8 @@ export type RoundStep =
  *
  * 1. A decided lives match goes straight to the final result.
  * 2. The LAST round of the court completes it. How many rounds that is depends
- *    on the court, because a court runs two blocks of `cards` hides — 10, 6 and
- *    4 for the three courts in order.
+ *    on the court, because each court declares how many times each player hides
+ *    — 14, 10 and 6 rounds for the three courts in order.
  * 3. Otherwise the next round begins.
  */
 export function afterRound(input: {

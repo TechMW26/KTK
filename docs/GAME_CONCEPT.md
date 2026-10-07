@@ -131,8 +131,10 @@ Points are won per round and grow as the courts escalate:
 - High Stakes: **2 points**
 - Final Duel: **3 points**
 
-There are **10 rounds** inside each court. At the end of all three courts — thirty
-rounds of hide-and-seek — the player with the most points wins the kingdom.
+Each court declares how many times **each player** hides — 7, then 5, then 3 — so
+a court runs twice that many rounds (14, 10 and 6). At the end of all three
+courts — thirty rounds of hide-and-seek — the player with the most points wins
+the kingdom.
 
 ### Optional "5 Lives" mode
 

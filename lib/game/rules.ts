@@ -34,6 +34,8 @@ export interface LevelConfig {
   index: number;
   name: string;
   cards: number;
+  /** Rounds in the court (both players' hides, i.e. `hidesPerPlayer * 2`). */
+  rounds: number;
   seconds: number;
   points: number;
 }
@@ -43,14 +45,16 @@ export const LEVELS: LevelConfig[] = COURTS.map((court, index) => ({
   index,
   name: court.name,
   cards: court.cards,
+  rounds: court.hidesPerPlayer * 2,
   seconds: court.seconds,
   points: court.points,
 }));
 
 /**
- * Rounds in a level. NOT a single number: a court runs two blocks of `cards`
- * hides, so the three levels run 10, 6 and 4 rounds respectively. Kept as a
- * function so no caller can assume the courts share a length.
+ * Rounds in a level. NOT a single number: each court declares how many times
+ * EACH player hides, so the three levels run 14, 10 and 6 rounds respectively
+ * (7/5/3 hides per player, times two). Kept as a function so no caller can
+ * assume the courts share a length.
  */
 export function roundsPerLevel(level: number): number {
   return roundsInCourt(level);
@@ -69,6 +73,7 @@ export function levelConfig(index: number): LevelConfig {
     index: clamped,
     name: court.name,
     cards: court.cards,
+    rounds: court.hidesPerPlayer * 2,
     seconds: court.seconds,
     points: court.points,
   };

@@ -77,19 +77,19 @@ console.log("logic.test — extracted game logic vs original behaviour");
 // Constants must still describe the shipped game
 // ---------------------------------------------------------------------------
 
-check("courts keep the shipped card counts, clocks and stakes", () => {
+check("courts keep the shipped card counts, hide counts, clocks and stakes", () => {
   flow.deepEqual(
-    COURTS.map((c) => [c.name, c.cards, c.seconds, c.points]),
+    COURTS.map((c) => [c.name, c.cards, c.hidesPerPlayer, c.seconds, c.points]),
     [
-      ["THE COURT", 5, 20, 1],
-      ["HIGH STAKES", 3, 15, 2],
-      ["FINAL DUEL", 2, 9, 3],
+      ["THE COURT", 5, 7, 20, 1],
+      ["HIGH STAKES", 3, 5, 15, 2],
+      ["FINAL DUEL", 2, 3, 9, 3],
     ],
   );
-  flow.equal(roundsInCourt(0), 10);
-  flow.equal(roundsInCourt(1), 6);
-  flow.equal(roundsInCourt(2), 4);
-  flow.equal(TOTAL_ROUNDS, 20);
+  flow.equal(roundsInCourt(0), 14);
+  flow.equal(roundsInCourt(1), 10);
+  flow.equal(roundsInCourt(2), 6);
+  flow.equal(TOTAL_ROUNDS, 30);
   flow.equal(STARTING_LIVES, 5);
 });
 
@@ -108,22 +108,15 @@ check("pacing constants match the original inline literals", () => {
 
 check("seat math: each court gives each player a block sized to its cards", () => {
   // DEFAULT rotation: within a court, seat 0 hides the first block and seat 1 the
-  // second. Block size follows the card count, so 5 / 3 / 2 across the courts.
-  setCurrentCourtIndex(0);
-  for (let round = 1; round <= 10; round += 1) {
-    const expectedDealer = (round <= 5 ? 0 : 1) as Seat;
-    flow.equal(dealerForRound(round), expectedDealer, `dealer round ${round}`);
-    flow.equal(guesserForRound(round), (expectedDealer === 0 ? 1 : 0) as Seat, `guesser round ${round}`);
-  }
-  setCurrentCourtIndex(1);
-  for (let round = 1; round <= 6; round += 1) {
-    const expectedDealer = (round <= 3 ? 0 : 1) as Seat;
-    flow.equal(dealerForRound(round), expectedDealer, `court 2 dealer round ${round}`);
-  }
-  setCurrentCourtIndex(2);
-  for (let round = 1; round <= 4; round += 1) {
-    const expectedDealer = (round <= 2 ? 0 : 1) as Seat;
-    flow.equal(dealerForRound(round), expectedDealer, `court 3 dealer round ${round}`);
+  // second. Block size follows the card count, so it differs per court.
+  for (let court = 0; court < 3; court += 1) {
+    const block = hidesPerBlock(court);
+    setCurrentCourtIndex(court);
+    for (let round = 1; round <= block * 2; round += 1) {
+      const expectedDealer = (round <= block ? 0 : 1) as Seat;
+      flow.equal(dealerForRound(round), expectedDealer, `court ${court} dealer round ${round}`);
+      flow.equal(guesserForRound(round), (expectedDealer === 0 ? 1 : 0) as Seat, `court ${court} guesser round ${round}`);
+    }
   }
   setCurrentCourtIndex(0);
 });
@@ -261,10 +254,12 @@ check("the final court ends the match", () => {
   flow.deepEqual(afterCourt(2), { action: "match-complete" });
   flow.equal(isFinalCourt(2), true);
   flow.equal(isFinalCourt(1), false);
-  flow.equal(isFinalRoundOfCourt(10, 0), true);
-  flow.equal(isFinalRoundOfCourt(9, 0), false);
-  flow.equal(isFinalRoundOfCourt(6, 1), true);
-  flow.equal(isFinalRoundOfCourt(4, 2), true);
+  // Final round of a court is its last round, derived from the shared table.
+  for (let court = 0; court < 3; court += 1) {
+    const last = roundsInCourt(court);
+    flow.equal(isFinalRoundOfCourt(last, court), true, `court ${court} last round`);
+    flow.equal(isFinalRoundOfCourt(last - 1, court), false, `court ${court} penultimate round`);
+  }
 });
 
 // ---------------------------------------------------------------------------

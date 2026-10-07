@@ -5,8 +5,8 @@ A mobile-first strategy and bluff card game built with React, TypeScript, Vinext
 ## Gameplay
 
 - Three escalating levels: 5 cards, 3 cards, then 2 cards
-- 10 rounds per level
-- Complete-turn hiding: each player hides five rounds in a row, then the table turns
+- 7, 5 then 3 hides per player per level: 14, 10 then 6 rounds
+- Complete-turn hiding: each player hides their whole block in a row, then the table turns
 - Timed hiding and guessing: 20 seconds, 15 seconds, then 9 seconds
 - One bluff per player in each level
 - Local two-player and versus-bot modes

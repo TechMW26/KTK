@@ -8,21 +8,22 @@
  * "Complete Turns" — each player hides for a block of consecutive rounds instead
  * of alternating — is the DEFAULT turn order, and the optional "5 Lives" rule
  * (lives REPLACE score as the win condition) layers on top. Both are modelled here
- * as a *pure, deterministic* sequence of hiding rounds. This module has NO imports
- * and NO side effects so it can be verified by a standalone Node harness
+ * as a *pure, deterministic* sequence of hiding rounds. This module reads the
+ * court table from the single source of truth (`features/game/constants/courts.ts`)
+ * and has NO side effects, so it can be verified by a standalone Node harness
  * (scripts/flow.test.ts) and shared verbatim by the Firebase transaction layer,
  * the UI and local 2-player mode.
  *
  * Model
  * -----
  * A match runs the three courts in order. A court is a fixed number of rounds
- * (ROUNDS_PER_COURT = 10) and the round counter RESTARTS at 1 in each court —
- * exactly like the local/2-player engine. Within a court the hides are split
- * into two consecutive blocks of HIDES_PER_BLOCK (= 5): seat 0 hides the first
- * block, seat 1 the second. Because the counter resets, seat 0 always opens a
- * court and each seat deals the same number of rounds per court.
+ * (two blocks of that court's card count) and the round counter RESTARTS at 1 in
+ * each court — exactly like the local/2-player engine. Within a court the hides
+ * are split into two consecutive blocks of that court's card count: seat 0 hides
+ * the first block, seat 1 the second. Because the counter resets, seat 0 always
+ * opens a court and each seat deals the same number of rounds per court.
  *
- *   COMPLETE block size : HIDES_PER_BLOCK (5) consecutive dealer rounds per court.
+ *   COMPLETE block size : the court's card count, consecutive dealer rounds.
  *   Alternate           : the dealer flips every hiding round.
  *
  * The global hiding-round index (1..RULESET_ROUNDS) is the authoritative clock;
@@ -31,36 +32,47 @@
  * copy of the court table.
  */
 
+// Relative import (not the `@/` alias) because this module is reachable from the
+// bare-Node test harness, which cannot resolve path aliases.
+import { COURTS } from "../../features/game/constants/courts.ts";
+
+/** Number of courts in a match (matches the shared COURTS table length). */
+export const COURT_COUNT = COURTS.length;
+
+/** Rounds in a court — both players' hides, single-sourced from the table. */
+export function roundsInCourt(courtIndex: number): number {
+  return hidesInCourt(courtIndex) * 2;
+}
+
+/** Consecutive hides each seat takes inside a court (one full block). */
+export function hidesInCourt(courtIndex: number): number {
+  return courtAt(courtIndex).hidesPerPlayer;
+}
+
+/** The court for a clamped zero-based index. */
+function courtAt(courtIndex: number) {
+  return COURTS[Math.max(0, Math.min(COURTS.length - 1, courtIndex))];
+}
+
 /**
  * Round the dealer ROTATION restarts at, within a court.
  *
- * A court now runs two blocks of `hidesPerBlock(court)` hides — one per seat —
- * so this is NOT a single number: court 1 runs 10 rounds, court 2 runs 6 and
- * court 3 runs 4. Kept as the court-1 value for callers that only need the
- * opening court's shape, and because `COURTS[0].cards` is the same 5.
+ * Courts do NOT share a length — each declares its own `hidesPerPlayer` — so
+ * this is only the court-1 value for callers that need the opening court's shape.
  */
-export const ROUNDS_PER_COURT = 5 * 2; // court 1: 10
-/** Consecutive hides each seat takes inside one court (half the court). */
-export const HIDES_PER_BLOCK = ROUNDS_PER_COURT / 2; // court 1: 5
-/** Number of courts in a match (matches the shared COURTS table length). */
-export const COURT_COUNT = 3;
-/** Total hiding rounds in a match (10 + 6 + 4). */
-export const RULESET_ROUNDS = 20;
+export const ROUNDS_PER_COURT = roundsInCourt(0); // court 1
+/** Consecutive hides each seat takes inside a court (one full block). */
+export const HIDES_PER_BLOCK = hidesInCourt(0); // court 1
+/** Total hiding rounds in a match (both players' hides, summed per court). */
+export const RULESET_ROUNDS = COURTS.reduce(
+  (total, _court, index) => total + roundsInCourt(index),
+  0,
+);
 /** Rounds each seat deals across a whole match (one block in every court). */
-export const DEALS_PER_SEAT = RULESET_ROUNDS / 2; // 10
-
-/** Cards on the table in a given court — drives that court's block size. */
-const COURT_CARDS = [5, 3, 2] as const;
-
-/** Rounds in a court: both seats' blocks. */
-export function roundsInCourt(courtIndex: number): number {
-  return COURT_CARDS[Math.max(0, Math.min(COURT_COUNT - 1, courtIndex))] * 2;
-}
-
-/** Hides per seat in a court: one per card on the table. */
-export function hidesInCourt(courtIndex: number): number {
-  return COURT_CARDS[Math.max(0, Math.min(COURT_COUNT - 1, courtIndex))];
-}
+export const DEALS_PER_SEAT = COURTS.reduce(
+  (total, _court, index) => total + hidesInCourt(index),
+  0,
+);
 
 // ---------------------------------------------------------------------------
 // Types (kept local & inline so this module stays import-free)
@@ -170,7 +182,7 @@ export function courtForHidingRound(hidingRound: number): number {
  * Dealer seat for a 1-based global hiding round under a turn-order mode.
  *
  * COMPLETE — "complete turns": the hides INSIDE a court are split into two
- * consecutive blocks of `hidesInCourt(court)` — 5, 3 and 2 for the three courts.
+ * consecutive blocks of `hidesInCourt(court)` (7, 5 and 3 for the three courts).
  * Seat 0 takes the first block of the court and seat 1 the second, so each seat
  * hides a whole block before the table turns. The counter restarts each court,
  * so seat 0 opens every court and both seats deal an equal number of rounds.

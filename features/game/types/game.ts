@@ -13,6 +13,13 @@ export type MatchPhase =
   | "pass"
   | "shuffle"
   | "guess"
+  /**
+   * The guesser has locked a card and ALL cards are flipping face-up together,
+   * before the verdict screen. Purely presentational: the round outcome is
+   * already decided, so the rules are untouched — this only splits the existing
+   * reveal into its two visible beats (lock, then show every card).
+   */
+  | "reveal"
   | "result"
   | "level-end"
   | "match-end";

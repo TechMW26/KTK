@@ -231,6 +231,12 @@ export default function useMultiplayer() {
     return fallback ?? null;
   }, [room, uid, mySeat]);
 
+  /** The opponent's uid, for actions that target the other player (e.g. Add Friend). */
+  const opponentUid = useMemo<string | null>(() => {
+    if (!room || !uid) return null;
+    return room.order?.find((o) => o && o !== uid) ?? null;
+  }, [room, uid]);
+
   const amDealer = !!game && game.dealerSeat === mySeat && mySeat != null;
   const myTurnToAct = !!game && game.actingSeat === mySeat && mySeat != null;
   const guessSeconds = game ? levelConfig(game.level).seconds : null;
@@ -412,6 +418,7 @@ export default function useMultiplayer() {
     busyLabel,
     meConnected,
     opponent: opponent?.name || null,
+    opponentUid,
     opponentConnected: opponent?.connected ?? true,
     amDealer,
     myTurnToAct,

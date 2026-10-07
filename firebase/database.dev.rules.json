@@ -43,6 +43,20 @@
         ".read": "auth != null",
         ".write": "auth != null"
       }
+    },
+    "friends": {
+      ".read": "auth != null",
+      "$uid": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      }
+    },
+    "presence": {
+      ".read": "auth != null",
+      "$uid": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      }
     }
   }
 }

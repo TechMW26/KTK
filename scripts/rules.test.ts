@@ -54,23 +54,23 @@ console.log("rules.test — pure round resolution");
 // Court table + seat arithmetic (these drive every timer and point value)
 // ---------------------------------------------------------------------------
 
-check("court table matches the shipped 5/3/2 · 20/15/9 · 1/2/3 progression", () => {
+check("court table matches the shipped 5/3/2 cards · 7/5/3 hides · 20/15/9 · 1/2/3", () => {
   flow.deepEqual(
-    LEVELS.map((l) => [l.cards, l.seconds, l.points]),
+    LEVELS.map((l) => [l.cards, l.rounds, l.seconds, l.points]),
     [
-      [5, 20, 1],
-      [3, 15, 2],
-      [2, 9, 3],
+      [5, 14, 20, 1],
+      [3, 10, 15, 2],
+      [2, 6, 9, 3],
     ],
   );
 });
 
-check("one block per seat per court: 10 + 6 + 4 = twenty rounds total", () => {
-  flow.equal(roundsPerLevel(0), 10);
-  flow.equal(roundsPerLevel(1), 6);
-  flow.equal(roundsPerLevel(2), 4);
+check("rounds per level: 14 + 10 + 6 = thirty rounds total", () => {
+  flow.equal(roundsPerLevel(0), 14);
+  flow.equal(roundsPerLevel(1), 10);
+  flow.equal(roundsPerLevel(2), 6);
   flow.equal(LEVEL_COUNT, 3);
-  flow.equal(TOTAL_ROUNDS, 20);
+  flow.equal(TOTAL_ROUNDS, 30);
 });
 
 check("levelConfig clamps out-of-range court indices", () => {

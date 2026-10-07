@@ -87,14 +87,17 @@ check("the online seat aliases are the shared rotation, not a second copy", () =
 });
 
 check("seat aliases and the shared rotation agree on the court boundary", () => {
-  // Round 10 of a court then the reset to round 1 must rotate identically.
-  flow.equal(dealerSeatFor(10), dealerForRound(10, 1));
+  // The last round of court 0 then the reset to round 1 must rotate identically.
+  flow.equal(dealerSeatFor(roundsInCourt(0)), dealerForRound(roundsInCourt(0), 1));
   flow.equal(dealerSeatFor(1), dealerForRound(1, 1));
   flow.equal(guesserSeatFor(1), guesserForRound(1, 1));
 });
 
 check("no module restates the court numbers", () => {
-  // Static guard: the court names may only appear in the owning module.
+  // Static guard: neither the court names NOR a literal card-count array may
+  // appear outside the owning module. `[7, 5, 3]` is the current table; the
+  // pattern also catches any 3-number array of small ints that looks like a
+  // court-card list, so a future duplication fails loudly here.
   const files = [
     "lib/game/rules.ts",
     "lib/game/flow.ts",
@@ -104,10 +107,15 @@ check("no module restates the court numbers", () => {
     "features/game/logic/scoring.ts",
     "features/game/logic/progression.ts",
   ];
+  const expectedCards = COURTS.map((c) => c.cards).join(", ");
   for (const file of files) {
     const src = readFileSync(file, "utf8");
-    const leaked = /THE COURT|HIGH STAKES|FINAL DUEL/.test(src);
-    flow.equal(leaked, false, `${file} must not restate court names`);
+    flow.equal(/THE COURT|HIGH STAKES|FINAL DUEL/.test(src), false, `${file} must not restate court names`);
+    flow.equal(
+      new RegExp(`\\[\\s*${expectedCards.replace(/,\s*/g, "\\s*,\\s*")}\\s*\\]`).test(src),
+      false,
+      `${file} must not restate the court card counts`,
+    );
   }
 });
 

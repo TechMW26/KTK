@@ -16,7 +16,7 @@ import { AccountScreen } from "@/features/account/components/AccountScreen";
 import { useAccount } from "@/hooks/useAccount";
 import { recordMatchResult } from "@/lib/firebase/profile";
 import { TurnIndicator, TurnTransition } from "@/features/game/components/TurnIndicator";
-import { COURTS, hidesPerBlock, setCurrentCourtIndex, STARTING_LIVES } from "@/features/game/constants/courts";
+import { COURTS, hidesPerBlock, roundsInCourt, setCurrentCourtIndex, STARTING_LIVES } from "@/features/game/constants/courts";
 import {
   RESULT_COPY,
   turnAnnouncement,
@@ -31,6 +31,7 @@ import {
   COUNTDOWN_WARNING_SECONDS,
   dealTimings,
   REDUCED,
+  REVEAL_LOCK_MS,
   SHUFFLE_MS,
   TURN_VEIL_MS,
 } from "@/features/game/constants/pacing";
@@ -83,6 +84,11 @@ export default function Home() {
    * (pointer + highlight), the second tap on the same card commits the pick.
    */
   const [targetCard, setTargetCard] = useState<number | null>(null);
+  /**
+   * The guesser's locked card during the reveal beat, so the row can highlight
+   * the pick before every card flips. Null on a bluff call (no card picked).
+   */
+  const [revealPick, setRevealPick] = useState<number | null>(null);
   const [opponentActiveCard, setOpponentActiveCard] = useState<number | null>(null);
   const [strategyTab, setStrategyTab] = useState<0 | 1>(0);
   const [sound, setSound] = useState(true);
@@ -120,6 +126,7 @@ export default function Home() {
     setOverlay(null);
     setHoveredCard(null);
     setTargetCard(null);
+    setRevealPick(null);
     setOpponentActiveCard(null);
   };
 
@@ -141,6 +148,47 @@ export default function Home() {
     }
     resetRoundState(0);
     setPhase("dealer");
+  };
+
+  /**
+   * Home-screen entry points.
+   *
+   * Each new main-menu button funnels into an EXISTING flow: `startMode` sets the
+   * opponent kind and launches a local match, `go` navigates to a multiplayer
+   * route with a query flag the destination reads. No gameplay is reimplemented
+   * here — this only chooses which existing flow to enter.
+   */
+  const startMode = (next: OpponentKind) => {
+    setMode(next);
+    // `mode` is read inside startMatch from the closure; set it on the next tick
+    // so the freshly chosen mode is the one that starts. Using a ref-free microtask
+    // keeps this a single render commit for the user.
+    window.setTimeout(() => startMatchForMode(next), 0);
+  };
+
+  const startMatchForMode = (next: OpponentKind) => {
+    if (sound) {
+      preloadGameAudio();
+      startAmbientMusic();
+      playSoundCue("start");
+    }
+    setNames(([first, second]) => [first.trim() || "Player 1", next === "bot" ? "The Rival" : second.trim() || "Player 2"]);
+    setScores([0, 0]);
+    setLevel(0);
+    setRound(1);
+    setBluffsAvailable([true, true]);
+    setHistory([]);
+    if (next === "local") {
+      setLives([STARTING_LIVES, STARTING_LIVES]);
+      setLifeWinner(null);
+    }
+    resetRoundState(0);
+    setPhase("dealer");
+  };
+
+  /** Navigate to a multiplayer route, preserving the Firebase-configured guard. */
+  const go = (path: string) => {
+    if (typeof window !== "undefined") window.location.assign(path);
   };
 
   const quitMatch = () => {
@@ -195,8 +243,24 @@ export default function Home() {
       const winner = winnerFromLives(nextLives);
       if (winner !== null) setLifeWinner(winner);
     }
-    setPhase("result");
+    // Show the locked pick and every card turning over BEFORE the verdict, so
+    // the selected card locks and then ALL cards reveal. The verdict screen
+    // (phase "result") follows after the reveal beat.
+    setRevealPick(pick);
+    setPhase("reveal");
   };
+
+  // Advance from the reveal beat to the verdict once the row has flipped.
+  useEffect(() => {
+    if (phase !== "reveal" || !result) return;
+    const timer = window.setTimeout(
+      () => setPhase("result"),
+      motion ? REVEAL_LOCK_MS : REDUCED.revealLock,
+    );
+    return () => window.clearTimeout(timer);
+    // Runs once per reveal beat; the result identity is the round identity.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase]);
 
   const chooseCard = (index: number) => {
     if (phase !== "guess" || result) return;
@@ -498,8 +562,8 @@ export default function Home() {
   }, [phase]);
 
   return (
-    <main className={["game-shell", motion ? "" : "reduced-motion"].join(" ")}>
-      <section className={["game-screen", phase === "result" && result ? RESULT_COPY[result.kind].tone : ""].join(" ")}>
+    <main className={["game-shell", motion ? "" : "reduced-motion"].filter(Boolean).join(" ")}>
+      <section className={["game-screen", phase === "result" && result ? RESULT_COPY[result.kind].tone : ""].filter(Boolean).join(" ")}>
         <div className="corner corner-tl" /><div className="corner corner-tr" />
         <div className="corner corner-bl" /><div className="corner corner-br" />
 
@@ -507,13 +571,15 @@ export default function Home() {
 
         {phase === "home" ? (
           <HomeScreen
-            mode={mode}
-            setMode={setMode}
             names={names}
             setNames={setNames}
             livesOn={livesOn}
             setLivesOn={setLivesOn}
-            startMatch={startMatch}
+            onChallenge={() => go("/multiplayer?mode=challenge")}
+            onPlayWithFriend={() => go("/multiplayer?mode=friends")}
+            onPassAndPlay={() => startMode("local")}
+            onPracticeBot={() => startMode("bot")}
+            onStartOnlineMatch={() => go("/multiplayer")}
             openRules={() => setOverlay("rules")}
             openSettings={() => setOverlay("settings")}
             openAccount={() => setOverlay("account")}
@@ -700,6 +766,34 @@ export default function Home() {
               </section>
             )}
 
+            {phase === "reveal" && result && (
+              <section className="play-stage reveal-stage">
+                <div className="stage-title">
+                  <p className="eyebrow">{displayNames[guesser]} · LOCKED IN</p>
+                  <h2>REVEALING THE CARDS</h2>
+                  <Ornament />
+                  <p>Every card turns over…</p>
+                </div>
+                <div className="cards-row reveal-row">
+                  {Array.from({ length: config.cards }, (_, index) => (
+                    <PlayingCard
+                      key={index}
+                      index={index}
+                      faceUp
+                      blank={isBluff}
+                      king={!isBluff && index === kingPosition}
+                      chosen={index === revealPick}
+                      disabled
+                      flipDelay={(index * 70) / 1000}
+                    />
+                  ))}
+                  {revealPick !== null && (
+                    <SelectionHand index={revealPick} cardCount={config.cards} settled faint={guesserIsBot} />
+                  )}
+                </div>
+              </section>
+            )}
+
             {phase === "result" && result && (
               <section className="play-stage result-stage">
                 <div className="impact-vignette" />
@@ -736,7 +830,7 @@ export default function Home() {
                 <button className="gold-button wide result-next" onClick={nextRound}>
                   {mode === "local" && livesOn && lifeWinner !== null
                     ? "FINAL RESULT"
-                    : round === 10
+                    : round === roundsInCourt(level)
                       ? "LEVEL RESULTS"
                       : "NEXT ROUND"}
                 </button>
@@ -745,6 +839,14 @@ export default function Home() {
 
             {phase === "level-end" && (
               <section className="center-stage level-stage">
+                <button
+                  className="back-button"
+                  onClick={() => setOverlay("quit")}
+                  aria-label="Leave match"
+                  title="Leave match"
+                >
+                  ←
+                </button>
                 <span className="level-crown">♛</span>
                 <p className="eyebrow">TEN ROUNDS COMPLETE</p>
                 <h2>{config.name} CLEARED</h2>
@@ -886,22 +988,32 @@ export default function Home() {
 
 
 function HomeScreen({
-  mode, setMode, names, setNames, livesOn, setLivesOn, startMatch, openRules, openSettings,
-  openAccount, accountLabel,
+  names, setNames, livesOn, setLivesOn,
+  onChallenge, onPlayWithFriend, onPassAndPlay, onPracticeBot, onStartOnlineMatch,
+  openRules, openSettings, openAccount, accountLabel,
 }: {
-  mode: OpponentKind;
-  setMode: (mode: OpponentKind) => void;
   names: [string, string];
   setNames: React.Dispatch<React.SetStateAction<[string, string]>>;
   livesOn: boolean;
   setLivesOn: (on: boolean) => void;
-  startMatch: () => void;
+  /** Online matchmaking — searches for an active player. */
+  onChallenge: () => void;
+  /** Friends list -> challenge a friend, or create a room. */
+  onPlayWithFriend: () => void;
+  /** Two players, one device. Uses the existing local flow. */
+  onPassAndPlay: () => void;
+  /** The Rival. Uses the existing bot flow. */
+  onPracticeBot: () => void;
+  /** Direct route to the multiplayer lobby (code create/join). */
+  onStartOnlineMatch: () => void;
   openRules: () => void;
   openSettings: () => void;
   openAccount: () => void;
   /** "SIGN IN" for a guest, "YOUR ACCOUNT" once an account is linked. */
   accountLabel: string;
 }) {
+  const [showPassSetup, setShowPassSetup] = useState(false);
+
   return (
     <section className="home-screen" aria-labelledby="game-title">
       <div className="home-topbar">
@@ -914,6 +1026,7 @@ function HomeScreen({
           <span className="topbar-label">SETTINGS</span>
         </button>
       </div>
+
       <Logo />
       <p className="tagline">Outsmart. Bluff. Win.</p>
       <div className="king-emblem">
@@ -927,18 +1040,42 @@ function HomeScreen({
           unoptimized
         />
       </div>
-      <div className="entry-panel">
-        <p className="panel-title">ENTER THE KINGDOM</p>
-        <div className="mode-switch" aria-label="Game mode">
-          <button className={mode === "bot" ? "active" : ""} onClick={() => setMode("bot")}>VS BOT</button>
-          <button className={mode === "local" ? "active" : ""} onClick={() => setMode("local")}>2 PLAYERS</button>
+
+      <div className="entry-panel home-menu">
+        <button className="gold-button home-challenge" onClick={onChallenge}>
+          CHALLENGE
+        </button>
+        <p className="home-hint">Find an online opponent</p>
+
+        <div className="home-row">
+          <button className="outline-button" onClick={onPlayWithFriend}>PLAY WITH FRIEND</button>
+          <button className="outline-button" onClick={() => setShowPassSetup((open) => !open)}>
+            PASS N PLAY
+          </button>
         </div>
-        <label htmlFor="player-one">YOUR NAME</label>
-        <input id="player-one" value={names[0]} onChange={(event) => setNames((previous) => [event.target.value, previous[1]])} placeholder="Enter your name" autoComplete="name" />
-        {mode === "local" && (
-          <>
+
+        <button className="outline-button" onClick={onPracticeBot}>
+          PRACTICE WITH BOT
+        </button>
+
+        {showPassSetup && (
+          <div className="pass-setup">
+            <p className="panel-title">TWO PLAYERS · ONE DEVICE</p>
+            <label htmlFor="player-one">YOUR NAME</label>
+            <input
+              id="player-one"
+              value={names[0]}
+              onChange={(event) => setNames((previous) => [event.target.value, previous[1]])}
+              placeholder="Enter your name"
+              autoComplete="name"
+            />
             <label htmlFor="player-two">OPPONENT NAME</label>
-            <input id="player-two" value={names[1]} onChange={(event) => setNames((previous) => [previous[0], event.target.value])} placeholder="Enter opponent name" />
+            <input
+              id="player-two"
+              value={names[1]}
+              onChange={(event) => setNames((previous) => [previous[0], event.target.value])}
+              placeholder="Enter opponent name"
+            />
             <label className="settings-check" htmlFor="lives5">
               <span>5 Lives</span>
               <input
@@ -949,21 +1086,28 @@ function HomeScreen({
               />
             </label>
             {livesOn && <p className="settings-note">Finding the King costs the hider a life. First to ❤ 0 loses.</p>}
-          </>
+            <button className="gold-button" onClick={onPassAndPlay}>START PASS N PLAY</button>
+          </div>
         )}
-        <button className="gold-button" onClick={startMatch}>START MATCH</button>
-        <button
-          className="outline-button"
-          onClick={() => {
-            if (typeof window !== "undefined") window.location.assign("/multiplayer");
-          }}
-        >
-          ONLINE MULTIPLAYER
-        </button>
-        <button className="outline-button" onClick={openRules}>HOW TO PLAY</button>
+
+        <div className="home-links">
+          <button className="text-button" onClick={onStartOnlineMatch}>ROOM CODE</button>
+          <span aria-hidden="true">·</span>
+          <button className="text-button" onClick={openRules}>HOW TO PLAY</button>
+        </div>
       </div>
-      <div className="level-route"><span>5 CARDS</span><i>→</i><span>3 CARDS</span><i>→</i><span>2 CARDS</span></div>
-      <p className="round-note">5 · 3 · 2 hides each · one bluff each</p>
+
+      <div className="level-route">
+        {COURTS.map((court, index) => (
+          <span key={court.name}>
+            {index > 0 && <i>→</i>}
+            {court.cards} CARDS
+          </span>
+        ))}
+      </div>
+      <p className="round-note">
+        {COURTS.map((c) => `${c.cards} cards · ${c.hidesPerPlayer * 2} rounds`).join("  ·  ")}
+      </p>
     </section>
   );
 }

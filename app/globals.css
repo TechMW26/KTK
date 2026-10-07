@@ -242,6 +242,39 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .level-route { margin-top: auto; display: flex; gap: 7px; color: #ae8846; font-size: 10px; letter-spacing: .09em; }
 .level-route i { color: #694719; font-style: normal; }
 .round-note { margin: 7px 0 0; color: #796844; font-size: 9px; letter-spacing: .08em; }
+
+/* --- New main-menu information architecture -----------------------------
+   CHALLENGE is the primary online action; Play With Friend / Pass n Play sit
+   in a balanced row; Practice With Bot is the secondary solo action. All reuse
+   the existing gold-button / outline-button treatments so the menu reads as the
+   same product, only re-ordered. */
+.home-menu { gap: 11px; }
+.home-challenge { min-height: 56px; font-size: 15px; letter-spacing: .16em; }
+.home-hint {
+  margin: -4px 0 2px;
+  color: var(--on-glass-faint, #8b7a56);
+  font-size: 9px;
+  letter-spacing: .12em;
+  text-align: center;
+  text-transform: uppercase;
+}
+.home-row { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+.home-row .outline-button { font-size: 11px; }
+.home-links {
+  margin-top: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  color: var(--on-glass-faint, #8b7a56);
+}
+.pass-setup {
+  display: grid;
+  gap: 9px;
+  margin-top: 3px;
+  padding-top: 11px;
+  border-top: 1px solid rgba(226, 168, 56, 0.16);
+}
 /* Complete-turn block marker: tells the player which hide of their run this is,
    so the 5-in-a-row structure is visible instead of invisible bookkeeping. */
 .block-note {
@@ -297,6 +330,26 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 }
 .quit-button:hover { border-color: #d2784e; background: rgba(75,20,8,.42); color: #ffc0a0; }
 .quit-button:active { transform: scale(.94); }
+/* Back affordance for the centre-stage result screens (level-end / final).
+   Gold-outlined to match the KTK chrome; the in-play board uses `.quit-button`. */
+.back-button {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  z-index: 50;
+  width: 42px;
+  height: 42px;
+  border: 1px solid var(--edge-line-strong, #74501b);
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.42);
+  color: var(--gold-bright);
+  font-size: 20px;
+  line-height: 1;
+  box-shadow: var(--lift-1, 0 1px 2px rgba(0,0,0,.45));
+  transition: color .2s ease, border-color .2s ease, background .2s ease, transform .2s ease;
+}
+.back-button:hover { border-color: var(--gold-bright); background: rgba(38, 24, 7, .55); }
+.back-button:active { transform: scale(.94); }
 .timer {
   --timer: 360deg;
   width: 56px;
@@ -1677,8 +1730,7 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .mp-note { color: #756346; font-size: 8px; margin: 4px 0 0; }
 
 /* Inline banner shown on the search screen (e.g. opponent disconnect/rematch). */
-.mp-notice {
-  color: var(--gold-bright);
+.mp-notice {  color: var(--gold-bright);
   font-size: 11px;
   letter-spacing: .06em;
   text-align: center;
@@ -1762,3 +1814,107 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 
 
 
+
+/* ===========================================================================
+   Play With Friend � friends list
+   Reuses the glass tokens so the list reads as native KTK chrome.
+   =========================================================================== */
+.friends-search {
+  width: 100%;
+  max-width: 340px;
+  min-height: 42px;
+  padding: 0 13px;
+  border: 1px solid var(--edge-line);
+  border-radius: var(--r-sm);
+  background: var(--glass-l1);
+  color: var(--on-glass);
+}
+.friends-search:focus {
+  border-color: var(--edge-line-strong);
+  box-shadow: 0 0 0 3px rgba(226, 168, 56, 0.14);
+}
+.friends-list {
+  width: 100%;
+  max-width: 340px;
+  display: grid;
+  gap: 7px;
+  margin: 6px 0 12px;
+}
+.friends-empty { padding: 18px 8px; text-align: center; }
+.friend-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 11px;
+  border: 1px solid var(--edge-line);
+  border-radius: var(--r-md);
+  background: var(--glass-l2);
+  box-shadow: var(--lift-1);
+}
+.friend-row.offline { opacity: .62; }
+.friend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #6b5a3a;
+}
+.friend-row.online .friend-dot {
+  background: #6fce7a;
+  box-shadow: 0 0 8px rgba(111, 206, 122, .6);
+}
+.friend-meta { display: grid; gap: 1px; min-width: 0; }
+.friend-meta b {
+  color: var(--on-glass);
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.friend-meta small { color: var(--on-glass-faint, #8b7a56); font-size: 9px; letter-spacing: .1em; }
+.friend-challenge {
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid #74501b;
+  border-radius: var(--r-pill);
+  background: rgba(0,0,0,.4);
+  color: var(--gold-bright);
+  font-size: 9px;
+  letter-spacing: .1em;
+  font-weight: 700;
+}
+.friend-challenge:disabled { opacity: .5; }
+.friends-footer {
+  width: 100%;
+  max-width: 340px;
+  margin-top: auto;
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+  padding-top: 14px;
+  border-top: 1px solid rgba(226, 168, 56, 0.16);
+}
+.friends-footer-hint { margin: 0; color: var(--on-glass-faint, #8b7a56); font-size: 9px; letter-spacing: .1em; }
+
+/* --- In-game Add Friend affordance ------------------------------------- */
+.add-friend-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin: 4px 0 2px;
+}
+.add-friend-bar .add-friend-name { color: #c9b179; font-size: 11px; letter-spacing: .06em; }
+.add-friend-button {
+  min-height: 30px;
+  padding: 0 14px;
+  border: 1px solid #74501b;
+  border-radius: var(--r-pill);
+  background: rgba(0,0,0,.4);
+  color: var(--gold-bright);
+  font-size: 9px;
+  letter-spacing: .1em;
+  font-weight: 700;
+}
+.add-friend-button:disabled { opacity: .55; }

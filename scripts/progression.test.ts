@@ -131,7 +131,7 @@ check("the final court ends the match", () => {
 // Whole-match walk
 // ---------------------------------------------------------------------------
 
-check("a full match runs exactly 20 rounds across 3 courts", () => {
+check("a full match runs exactly 30 rounds across 3 courts", () => {
   let level = 0;
   let round = 1;
   let roundsPlayed = 0;
@@ -154,7 +154,7 @@ check("a full match runs exactly 20 rounds across 3 courts", () => {
     round = afterRound.round;
   }
 
-  flow.equal(roundsPlayed, 20);
+  flow.equal(roundsPlayed, 30);
   flow.equal(courtsCleared, 3);
   flow.equal(level, 2);
 });
@@ -185,14 +185,14 @@ check("each court is played on its own card count in order 5, 3, 2", () => {
 });
 
 check("the round counter resets to 1 at every court boundary", () => {
-  // Each court's last round differs now (10, 6, 4); the next court must still
+  // Each court's round count differs (14, 10, 6); the next court must still
   // start at 1 so the dealer/guesser seat math restarts identically.
   for (const level of [0, 1]) {
     flow.equal(nextLevelTarget({ level }).round, 1);
   }
-  flow.equal(roundsPerLevel(0), 10);
-  flow.equal(roundsPerLevel(1), 6);
-  flow.equal(roundsPerLevel(2), 4);
+  flow.equal(roundsPerLevel(0), 14);
+  flow.equal(roundsPerLevel(1), 10);
+  flow.equal(roundsPerLevel(2), 6);
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

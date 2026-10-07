@@ -9,13 +9,13 @@ untouched scored 3-court x10 game in services/multiplayerService.ts — never ch
 Any OTHER config runs the OPTIONAL rules, which replay the SAME three-court
 structure as the local game on one global hiding-round clock:
 
-- 3 courts x ROUNDS_PER_COURT (10) = `RULESET_ROUNDS` (30) hides.
-- `courtForHidingRound(r)` -> court 0/1/2; `roundInCourt(r)` -> 1..10. The round
-  counter RESTARTS inside every court, exactly like the local engine.
-- complete : hides split into two blocks of `HIDES_PER_BLOCK` (5) per court.
-  seat0 takes rounds 1..5 of the court, seat1 takes 6..10. Because the counter
-  resets each court, seat0 opens every court and each seat deals one block per
-  court (15 hides total). Player 2's first turn is round 6 of the FIRST court.
+- 3 courts, each running two blocks of `hidesPerPlayer`: 14 + 10 + 6 = `RULESET_ROUNDS` (30) hides.
+- `courtForHidingRound(r)` -> court 0/1/2; `roundInCourt(r)` -> 1..14 / 1..10 / 1..6.
+  The round counter RESTARTS inside every court, exactly like the local engine.
+- complete : hides split into two blocks of `hidesPerPlayer` per court.
+  seat0 takes the first block, seat1 the second. Because the counter resets each
+  court, seat0 opens every court and each seat deals one block per court
+  (15 hides total).
 - alternate: dealer flips every hiding round (0,1,0,1...).
 - Court/deck for a hiding round = courtForHidingRound() -> 0/1/2 (levels 0..2) so the
   existing card/timing/points visuals are reused.

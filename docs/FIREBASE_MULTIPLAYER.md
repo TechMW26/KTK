@@ -127,7 +127,21 @@ rooms/{CODE}/
   game/         level, round, scores[], bluffsUsed[], phase, dealerSeat,
                 actingSeat, pendingGuess, lastResult, winnerSeat, seq
   secrets/{uid}/{level.round}   <- private; dealer's King/bluff  (rules: owner only)
+
+friends/{uid}/{friendUid}   { uid, name, addedAt }  <- social graph (rules: owner only)
+presence/{uid}              { name, online, lastSeenAt }  <- who is online (rules: any auth can read)
 ```
+
+**Social layer (Play With Friend):**
+
+- `friends/{uid}` is the single source of truth for a player's friends list. A
+  friendship is a DIRECTED edge the owner writes directly (no consent handshake),
+  so there is nothing to race on and no second copy.
+- `presence/{uid}` mirrors the room presence binding: `.info/connected` marks the
+  player online, an `onDisconnect` flips them offline, and a 20s heartbeat keeps
+  the flag fresh. Friends read this node (not the whole room) to show status.
+- `services/friendsService.ts` owns all of the above; `hooks/useFriends.ts`
+  exposes it to the UI. The in-game **Add Friend** button writes the same edge.
 
 **Turn flow (rule logic reused from `lib/game/rules.ts`):**
 

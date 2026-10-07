@@ -7,9 +7,15 @@ import type { Seat } from "../types/game.ts";
  * SINGLE SOURCE OF TRUTH FOR THE RULES OF KILL THE KING.
  * ─────────────────────────────────────────────────────────────────────────────
  *
- * The card counts, clocks and stakes below ARE the game. Every other module —
- * the local/2-player engine, the online engine, the bot and the services — reads
- * its court configuration from here. Nothing may restate these numbers.
+ * The card counts, hide counts, clocks and stakes below ARE the game. Every
+ * other module — the local/2-player engine, the online engine, the bot and the
+ * services — reads its court configuration from here. Nothing may restate these
+ * numbers.
+ *
+ * `cards` (how many cards sit on the table) and `hidesPerPlayer` (how many times
+ * EACH player hides in the court) are INDEPENDENT: a court runs
+ * `hidesPerPlayer * 2` rounds, which may be more than it has cards. Both are rule
+ * data, so both live here.
  *
  * `lib/game/rules.ts` re-exports a multiplayer-shaped view of this data (it adds
  * an explicit `index` field and the authoritative resolver), but it derives
@@ -19,35 +25,27 @@ import type { Seat } from "../types/game.ts";
  */
 
 export const COURTS = [
-  { name: "THE COURT", cards: 5, seconds: 20, points: 1 },
-  { name: "HIGH STAKES", cards: 3, seconds: 15, points: 2 },
-  { name: "FINAL DUEL", cards: 2, seconds: 9, points: 3 },
+  { name: "THE COURT", cards: 5, hidesPerPlayer: 7, seconds: 20, points: 1 },
+  { name: "HIGH STAKES", cards: 3, hidesPerPlayer: 5, seconds: 15, points: 2 },
+  { name: "FINAL DUEL", cards: 2, hidesPerPlayer: 3, seconds: 9, points: 3 },
 ] as const;
 
 /** A court's configuration. */
 export type Court = (typeof COURTS)[number];
 
 /**
- * How many consecutive rounds each player hides for inside a court.
+ * Consecutive hides each player takes in a court under "Complete Turns".
  *
- * Derivable at any time from the court's card count — see `hidesPerBlock(index)`.
- * A court with N cards runs blocks of N hides, so each player hides once per
- * card position and both always get an equal share. This is why
- * `ROUNDS_PER_COURT` is not a single number: see `roundsInCourt(index)`.
- */
-
-/**
- * Hides per player in a court: one per card on the table.
- *
- * Never more than `cards`, which is the load-bearing constraint. A round is a
- * single hide, so an 11th round would re-use one of the 10 pre-baked dealer
- * positions and deal a duplicate pair of cards for that round number.
+ * The hide count is INDEPENDENT of the card count (a court may run more hides
+ * than it has cards). Seat 0 takes the first `hidesPerPlayer` rounds of the
+ * court, seat 1 the next `hidesPerPlayer` — so each player hides exactly this
+ * many times per court, and a court runs `hidesPerPlayer * 2` rounds in total.
  */
 export function hidesPerBlock(courtIndex: number): number {
-  return courtAt(courtIndex).cards;
+  return courtAt(courtIndex).hidesPerPlayer;
 }
 
-/** Rounds in a court — both players' blocks. */
+/** Rounds in a court — both players' hides. */
 export function roundsInCourt(courtIndex: number): number {
   return hidesPerBlock(courtIndex) * 2;
 }
@@ -79,9 +77,10 @@ export function courtAt(index: number): Court {
  *
  * DEFAULT — "complete turns": each player hides for a BLOCK of consecutive
  * rounds instead of trading every round. Seat 0 takes the first block of the
- * court (rounds 1..N), seat 1 takes the second (rounds N+1..2N). The round
- * counter restarts at 1 in each court, so the same player hides first in all
- * three courts and both always get an equal share of the hides.
+ * court (rounds 1..N), seat 1 takes the second (rounds N+1..end). The block is
+ * half the court's rounds, rounded up, so an odd round count gives seat 0 the
+ * extra hide. The round counter restarts at 1 in each court, so the same player
+ * hides first in all three courts.
  *
  * `block` defaults to the CURRENT court's block, so callers that already know
  * which court they are in get the right rotation without passing anything. Pass

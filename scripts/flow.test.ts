@@ -49,8 +49,8 @@ check("alternate deals alternate 0,1,0,1...", () => {
 
 check("complete hides one block per seat in every court", () => {
   const d = dealerSequence("complete");
-  // Each court: seat0 takes the first block, seat1 the second. The block is one
-  // hide per card, so the courts run 5+5, 3+3 and 2+2 rounds.
+  // Each court: seat0 takes the first block of `hidesInCourt(c)` hides, seat1
+  // the second. Both seats deal exactly one block per court.
   flow.equal(d.length, RULESET_ROUNDS);
   let offset = 0;
   for (let c = 0; c < COURT_COUNT; c += 1) {
@@ -67,13 +67,18 @@ check("complete hides one block per seat in every court", () => {
 });
 
 check("complete: player 2's turn arrives in the SAME court", () => {
-  // Court 1 has 5-card blocks, so round 6 is seat 1 and round 5 is still seat 0.
-  flow.equal(dealerForHidingRound(6, "complete"), 1);
-  flow.equal(dealerForHidingRound(5, "complete"), 0);
-  // Court 2 opens at global round 11 and its block is 3, so round 14 flips.
-  flow.equal(dealerForHidingRound(11, "complete"), 0);
-  flow.equal(dealerForHidingRound(13, "complete"), 0);
-  flow.equal(dealerForHidingRound(14, "complete"), 1);
+  // Court 1's block is `hidesInCourt(0)` cards, so the seat flips one round
+  // after that block ends, still inside court 1.
+  const block0 = hidesInCourt(0);
+  flow.equal(dealerForHidingRound(block0, "complete"), 0);
+  flow.equal(dealerForHidingRound(block0 + 1, "complete"), 1);
+  // Court 2 opens at the global round after court 1, and its block flips seat
+  // inside court 2 (never crossing into court 3).
+  const court2Start = roundsInCourt(0) + 1;
+  const block1 = hidesInCourt(1);
+  flow.equal(dealerForHidingRound(court2Start, "complete"), 0);
+  flow.equal(dealerForHidingRound(court2Start + block1 - 1, "complete"), 0);
+  flow.equal(dealerForHidingRound(court2Start + block1, "complete"), 1);
 });
 
 check("alternate guesser is complement of dealer", () => {
@@ -88,27 +93,36 @@ check("alternate guesser is complement of dealer", () => {
 });
 
 check("courtForHidingRound buckets the per-court round counts", () => {
-  // Court 1 runs rounds 1..10, court 2 rounds 11..16, court 3 rounds 17..20.
-  flow.equal(courtForHidingRound(1), 0);
-  flow.equal(courtForHidingRound(10), 0);
-  flow.equal(courtForHidingRound(11), 1);
-  flow.equal(courtForHidingRound(16), 1);
-  flow.equal(courtForHidingRound(17), 2);
-  flow.equal(courtForHidingRound(20), 2);
+  // Court boundaries are derived, so this locks the mapping without restating
+  // the card counts: each court owns a contiguous band of `roundsInCourt(c)`.
+  const starts = [1];
+  for (let c = 0; c < COURT_COUNT - 1; c += 1) starts.push(starts[c] + roundsInCourt(c));
+  for (let c = 0; c < COURT_COUNT; c += 1) {
+    const first = starts[c];
+    const last = first + roundsInCourt(c) - 1;
+    flow.equal(courtForHidingRound(first), c, `first round of court ${c}`);
+    flow.equal(courtForHidingRound(last), c, `last round of court ${c}`);
+    if (c + 1 < COURT_COUNT) flow.equal(courtForHidingRound(last + 1), c + 1, `boundary into court ${c + 1}`);
+  }
 });
 
 check("roundInCourt restarts at 1 every court", () => {
-  flow.equal(roundInCourt(1), 1);
-  flow.equal(roundInCourt(10), 10);
-  flow.equal(roundInCourt(11), 1);
-  flow.equal(roundInCourt(16), 6);
-  flow.equal(roundInCourt(17), 1);
-  flow.equal(roundInCourt(20), 4);
+  let first = 1;
+  for (let c = 0; c < COURT_COUNT; c += 1) {
+    const count = roundsInCourt(c);
+    flow.equal(roundInCourt(first), 1, `court ${c} opens at 1`);
+    flow.equal(roundInCourt(first + count - 1), count, `court ${c} closes at its round count`);
+    first += count;
+  }
 });
 
-check("complete dealer block boundary round 11 => seat0 (new court)", () => {
-  flow.equal(dealerForHidingRound(11, "complete"), 0);
-  flow.equal(roundInCourt(11), 1);
+check("complete dealer block boundary => seat0 opens every court", () => {
+  let first = 1;
+  for (let c = 0; c < COURT_COUNT; c += 1) {
+    flow.equal(dealerForHidingRound(first, "complete"), 0, `court ${c} opened by seat0`);
+    flow.equal(roundInCourt(first), 1, `court ${c} round restarts at 1`);
+    first += roundsInCourt(c);
+  }
 });
 check("complete dealer block boundary round 1 => seat0", () => {
   flow.equal(dealerForHidingRound(1, "complete"), 0);
@@ -124,19 +138,24 @@ check("alternate hidesDealtBy seat1 before round5 = 2 (rounds 2,4)", () => {
 check("alternate hidesDealtBy seat1 before round2 = 0", () => {
   flow.equal(hidesDealtBy(1, 2, "alternate"), 0);
 });
-check("complete hidesDealtBy seat0 before round6 = 5 (its whole block)", () => {
-  flow.equal(hidesDealtBy(0, 6, "complete"), 5);
+check("complete hidesDealtBy seat0 before the block flips = its whole block", () => {
+  const block = hidesInCourt(0);
+  flow.equal(hidesDealtBy(0, block + 1, "complete"), block);
 });
-check("complete hidesDealtBy seat1 before round6 = 0", () => {
-  flow.equal(hidesDealtBy(1, 6, "complete"), 0);
+check("complete hidesDealtBy seat1 before the block flips = 0", () => {
+  const block = hidesInCourt(0);
+  flow.equal(hidesDealtBy(1, block + 1, "complete"), 0);
 });
-check("complete hidesDealtBy seat1 before round7 = 1 (dealt round 6)", () => {
-  flow.equal(hidesDealtBy(1, 7, "complete"), 1);
+check("complete hidesDealtBy seat1 one round into its block = 1", () => {
+  const block = hidesInCourt(0);
+  flow.equal(hidesDealtBy(1, block + 2, "complete"), 1);
 });
 check("complete hidesDealtBy accumulates across courts", () => {
-  // After court 0 (10 rounds) each seat has dealt one 5-round block.
-  flow.equal(hidesDealtBy(0, 11, "complete"), 5);
-  flow.equal(hidesDealtBy(1, 11, "complete"), 5);
+  // After court 0 each seat has dealt one full block of hidesInCourt(0).
+  const afterCourt0 = roundsInCourt(0) + 1;
+  const block0 = hidesInCourt(0);
+  flow.equal(hidesDealtBy(0, afterCourt0, "complete"), block0);
+  flow.equal(hidesDealtBy(1, afterCourt0, "complete"), block0);
 });
 
 check("finding a king costs its dealer a life", () => {
@@ -255,10 +274,11 @@ check("each seat can bluff exactly once per court, in every court", () => {
 });
 
 check("the bluff budget is one per court, not one per round", () => {
-  // Court 1 has 5 hides each; a seat must still be limited to a single bluff.
+  // A seat hides `hidesInCourt(0)` times in the first court but may bluff only
+  // once — the budget must stay far below the hide count.
   const bluffsPerSeat = 1;
   const hidesInFirstCourt = hidesInCourt(0);
-  flow.equal(hidesInFirstCourt, 5);
+  flow.ok(hidesInFirstCourt > 1, "a court must have more than one hide each");
   flow.equal(bluffsPerSeat, 1);
   flow.ok(bluffsPerSeat < hidesInFirstCourt, "bluff budget must be smaller than the hide count");
 });
@@ -316,9 +336,13 @@ check("strategy chart width follows the court's card count", () => {
 // ---------------------------------------------------------------------------
 
 check("strategyEntryFor maps the global round to court-relative for optional", () => {
+  // Pick a round that lands in court 1 (the second court), second round inside
+  // it, derived from the table so it tracks the card counts automatically.
+  const court1Start = roundsInCourt(0) + 1; // first global round of court index 1
+  const global = court1Start + 1; // second round inside that court
   const row = strategyEntryFor(
     {
-      round: 12, // second court (rounds 11..20), 2nd round inside it
+      round: global,
       level: 99, // ignored in optional mode
       dealerSeat: 0,
       guesserSeat: 1,

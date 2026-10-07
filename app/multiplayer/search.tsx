@@ -42,6 +42,8 @@ export default function SearchOnline({
   settings,
   onEnterRoom,
   onBack,
+  onRetry,
+  backLabel = "BACK TO MULTIPLAYER",
   notice,
 }: {
   name: string;
@@ -49,6 +51,13 @@ export default function SearchOnline({
   /** Room ready (host <= pairKey from the atomic claim OR guest after joining). */
   onEnterRoom: (code: string, pairKey: string) => void;
   onBack: () => void;
+  /** Restart matchmaking with a fresh 30s window (parent remounts the screen). */
+  onRetry?: () => void;
+  /**
+   * Label for the "back out" action, so it names the real destination (Home for
+   * a deep-link arrival, the lobby otherwise).
+   */
+  backLabel?: string;
   /** Optional banner shown while searching (e.g. "<Name> left… finding a new player…"). */
   notice?: string | null;
 }) {
@@ -242,15 +251,18 @@ export default function SearchOnline({
       <div className="mp-frame mp-flow">
         <div className="stage-title">
           <MpEyebrow>CALLING THE COURT</MpEyebrow>
-          <h2 className="mp-title">NO PLAYER ONLINE</h2>
+          <h2 className="mp-title">NO PLAYER FOUND</h2>
           <MpOrnament />
-          <p>No one was searching right now. Press on against The Rival instead.</p>
+          <p>No one was searching right now. Try again, or press on against The Rival.</p>
         </div>
-        <button className="gold-button mp-wide" onClick={playVsBot}>
-          PLAY VS BOT
+        <button className="gold-button mp-wide" onClick={() => onRetry?.()}>
+          RETRY
         </button>
-        <button className="outline-button mp-wide" onClick={stopAndBack}>
-          BACK TO MULTIPLAYER
+        <button className="outline-button mp-wide" onClick={playVsBot}>
+          PLAY WITH BOT
+        </button>
+        <button className="text-button" onClick={stopAndBack}>
+          {backLabel}
         </button>
       </div>
     );
@@ -264,7 +276,7 @@ export default function SearchOnline({
         <MpOrnament />
         <p className="mp-muted">{state.message}</p>
         <button className="outline-button mp-wide" onClick={onBack}>
-          BACK TO MULTIPLAYER
+          {backLabel}
         </button>
       </div>
     );

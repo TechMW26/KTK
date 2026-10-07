@@ -10,6 +10,7 @@ import { SelectionHand } from "@/features/game/components/SelectionHand";
 import { StrategyModal } from "@/features/game/components/StrategyModal";
 import { picksThisCourt, summarisePicks } from "@/features/game/logic/strategy";
 import type useMultiplayer from "@/hooks/useMultiplayer";
+import { useFriends } from "@/hooks/useFriends";
 import { PlayingCard } from "@/components/ui/PlayingCard";
 import { LifePips } from "@/features/game/components/GameHeader";
 import { MpEyebrow, MpFrame, MpLogo, MpModal, MpOrnament } from "./ui";
@@ -29,10 +30,16 @@ export default function GameView({ mp, onLeave }: { mp: MP; onLeave: () => void 
   const [strategyOpen, setStrategyOpen] = useState(false);
   const [strategyTab, setStrategyTab] = useState<0 | 1>(0);
   const [bluffOpen, setBluffOpen] = useState(false);
+  /** Active-game exit confirmation. Leaving mid-match loses the game. */
+  const [exitOpen, setExitOpen] = useState(false);
+  const requestExit = () => setExitOpen(true);
 
   if (!g) {
     return (
       <MpFrame>
+        <button className="quit-button" onClick={onLeave} aria-label="Leave match">
+          ↪
+        </button>
         <Center title="SYNCING" eyebrow="RESTORING THE KINGDOM" onLeave={onLeave}>
           <p className="mp-muted">Rebuilding the game state…</p>
         </Center>
@@ -61,6 +68,9 @@ export default function GameView({ mp, onLeave }: { mp: MP; onLeave: () => void 
         onBluff={() => setBluffOpen(true)}
       />
     );
+
+  /** Unobtrusive "add the stranger you're playing" affordance. */
+  const addFriend = <AddFriendBar mp={mp} />;
 
   const panel = (
     <>
@@ -100,6 +110,29 @@ export default function GameView({ mp, onLeave }: { mp: MP; onLeave: () => void 
           <small>A wrong accusation gives the round to the Dealer.</small>
         </MpModal>
       ) : null}
+      {exitOpen ? (
+        <MpModal
+          eyebrow="LEAVE THE KINGDOM?"
+          title="EXIT GAME"
+          symbol="↪"
+          onClose={() => setExitOpen(false)}
+          className="quit-modal"
+        >
+          <p>Your current game will be lost.</p>
+          <button
+            className="quit-confirm wide"
+            onClick={() => {
+              setExitOpen(false);
+              onLeave();
+            }}
+          >
+            EXIT
+          </button>
+          <button className="outline-button wide" onClick={() => setExitOpen(false)}>
+            CANCEL
+          </button>
+        </MpModal>
+      ) : null}
     </>
   );
 
@@ -108,7 +141,8 @@ export default function GameView({ mp, onLeave }: { mp: MP; onLeave: () => void 
   if (g.phase === "level-end")
     return (
       <>
-        <LevelEnd mp={mp} />
+        <LevelEnd mp={mp} onRequestExit={requestExit} />
+        {addFriend}
         {dock}
         {panel}
       </>
@@ -118,7 +152,8 @@ export default function GameView({ mp, onLeave }: { mp: MP; onLeave: () => void 
   if (g.phase === "reveal" && g.lastResult)
     return (
       <>
-        <Reveal mp={mp} />
+        <Reveal mp={mp} onRequestExit={requestExit} />
+        {addFriend}
         {dock}
         {panel}
       </>
@@ -126,7 +161,8 @@ export default function GameView({ mp, onLeave }: { mp: MP; onLeave: () => void 
 
   return (
     <>
-      <LiveRound mp={mp} bluffOpen={bluffOpen} setBluffOpen={setBluffOpen} />
+      <LiveRound mp={mp} bluffOpen={bluffOpen} setBluffOpen={setBluffOpen} onRequestExit={requestExit} />
+      {addFriend}
       {dock}
       {panel}
     </>
@@ -236,10 +272,12 @@ function LiveRound({
   mp,
   bluffOpen,
   setBluffOpen,
+  onRequestExit,
 }: {
   mp: MP;
   bluffOpen: boolean;
   setBluffOpen: (v: boolean) => void;
+  onRequestExit: () => void;
 }) {
   const g = mp.game!;
   const me = mp.mySeat ?? 0;
@@ -251,10 +289,10 @@ function LiveRound({
   if (!mp.opponentConnected) {
     return (
       <MpFrame>
-        <button className="quit-button" onClick={() => void mp.leave()} aria-label="Leave">
+        <button className="quit-button" onClick={onRequestExit} aria-label="Leave">
           ↪
         </button>
-        <Center title="OPPONENT DISCONNECTED" eyebrow="CONNECTION ISSUE" onLeave={() => void mp.leave()}>
+        <Center title="OPPONENT DISCONNECTED" eyebrow="CONNECTION ISSUE" onLeave={onRequestExit}>
           <MpOrnament />
           <p className="mp-muted">
             {mp.opponent ?? "Your opponent"} has dropped. The match will resume when they reconnect.
@@ -278,7 +316,7 @@ const opponentPick =
 
   return (
     <MpFrame>
-      <button className="quit-button" onClick={() => void mp.leave()} aria-label="Leave match">
+      <button className="quit-button" onClick={onRequestExit} aria-label="Leave match">
         ↪
       </button>
       <Header mp={mp} activeSeconds={iAct && isGuess ? actingSeconds : null} />
@@ -564,7 +602,7 @@ function Waiting({ title, text }: { title: string; text: string }) {
   );
 }
 
-function Reveal({ mp }: { mp: MP }) {
+function Reveal({ mp, onRequestExit }: { mp: MP; onRequestExit: () => void }) {
   const g = mp.game!;
   const result = g.lastResult!;
   const cfg = levelConfig(g.level);
@@ -572,7 +610,7 @@ function Reveal({ mp }: { mp: MP }) {
   const meWon = result.winnerSeat === mp.mySeat;
   const [busy, setBusy] = useState(false);
   // Classic: play "round" hides within a court, and each court has its own
-  // length (10, 6, 4), so the boundary is read from the shared resolver rather
+  // length (14, 10, 6), so the boundary is read from the shared resolver rather
   // than compared against a literal. Optional engine runs continuous rounds, so
   // the final reveal is the last hide round of the match.
   const lastOfLevel = mp.useOptionalFlow ? g.round >= RULESET_ROUNDS : g.round >= roundsPerLevel(g.level);
@@ -589,7 +627,7 @@ function Reveal({ mp }: { mp: MP }) {
 
   return (
     <MpFrame>
-      <button className="quit-button" onClick={() => void mp.leave()} aria-label="Leave match">
+      <button className="quit-button" onClick={onRequestExit} aria-label="Leave match">
         ↪
       </button>
       <Header mp={mp} activeSeconds={null} />
@@ -669,7 +707,7 @@ function MpRevealHand({
   );
 }
 
-function LevelEnd({ mp }: { mp: MP }) {
+function LevelEnd({ mp, onRequestExit }: { mp: MP; onRequestExit: () => void }) {
   const g = mp.game!;
   const me = mp.mySeat ?? 0;
   const them = me === 0 ? 1 : 0;
@@ -682,7 +720,7 @@ function LevelEnd({ mp }: { mp: MP }) {
     setBusy(false);
   };  return (
     <MpFrame>
-      <button className="quit-button" onClick={() => void mp.leave()} aria-label="Leave match">
+      <button className="quit-button" onClick={onRequestExit} aria-label="Leave match">
         ↪
       </button>
       <Header mp={mp} activeSeconds={null} />
@@ -797,3 +835,41 @@ function Center({
   );
 }
 /* eslint-enable @typescript-eslint/no-unused-vars */
+
+/**
+ * "Add Friend" during an online match.
+ *
+ * Only rendered when there IS an opponent and they are not already a friend, so
+ * it never duplicates an existing relationship. Adding writes the single friend
+ * edge in `friendsService` (the one source of truth) and then hides itself.
+ */
+function AddFriendBar({ mp }: { mp: MP }) {
+  // `announce: false`: the friends screen (or an outer mount) owns presence, so
+  // this reader must not start a second heartbeat.
+  const friends = useFriends({ announce: false });
+  const opponentUid = mp.opponentUid;
+  const opponentName = mp.opponent ?? "Opponent";
+  const [added, setAdded] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  // Hide while we do not yet know the opponent, or if they are already a friend.
+  const alreadyFriend = opponentUid ? friends.hasFriend(opponentUid) : false;
+  if (!opponentUid || alreadyFriend || added) return null;
+
+  const add = async () => {
+    if (busy) return;
+    setBusy(true);
+    const ok = await friends.addFriend({ uid: opponentUid, name: opponentName });
+    setBusy(false);
+    if (ok) setAdded(true);
+  };
+
+  return (
+    <div className="add-friend-bar">
+      <span className="add-friend-name">{opponentName}</span>
+      <button className="add-friend-button" onClick={() => void add()} disabled={busy}>
+        {busy ? "ADDING�" : "+ ADD FRIEND"}
+      </button>
+    </div>
+  );
+}

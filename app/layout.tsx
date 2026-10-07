@@ -31,10 +31,17 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // `suppressHydrationWarning` on <html> is the one justified use of it here:
+  // the vinext/Vite RSC dev server serves the app as an inner markup fragment
+  // and lets the browser's own document shell own <html>/<body>, so the shell's
+  // lang/data-theme differ from this layout's on the initial dev paint. The
+  // attributes below are static literals (deterministic), and the production
+  // server emits them verbatim, so there is nothing to reconcile — React would
+  // otherwise warn on every dev load. It is scoped to this element only and
+  // does not hide mismatches in any child tree.
   return (
-    <html lang="en" data-theme="dark">
+    <html lang="en" data-theme="dark" suppressHydrationWarning>
       <body className="antialiased">
-      
         {children}
       </body>
     </html>

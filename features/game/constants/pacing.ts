@@ -136,6 +136,14 @@ export const BOT_GUESS_REACH_MS = 1250;
 /** How long the bot pauses before blurting out an accusation. */
 export const BOT_ACCUSE_MS = 500;
 
+/**
+ * How long the locked card holds before the whole row flips face-up.
+ *
+ * This is the "selected card locks → reveal ALL" beat: the guesser's pick is
+ * highlighted first, then a short pause, then every card turns over together.
+ */
+export const REVEAL_LOCK_MS = 600;
+
 /** Durations used when the player has turned card animations off. */
 export const REDUCED = {
   veil: 120,
@@ -145,6 +153,7 @@ export const REDUCED = {
   hideLock: 120,
   guessReach: 30,
   accuse: 20,
+  revealLock: 40,
 } as const;
 
 /** Seconds left on the clock when the countdown cue starts playing. */
