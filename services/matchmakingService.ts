@@ -271,7 +271,14 @@ export function watchPool(uid: string, cb: (c: SearchCandidate) => void): Unsubs
   const offHosts = onValue(matchmakingHostAllRef(database), (snap: DataSnapshot) => {
     const all = (snap.val() as Record<string, MatchmakingHostEntry> | null) ?? {};
     const mine = Object.entries(all).find(
-      ([, e]) => e?.status === "inviting" && e.invitedUid === uid && !!e.roomCode,
+      ([, e]) =>
+        e?.status === "inviting" &&
+        e.invitedUid === uid &&
+        !!e.roomCode &&
+        // Same staleness rule as readInviteFor: an abandoned invite must not be
+        // offered to this listener either, or the live subscription and the poll
+        // would disagree about what is joinable.
+        fresh(e.updatedAt),
     );
     forMe = mine ? { hostUid: mine[0], roomCode: mine[1].roomCode } : null;
     push();
@@ -300,7 +307,17 @@ export async function readInviteFor(
   const snap = await get(matchmakingHostAllRef(database));
   const all = (snap.val() as Record<string, MatchmakingHostEntry> | null) ?? {};
   const mine = Object.entries(all).find(
-    ([, e]) => e?.status === "inviting" && e.invitedUid === uid && !!e.roomCode,
+    ([, e]) =>
+      e?.status === "inviting" &&
+      e.invitedUid === uid &&
+      !!e.roomCode &&
+      // Staleness guard. Without it an abandoned invite is honoured FOREVER: a
+      // host that crashed after publishing one leaves `{status:"inviting"}` with
+      // no expiry, so its intended guest is matched to a long-dead room on every
+      // future search instead of being paired with the live players waiting.
+      // `updatedAt` is already written by announceSearch/hostCreatesInvite and is
+      // the same field listSearchers uses, so both discovery paths agree.
+      fresh(e.updatedAt),
   );
   return mine ? { hostUid: mine[0], roomCode: mine[1].roomCode! } : null;
 }
@@ -338,12 +355,22 @@ export async function readMyReadyMatch(
 // Cleanup (membership/ownership-scoped)
 // ---------------------------------------------------------------------------
 
-/** The pair claim a uid is a member of, if any. */
+/**
+ * The pair claim a uid is a member of, if any.
+ *
+ * Stale claims are skipped for the same reason `readInviteFor` skips stale
+ * invites: an abandoned claim is never cleaned up (both clients crash before
+ * cleanup), so honouring it would keep pulling this uid back into a pair with a
+ * long-dead peer and a dead room, blocking every fresh matchmaking attempt.
+ * `claimedAt` is stamped by the atomic claim, so it is the entry's own clock.
+ */
 export async function findMyPair(dbInst: Database, uid: string): Promise<{ pairKey: string; entry: MatchmakingPairEntry } | null> {
   const snap = await get(matchmakingPairsAllRef(dbInst));
   const all = (snap.val() as Record<string, MatchmakingPairEntry> | null) ?? {};
   for (const [k, e] of Object.entries(all)) {
-    if (e && Array.isArray(e.members) && e.members.includes(uid)) return { pairKey: k, entry: e };
+    if (e && Array.isArray(e.members) && e.members.includes(uid) && fresh(e.claimedAt)) {
+      return { pairKey: k, entry: e };
+    }
   }
   return null;
 }
@@ -383,6 +410,42 @@ export async function cleanupMatchmaking(uid: string, pairKey?: string): Promise
     }
   } catch {
     /* best-effort */
+  }
+}
+
+/**
+ * Remove other players' ABANDONED search advertisements.
+ *
+ * A searcher advertises under its own uid and is meant to clear that node on
+ * exit (`cancelSearch`) or on socket drop (`onDisconnect`). Both paths are
+ * client-side, so neither runs when a browser is killed, the tab is discarded,
+ * or the realtime socket is unavailable — which leaves the node sitting at
+ * `status: "searching"` indefinitely.
+ *
+ * Those leftovers are not merely untidy: they are the only peers a later
+ * searcher can see, so the pool fills with ghosts and a real opponent is never
+ * offered. This sweeps them so the pool reflects who is genuinely present.
+ *
+ * Deliberately narrow. The rules only let a client delete its OWN node, so this
+ * can only clear advertisements that belong to `uid` — it prunes the caller's
+ * stale node, never another player's. It also refuses to touch the caller's own
+ * live advertisement while it is still fresh, so a second tab of the same
+ * account cannot evict a healthy search.
+ */
+export async function pruneStaleSearchers(uid: string): Promise<number> {
+  const database = db();
+  try {
+    const snap = await get(matchmakingAllRef(database));
+    const all = (snap.val() as Record<string, MatchmakingEntry> | null) ?? {};
+    const mine = all[uid];
+    // Only the caller's own node is deletable, and only once it has gone stale.
+    if (!mine || fresh(mine.updatedAt)) return 0;
+    // Reuse the same cleanup path so nothing is missed (search + host + pair).
+    await cleanupMatchmaking(uid);
+    log("pruned stale self advertisement", uid);
+    return 1;
+  } catch {
+    return 0;
   }
 }
 

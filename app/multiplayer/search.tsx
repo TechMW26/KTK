@@ -7,6 +7,7 @@ import {
   announceSearch,
   cancelSearch,
   pingSearch,
+  pruneStaleSearchers,
   readInviteFor,
   readMyReadyMatch,
   claimPair,
@@ -43,7 +44,7 @@ export default function SearchOnline({
   onEnterRoom,
   onBack,
   onRetry,
-  backLabel = "BACK TO MULTIPLAYER",
+  backLabel = "BACK",
   notice,
 }: {
   name: string;
@@ -55,7 +56,7 @@ export default function SearchOnline({
   onRetry?: () => void;
   /**
    * Label for the "back out" action, so it names the real destination (Home for
-   * a deep-link arrival, the lobby otherwise).
+   * a deep-link arrival, the multiplayer route otherwise).
    */
   backLabel?: string;
   /** Optional banner shown while searching (e.g. "<Name> left… finding a new player…"). */
@@ -152,6 +153,10 @@ export default function SearchOnline({
       if (stoppedRef.current || cancelled || enteredRef.current || !myUid) return;
       pollBusyRef.current = true;
       try {
+        // Clear our OWN abandoned advertisement if this account has an older one
+        // sitting in the pool (a previously killed tab). Left in place it would
+        // look like a live rival to everyone else, including our other tabs.
+        await pruneStaleSearchers(myUid);
         // Guest path 1: a host has already invited us under their own host node.
         const invite = await readInviteFor(myUid).catch(() => null);
         if (invite) {

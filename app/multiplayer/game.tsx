@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import Image from "next/image";
 import { LEVELS, levelConfig, RESULT_COPY, LEVEL_COUNT, roundsPerLevel } from "@/lib/game/rules";
 import { RULESET_ROUNDS, roundInCourt, consecutiveLabel } from "@/lib/game/flow";
@@ -69,8 +69,8 @@ export default function GameView({ mp, onLeave }: { mp: MP; onLeave: () => void 
       />
     );
 
-  /** Unobtrusive "add the stranger you're playing" affordance. */
-  const addFriend = <AddFriendBar mp={mp} />;
+  /** Unobtrusive "add the stranger you're playing" affordance, in the header. */
+  const addFriend = <AddFriendButton mp={mp} />;
 
   const panel = (
     <>
@@ -141,8 +141,7 @@ export default function GameView({ mp, onLeave }: { mp: MP; onLeave: () => void 
   if (g.phase === "level-end")
     return (
       <>
-        <LevelEnd mp={mp} onRequestExit={requestExit} />
-        {addFriend}
+        <LevelEnd mp={mp} onRequestExit={requestExit} friendAction={addFriend} />
         {dock}
         {panel}
       </>
@@ -152,8 +151,7 @@ export default function GameView({ mp, onLeave }: { mp: MP; onLeave: () => void 
   if (g.phase === "reveal" && g.lastResult)
     return (
       <>
-        <Reveal mp={mp} onRequestExit={requestExit} />
-        {addFriend}
+        <Reveal mp={mp} onRequestExit={requestExit} friendAction={addFriend} />
         {dock}
         {panel}
       </>
@@ -161,15 +159,14 @@ export default function GameView({ mp, onLeave }: { mp: MP; onLeave: () => void 
 
   return (
     <>
-      <LiveRound mp={mp} bluffOpen={bluffOpen} setBluffOpen={setBluffOpen} onRequestExit={requestExit} />
-      {addFriend}
+      <LiveRound mp={mp} bluffOpen={bluffOpen} setBluffOpen={setBluffOpen} onRequestExit={requestExit} friendAction={addFriend} />
       {dock}
       {panel}
     </>
   );
 }
 
-function Header({ mp, activeSeconds }: { mp: MP; activeSeconds: number | null }) {
+function Header({ mp, activeSeconds, friendAction }: { mp: MP; activeSeconds: number | null; friendAction?: ReactNode }) {
   const g = mp.game!;
   const cfg = levelConfig(g.level);
   const me = mp.mySeat ?? 0;
@@ -181,6 +178,7 @@ function Header({ mp, activeSeconds }: { mp: MP; activeSeconds: number | null })
 
   return (
     <div className="mp-head">
+      {friendAction}
       <header className="game-header">
         <MpLogo compact />
         <div className="round-medallion">
@@ -273,11 +271,13 @@ function LiveRound({
   bluffOpen,
   setBluffOpen,
   onRequestExit,
+  friendAction,
 }: {
   mp: MP;
   bluffOpen: boolean;
   setBluffOpen: (v: boolean) => void;
   onRequestExit: () => void;
+  friendAction?: ReactNode;
 }) {
   const g = mp.game!;
   const me = mp.mySeat ?? 0;
@@ -319,7 +319,7 @@ const opponentPick =
       <button className="quit-button" onClick={onRequestExit} aria-label="Leave match">
         ↪
       </button>
-      <Header mp={mp} activeSeconds={iAct && isGuess ? actingSeconds : null} />
+      <Header mp={mp} activeSeconds={iAct && isGuess ? actingSeconds : null} friendAction={friendAction} />
 
       {g.phase === "shuffle" ? <ShuffleStage mp={mp} /> : null}
       {isDealerRound && iAmDealer && iAct ? <HideStage mp={mp} /> : null}
@@ -602,7 +602,7 @@ function Waiting({ title, text }: { title: string; text: string }) {
   );
 }
 
-function Reveal({ mp, onRequestExit }: { mp: MP; onRequestExit: () => void }) {
+function Reveal({ mp, onRequestExit, friendAction }: { mp: MP; onRequestExit: () => void; friendAction?: ReactNode }) {
   const g = mp.game!;
   const result = g.lastResult!;
   const cfg = levelConfig(g.level);
@@ -630,7 +630,7 @@ function Reveal({ mp, onRequestExit }: { mp: MP; onRequestExit: () => void }) {
       <button className="quit-button" onClick={onRequestExit} aria-label="Leave match">
         ↪
       </button>
-      <Header mp={mp} activeSeconds={null} />
+      <Header mp={mp} activeSeconds={null} friendAction={friendAction} />
       <section className="mp-stage">
         <div className="stage-title">
           <MpEyebrow>ROUND {result.round} RESULT</MpEyebrow>
@@ -707,7 +707,7 @@ function MpRevealHand({
   );
 }
 
-function LevelEnd({ mp, onRequestExit }: { mp: MP; onRequestExit: () => void }) {
+function LevelEnd({ mp, onRequestExit, friendAction }: { mp: MP; onRequestExit: () => void; friendAction?: ReactNode }) {
   const g = mp.game!;
   const me = mp.mySeat ?? 0;
   const them = me === 0 ? 1 : 0;
@@ -723,7 +723,7 @@ function LevelEnd({ mp, onRequestExit }: { mp: MP; onRequestExit: () => void }) 
       <button className="quit-button" onClick={onRequestExit} aria-label="Leave match">
         ↪
       </button>
-      <Header mp={mp} activeSeconds={null} />
+      <Header mp={mp} activeSeconds={null} friendAction={friendAction} />
       <section className="mp-stage">
         <MpEyebrow>LEVEL {g.level + 1} COMPLETE</MpEyebrow>
         <h2 className="mp-title">{LEVELS[g.level].name}</h2>
@@ -837,23 +837,36 @@ function Center({
 /* eslint-enable @typescript-eslint/no-unused-vars */
 
 /**
- * "Add Friend" during an online match.
+ * "Add Friend" during an online match, as a compact + in the top-right corner.
  *
- * Only rendered when there IS an opponent and they are not already a friend, so
- * it never duplicates an existing relationship. Adding writes the single friend
- * edge in `friendsService` (the one source of truth) and then hides itself.
+ * The screen already owns the top-right corner for the exit control, so this
+ * sits just inside it rather than adding a floating row that would push the
+ * board around mid-match.
+ *
+ * Only rendered when there IS an opponent and the two are not already friends,
+ * where "already friends" is checked in EITHER direction: adding is mutual, so
+ * the moment either player taps it this affordance disappears on both devices.
  */
-function AddFriendBar({ mp }: { mp: MP }) {
+function AddFriendButton({ mp }: { mp: MP }) {
   // `announce: false`: the friends screen (or an outer mount) owns presence, so
   // this reader must not start a second heartbeat.
-  const friends = useFriends({ announce: false });
+  //
+  // `displayName` is MY name, and it is required: the mutual write puts it on the
+  // OTHER player's list, and the rules reject an edge whose `name` is not a
+  // string. Without it the mirror edge is denied and adding silently stays
+  // one-directional. It also feeds the presence heartbeat, which this reader
+  // skips, so passing it costs nothing here.
+  const friends = useFriends({
+    announce: false,
+    displayName: mp.myName ?? "",
+    reciprocalUid: mp.opponentUid,
+  });
   const opponentUid = mp.opponentUid;
   const opponentName = mp.opponent ?? "Opponent";
   const [added, setAdded] = useState(false);
   const [busy, setBusy] = useState(false);
 
-  // Hide while we do not yet know the opponent, or if they are already a friend.
-  const alreadyFriend = opponentUid ? friends.hasFriend(opponentUid) : false;
+  const alreadyFriend = opponentUid ? friends.isFriendWith(opponentUid) : false;
   if (!opponentUid || alreadyFriend || added) return null;
 
   const add = async () => {
@@ -865,11 +878,14 @@ function AddFriendBar({ mp }: { mp: MP }) {
   };
 
   return (
-    <div className="add-friend-bar">
-      <span className="add-friend-name">{opponentName}</span>
-      <button className="add-friend-button" onClick={() => void add()} disabled={busy}>
-        {busy ? "ADDING�" : "+ ADD FRIEND"}
-      </button>
-    </div>
+    <button
+      className="add-friend-button"
+      onClick={() => void add()}
+      disabled={busy}
+      aria-label={`Add ${opponentName} as a friend`}
+      title={`Add ${opponentName} as a friend`}
+    >
+      +
+    </button>
   );
 }

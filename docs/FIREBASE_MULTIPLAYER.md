@@ -141,7 +141,21 @@ presence/{uid}              { name, online, lastSeenAt }  <- who is online (rule
   player online, an `onDisconnect` flips them offline, and a 20s heartbeat keeps
   the flag fresh. Friends read this node (not the whole room) to show status.
 - `services/friendsService.ts` owns all of the above; `hooks/useFriends.ts`
-  exposes it to the UI. The in-game **Add Friend** button writes the same edge.
+  exposes it to the UI.
+- Adding is **mutual from a single tap**: the in-game `+` writes BOTH
+  `friends/{me}/{them}` and `friends/{them}/{me}` (each side gets the same
+  idempotent `ensureFriendEdge`, so a repeat can never move `addedAt`). The
+  rules allow the mirror edge because it is CREATE-ONLY
+  (`.write: auth.uid === $uid || (!data.exists() && …)`), so a player can start a
+  friendship on the other player's list but can never rewrite, damage or wipe an
+  existing record.
+- Because the mirror lands immediately, each client sees the relationship on its
+  own list — that is what makes the in-game affordance disappear for BOTH
+  players the moment either of them taps it.
+- The in-game `+` sits in the top-right corner of the in-match header and only
+  renders while an opponent is known and the two are not friends in either
+  direction (`useFriends({ reciprocalUid })` watches
+  `friends/{opponent}/{me}` live to catch the other player's tap).
 
 **Turn flow (rule logic reused from `lib/game/rules.ts`):**
 
@@ -176,7 +190,23 @@ Functions** rather than trusting clients. Before ranked/competitive use:
    server `ADMIN` context where functions mutate.
 
 Until then the mode is ideal for private friend matches (room code = shared
-lobby), which is the intended play pattern here.
+secret), which is the intended play pattern here.
+
+## 7a. Multiplayer entry points
+
+There is no lobby menu. Every home-screen action deep-links straight to the one
+screen it promises, so a player never lands on a second navigation hub:
+
+| Home button | Route | Screen |
+| --- | --- | --- |
+| CHALLENGE | `/multiplayer?mode=challenge` | online matchmaking |
+| PLAY WITH FRIEND | `/multiplayer?mode=friends` | friends list (challenge or create a room) |
+| ROOM CODE | `/multiplayer?mode=join` | join a room by code |
+
+Arriving at `/multiplayer` with no flag falls back to the room-code screen.
+Because the host is the only seat that writes `draftSettings`, the turn-order and
+lives options live on the friends screen's create-room action rather than on any
+join screen.
 
 ## 8. Local testing (emulator)
 
@@ -274,6 +304,20 @@ firebase deploy --only database
 (project `killtheking-94396`) are already configured, so no flags are needed.
 The rules now open `/matchmaking` + `/matchmakingHost` (self‑only writes) used by
 the "Search Online Players" feature.
+
+**Matchmaking records are ownership-scoped, so abandoned ones must expire by
+age.** Only a record's own uid can delete it, so a client that crashes mid-pair
+leaves its `matchmakingHost/{uid}` invite and `matchmakingPairs/{key}` claim
+behind permanently. Discovery therefore filters every read through
+`MATCHMAKING_STALE_MS` (`lib/multiplayer/types.ts`): `listSearchers`,
+`readInviteFor` and `findMyPair` all ignore anything older than that window.
+
+Without the guard on the invite/pair reads, a single abandoned invite is
+returned forever, and the uid it names is dragged back into a dead room on every
+future search instead of being paired with the live players waiting — which
+looks exactly like "matchmaking stopped finding anyone". If you ever need to
+clear such records by hand, do it from the owning account's own client (the
+rules forbid an outside delete); scripts/probe helpers cannot remove them.
 
 **Vercel (one time):** add these env vars (Production / Preview), same values as
 `.env.local`:

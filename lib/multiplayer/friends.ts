@@ -36,6 +36,22 @@ export interface PresenceRecord {
 }
 
 /**
+ * Whether two players should be treated as ALREADY friends.
+ *
+ * Adding is mutual: the tap writes both `friends/{me}/{them}` and
+ * `friends/{them}/{me}`. The in-game affordance must disappear for both players
+ * after either one taps it, so this looks at BOTH directions rather than only
+ * the caller's own list — `outgoing` is "they are on my list", `incoming` is
+ * "I am on theirs".
+ *
+ * Kept pure so the rule the in-game `+` keys off is pinned by a unit test
+ * instead of only being exercised through Firebase.
+ */
+export function isMutualFriend(outgoing: boolean, incoming: boolean): boolean {
+  return outgoing || incoming;
+}
+
+/**
  * The longest a presence heartbeat may age before we treat the player offline.
  * Comfortably above the 20s heartbeat interval so a single dropped beat does not
  * flicker the list, but short enough that a crashed client stops showing as

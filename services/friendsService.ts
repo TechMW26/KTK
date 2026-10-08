@@ -109,29 +109,88 @@ export function bindFriendPresence(
 // ---------------------------------------------------------------------------
 
 /**
- * Add a friend, idempotently.
+ * Add a friend, MUTUALLY and idempotently.
  *
- * A duplicate add is a no-op on the edge itself (the name/timestamp are only
- * written if the edge does not exist), so re-adding from a rematch can never
- * create a second entry or move the original `addedAt`. Returns the friend's
- * uid, or null when Firebase is not configured.
+ * One tap makes the two players friends, so `friends/{uid}/{friendUid}` and
+ * `friends/{friendUid}/{uid}` are both written. That is what lets the in-game
+ * "add friend" affordance disappear for BOTH players at once: each client sees
+ * the edge on its own list as soon as the other taps it.
+ *
+ * A duplicate add is a no-op on the edge itself (a record is only written when
+ * it does not exist), so re-adding from a rematch can never create a second
+ * entry or move the original `addedAt`. Returns the friend's uid, or null when
+ * Firebase is not configured (or the write was rejected).
+ */
+/**
+ * Add a friend.
+ *
+ * The caller's OWN edge is the one that matters and the one the rules always
+ * allow, so it is written first and reported truthfully. Making it mutual is a
+ * best-effort second write to the other player's list; when that is rejected the
+ * add still succeeds for the player who tapped it.
+ *
+ * A duplicate add is a no-op on the edge itself (a record is only written when
+ * it does not exist), so re-adding from a rematch can never create a second
+ * entry or move the original `addedAt`.
+ *
+ * Returns whether the caller's own edge now exists. It used to return
+ * `friend.uid` unconditionally, which reported success even when the write had
+ * been denied — the reason a rejected add looked like it had worked.
  */
 export async function addFriend(
   uid: string,
   friend: { uid: string; name: string },
-): Promise<string | null> {
-  if (!uid || !friend.uid || uid === friend.uid) return null;
+  self: { name: string },
+): Promise<boolean> {
+  if (!uid || !friend.uid || uid === friend.uid) return false;
   const database = db();
-  const edge = friendRef(database, uid, friend.uid);
+
+  try {
+    await ensureFriendEdge(database, uid, friend.uid, friend.name);
+  } catch {
+    return false;
+  }
+
+  // Best-effort mirror. Never awaited as a failure: the caller's edge is already
+  // in place, and each client watches its own list, so a rejection here only
+  // means the other player must add back themselves.
+  try {
+    await ensureFriendEdge(database, friend.uid, uid, self.name);
+  } catch {
+    /* best-effort */
+  }
+
+  return true;
+}
+
+/**
+ * Write `owner`'s edge to `friendUid` if it does not exist yet.
+ *
+ * Split out so the mutual write is two independent, individually-optional
+ * writes: the caller's own record is the field their UI depends on, while the
+ * mirror edge is a courtesy to the other player. The two run concurrently and
+ * neither failing is fatal to the other.
+ *
+ * Falls back to a non-empty name. The rules require a string `name`, and an
+ * empty one is rejected — which is exactly how the mirror edge failed silently
+ * and left "add friend" one-directional, so the fallback is applied here rather
+ * than trusted to every caller.
+ */
+async function ensureFriendEdge(
+  database: Database,
+  owner: string,
+  friendUid: string,
+  friendName: string,
+): Promise<void> {
+  const edge = friendRef(database, owner, friendUid);
   const existing = await get(edge);
-  if (existing.exists()) return friend.uid;
+  if (existing.exists()) return;
   const record: FriendRecord = {
-    uid: friend.uid,
-    name: friend.name.slice(0, 32) || "Player",
+    uid: friendUid,
+    name: String(friendName ?? "").trim().slice(0, 32) || "Player",
     addedAt: Date.now(),
   };
   await set(edge, record);
-  return friend.uid;
 }
 
 /** Remove a friend edge (own list only). */
@@ -143,6 +202,34 @@ export async function removeFriend(uid: string, friendUid: string): Promise<void
 export async function isFriend(uid: string, friendUid: string): Promise<boolean> {
   const snap = await get(friendRef(db(), uid, friendUid));
   return snap.exists();
+}
+
+/**
+ * Live watch on ONE friendship edge, so a caller can learn the moment the
+ * OTHER player adds them.
+ *
+ * This is what makes the in-game "add friend" affordance disappear for both
+ * players at once: the tap writes both directions, and each client is watching
+ * the edge it cannot write itself. Returns an unsubscribe fn; a missing
+ * Firebase config or a rejected read reports `false` and keeps watching.
+ */
+export function watchFriendEdge(
+  uid: string,
+  friendUid: string,
+  onChange: (exists: boolean) => void,
+): Unsubscribe {
+  let database: Database;
+  try {
+    database = db();
+  } catch {
+    onChange(false);
+    return () => {};
+  }
+  return onValue(
+    friendRef(database, uid, friendUid),
+    (snap) => onChange(snap.exists()),
+    () => onChange(false),
+  );
 }
 
 /**

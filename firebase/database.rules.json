@@ -111,7 +111,7 @@
       ".write": false,
       "$uid": {
         ".read": "auth != null && auth.uid === $uid",
-        ".write": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && (auth.uid === $uid || (!data.exists() && newData.exists() && newData.child('uid').val() === $uid && newData.child('name').isString() && newData.child('addedAt').isNumber()))",
         "$friendUid": {
           ".validate": "newData.hasChildren(['uid', 'name', 'addedAt']) && newData.child('uid').val() === $friendUid",
           "uid": { ".validate": "newData.isString()" },

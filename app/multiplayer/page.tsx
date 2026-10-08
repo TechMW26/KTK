@@ -13,14 +13,18 @@ import { MpEyebrow, MpLogo, MpOrnament } from "./ui";
 /**
  * Multiplayer entry route.
  *
- * Internal step navigation (menu -> waiting -> game) mirrors how the single-
+ * Internal step navigation (join -> waiting -> game) mirrors how the single-
  * player keeps every screen in one page. All Firebase access lives in the hook /
  * services; this file only renders.
  *
+ * There is no lobby menu here: every entry point deep-links to exactly the one
+ * screen it promises, so the player never lands on a second navigation hub.
+ *
  * The home screen deep-links here with a `?mode=` flag:
  *   - `challenge` starts online matchmaking immediately.
- *   - `friends`   opens the Play With Friend list.
- *   - absent      shows the lobby menu (create / join / search).
+ *   - `friends`   opens the Play With Friend list (challenge / create a room).
+ *   - `join`      opens the room-code join screen.
+ *   - absent      falls back to the room-code join screen.
  */
 export default function MultiplayerPage() {
   const mp = useMultiplayer();
@@ -41,14 +45,13 @@ export default function MultiplayerPage() {
   /**
    * False until the URL's `?mode=` flag has been read (on mount) and the initial
    * screen chosen. Rendering is held behind a neutral veil while false so a deep
-   * link never flashes the lobby menu before the requested screen appears.
+   * link never flashes the fallback screen before the requested one appears.
    */
   const [deepLinkResolved, setDeepLinkResolved] = useState(false);
   /**
    * Where this visit started. A `deepLink` arrival (Challenge / Play With
-   * Friend from the home screen) has no lobby in its flow, so backing out must
-   * return Home — showing the lobby would be a dead-end screen the player never
-   * asked for. Arriving at the lobby directly keeps the lobby as the back target.
+   * Friend / Room Code from the home screen) backs out to Home. A direct visit
+   * to /multiplayer stays on the multiplayer route.
    */
   const [entryOrigin, setEntryOrigin] = useState<"deepLink" | "lobby">("lobby");
 
@@ -100,20 +103,11 @@ export default function MultiplayerPage() {
     await mp.attach(code, pairKey);
   };
 
-  /** Open the "Search Online Players" screen (fresh instance each call). */
-  const startSearch = (msg?: string | null) => {
-    setNotice(typeof msg === "string" ? msg : null);
-    setSearching(true);
-    setSearchKey((k) => k + 1);
-  };
-  /** Menu button wrapper: do NOT forward the click event as the notice string. */
-  const menuSearch = () => startSearch();
-
   /**
    * Back out of matchmaking.
    *
-   * A deep-link arrival (Challenge) has no lobby in its flow, so backing out
-   * returns Home. A lobby-arrival returns to the lobby, as before.
+   * A deep-link arrival (Challenge) has no hub in its flow, so backing out
+   * returns Home. A non-deep-link arrival stays on the multiplayer route.
    */
   const cancelSearch = async () => {
     setNotice(null);
@@ -126,7 +120,7 @@ export default function MultiplayerPage() {
 
   /**
    * Leave the Play With Friend screen. Same rule as cancelSearch: a deep-link
-   * arrival returns Home, a lobby arrival returns to the lobby.
+   * arrival returns Home, otherwise we stay on the multiplayer route.
    */
   const closeFriends = () => {
     if (entryOrigin === "deepLink" && typeof window !== "undefined") {
@@ -140,11 +134,11 @@ export default function MultiplayerPage() {
    * Consume the home-screen deep link on mount.
    *
    * `?mode=challenge` drops straight into matchmaking; `?mode=friends` opens the
-   * friends list. This runs on the FIRST mount (not gated on Firebase init), so
-   * the challenge/friends screen is selected in the same commit that the page
-   * first paints — the lobby menu never flashes in between. The search screen
-   * itself waits for `mp.configured` internally, so it is safe to open it before
-   * Firebase has finished initialising.
+   * friends list; `?mode=join` opens the room-code screen. This runs on the FIRST
+   * mount (not gated on Firebase init), so the target screen is selected in the
+   * same commit that the page first paints — the fallback never flashes in
+   * between. The search screen itself waits for `mp.configured` internally, so it
+   * is safe to open it before Firebase has finished initialising.
    */
   useEffect(() => {
     if (deepLinkRef.current || typeof window === "undefined") return;
@@ -167,6 +161,17 @@ export default function MultiplayerPage() {
       setDeepLinkResolved(true);
       return;
     }
+    if (mode === "join") {
+      // "ROOM CODE" from home lands on the focused join screen. `noRoom` already
+      // selects it, but marking the origin makes Back return Home instead of
+      // leaving the player on the multiplayer route they never navigated from.
+      setEntryOrigin("deepLink");
+      setDeepLinkResolved(true);
+      return;
+    }
+    // No flag: this is a direct visit to /multiplayer. There is no lobby menu to
+    // show any more, so fall back to the room-code screen — the one action that
+    // still needs a route of its own.
     setDeepLinkResolved(true);
   }, []);
 
@@ -185,8 +190,15 @@ export default function MultiplayerPage() {
     setSearchKey((k) => k + 1);
   };
 
-  const openCreateRoom = async () => {
+  const openCreateRoom = async (settings: {
+    turnOrder: "complete" | "alternate";
+    winMode: "classic" | "lives";
+  }) => {
     setFriendsOpen(false);
+    // `create` reads whatever the host last wrote to draftSettings, so commit the
+    // chosen rules first — otherwise the room would open with the previous game's
+    // settings.
+    await mp.updateSettings(settings);
     await create();
   };
 
@@ -284,8 +296,8 @@ export default function MultiplayerPage() {
 
         {/*
           Hold the first paint behind a neutral veil until the ?mode= deep link
-          has been resolved, so a Challenge/Friends deep link shows its target
-          screen directly instead of flashing the lobby menu first.
+          has been resolved, so a Challenge/Friends/Room-Code deep link shows its
+          target screen directly instead of flashing the fallback first.
         */}
         {!deepLinkResolved && (
           <div className="mp-veil">
@@ -320,7 +332,7 @@ export default function MultiplayerPage() {
             settings={mp.draftSettings}
             notice={notice}
             onRetry={retrySearch}
-            backLabel={entryOrigin === "deepLink" ? "BACK TO HOME" : "BACK TO MULTIPLAYER"}
+            backLabel={entryOrigin === "deepLink" ? "BACK TO HOME" : "BACK"}
             onEnterRoom={(code, pairKey) => void enterRoomFromSearch(code, pairKey)}
             onBack={cancelSearch}
           />
@@ -329,20 +341,20 @@ export default function MultiplayerPage() {
             name={name}
             notice={notice}
             onChallengeFriend={() => void challengeFriend()}
-            onCreateRoom={() => void openCreateRoom()}
+            onCreateRoom={(settings) => void openCreateRoom(settings)}
             onBack={closeFriends}
           />
         ) : noRoom ? (
-          <MenuScreen
-            mp={mp}
+          <JoinRoomScreen
             name={name}
             setName={setName}
             joinDraft={joinDraft}
             setJoinDraft={setJoinDraft}
-            onCreate={create}
             onJoin={join}
-            onSearch={menuSearch}
-            onFriends={() => setFriendsOpen(true)}
+            onBack={closeFriends}
+            configured={mp.configured}
+            error={errorCopy(mp.roomError)}
+            onClearError={mp.clearError}
           />
         ) : null}
       </section>
@@ -351,51 +363,52 @@ export default function MultiplayerPage() {
 }
 
 // ===========================================================================
-// Menu / create / join
+// Join a room by code (the /multiplayer fallback screen)
 // ===========================================================================
-function MenuScreen({
-  mp,
+/**
+ * "ROOM CODE" deep-link destination: join a room by code.
+ *
+ * Deliberately this and nothing else. The lobby menu that used to live here was
+ * a second navigation hub (create / join / search / friends) competing with the
+ * home screen, so it is gone and each home button deep-links to exactly the one
+ * thing it promises.
+ *
+ * Room settings are NOT chosen here: the host is the only seat that writes
+ * `draftSettings`, and they set them from the friends screen when creating.
+ */
+function JoinRoomScreen({
   name,
   setName,
   joinDraft,
   setJoinDraft,
-  onCreate,
   onJoin,
-  onSearch,
-  onFriends,
+  onBack,
+  configured,
+  error,
+  onClearError,
 }: {
-  mp: ReturnType<typeof useMultiplayer>;
   name: string;
   setName: (v: string) => void;
   joinDraft: string;
   setJoinDraft: (v: string) => void;
-  onCreate: () => void;
   onJoin: () => void;
-  onSearch: () => void;
-  /** Open the Play With Friend list. */
-  onFriends: () => void;
+  onBack: () => void;
+  configured: boolean;
+  error: string | null;
+  onClearError: () => void;
 }) {
-  const err = errorCopy(mp.roomError);
-  const draft = mp.draftSettings;
-  const setTurn = (mode: "alternate" | "complete") =>
-    void mp.updateSettings({ turnOrder: mode });
-  const setLives = (on: boolean) =>
-    void mp.updateSettings({ winMode: on ? "lives" : "classic" });
-
   return (
     <div className="mp-frame mp-flow">
-      {/* vinext App Router: same-origin navigation via full page load. */}
-      {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
-      <a className="mp-back home-link" href="/">
-        ← Back to single player
-      </a>
+      <button className="mp-back home-link" onClick={onBack}>
+        ← Back
+      </button>
       <div className="mp-menu-brand">
         <MpLogo />
-        <p className="tagline">Online · 2 Players</p>
+        <p className="tagline">Enter Room Code</p>
       </div>
 
       <div className="entry-panel mp-panel">
-        <p className="panel-title">ONLINE ARENA</p>
+        <p className="panel-title">JOIN A ROOM</p>
 
         <label htmlFor="mp-name">YOUR NAME</label>
         <input
@@ -406,67 +419,18 @@ function MenuScreen({
           autoComplete="name"
         />
 
-        {!mp.configured && (
+        {!configured && (
           <p className="mp-error">Multiplayer is not configured. See docs/FIREBASE_MULTIPLAYER.md.</p>
         )}
 
-        {err && (
+        {error && (
           <>
-            <p className="mp-error">{err}</p>
-            <button className="text-button" onClick={mp.clearError}>
+            <p className="mp-error">{error}</p>
+            <button className="text-button" onClick={onClearError}>
               Dismiss
             </button>
           </>
         )}
-
-        {/* --- Game rules the HOST locks in when creating a room --- */}
-        <div className="mp-rules">
-          <p className="mp-rules-heading">TURN ORDER</p>
-          <div className="mp-rule-row">
-            <button
-              className={draft.turnOrder === "complete" ? "mp-rule-opt active" : "mp-rule-opt"}
-              onClick={() => setTurn("complete")}
-            >
-              <b>Complete Turns</b>
-              <small>Each player hides 10 turns in a row. Default.</small>
-            </button>
-            <button
-              className={draft.turnOrder === "alternate" ? "mp-rule-opt active" : "mp-rule-opt"}
-              onClick={() => setTurn("alternate")}
-            >
-              <b>Alternate Turns</b>
-              <small>Players trade the Dealer every round.</small>
-            </button>
-          </div>
-
-          <p className="mp-rules-heading">LIVES</p>
-          <div className="mp-rule-row">
-            <button
-              className={draft.winMode === "classic" ? "mp-rule-opt active" : "mp-rule-opt"}
-              onClick={() => setLives(false)}
-            >
-              <b>Classic Score</b>
-              <small>Original point rules.</small>
-            </button>
-            <button
-              className={draft.winMode === "lives" ? "mp-rule-opt active" : "mp-rule-opt"}
-              onClick={() => setLives(true)}
-            >
-              <b>5 Lives</b>
-              <small>Find the King to cost a life. First to 0 loses.</small>
-            </button>
-          </div>
-          {draft.winMode === "lives" && draft.turnOrder !== "alternate" ? (
-            <p className="mp-note">5 Lives uses the continuous-turn court format.</p>
-          ) : null}
-        </div>
-
-        <button className="gold-button" onClick={onCreate} disabled={!mp.configured}>
-          CREATE ROOM
-        </button>
-        <div className="mp-divider">
-          <span>OR</span>
-        </div>
 
         <label htmlFor="mp-join">ROOM CODE</label>
         <input
@@ -478,22 +442,12 @@ function MenuScreen({
           autoCapitalize="characters"
           maxLength={6}
         />
-        <button className="outline-button" onClick={onJoin} disabled={!mp.configured || joinDraft.length < 6}>
+        <button className="gold-button" onClick={onJoin} disabled={!configured || joinDraft.length < 6}>
           JOIN ROOM
         </button>
-
-        <button
-          className="outline-button"
-          onClick={onSearch}
-          disabled={!mp.configured}
-        >
-          SEARCH ONLINE PLAYERS
-        </button>
-        <button className="outline-button" onClick={onFriends} disabled={!mp.configured}>
-          PLAY WITH FRIEND
-        </button>
       </div>
-      <p className="round-note">Create a room and share the code, search for a rival, or enter a friend’s code.</p>
+
+      <p className="round-note">Ask the host for the 6-character code they shared.</p>
     </div>
   );
 }

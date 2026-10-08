@@ -579,7 +579,7 @@ export default function Home() {
             onPlayWithFriend={() => go("/multiplayer?mode=friends")}
             onPassAndPlay={() => startMode("local")}
             onPracticeBot={() => startMode("bot")}
-            onStartOnlineMatch={() => go("/multiplayer")}
+            onJoinWithCode={() => go("/multiplayer?mode=join")}
             openRules={() => setOverlay("rules")}
             openSettings={() => setOverlay("settings")}
             openAccount={() => setOverlay("account")}
@@ -989,7 +989,7 @@ export default function Home() {
 
 function HomeScreen({
   names, setNames, livesOn, setLivesOn,
-  onChallenge, onPlayWithFriend, onPassAndPlay, onPracticeBot, onStartOnlineMatch,
+  onChallenge, onPlayWithFriend, onPassAndPlay, onPracticeBot, onJoinWithCode,
   openRules, openSettings, openAccount, accountLabel,
 }: {
   names: [string, string];
@@ -1004,8 +1004,8 @@ function HomeScreen({
   onPassAndPlay: () => void;
   /** The Rival. Uses the existing bot flow. */
   onPracticeBot: () => void;
-  /** Direct route to the multiplayer lobby (code create/join). */
-  onStartOnlineMatch: () => void;
+  /** Join an existing room with a code the host shared. */
+  onJoinWithCode: () => void;
   openRules: () => void;
   openSettings: () => void;
   openAccount: () => void;
@@ -1091,7 +1091,7 @@ function HomeScreen({
         )}
 
         <div className="home-links">
-          <button className="text-button" onClick={onStartOnlineMatch}>ROOM CODE</button>
+          <button className="text-button" onClick={onJoinWithCode}>ROOM CODE</button>
           <span aria-hidden="true">·</span>
           <button className="text-button" onClick={openRules}>HOW TO PLAY</button>
         </div>

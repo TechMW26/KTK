@@ -27,13 +27,20 @@ export function FriendsScreen({
   name?: string;
   /** Start a challenge against a specific friend (reuses online matchmaking). */
   onChallengeFriend: (friend: Friend) => void;
-  /** Fall back to the existing room-code flow. */
-  onCreateRoom: () => void;
+  /** Create the room (with these settings) and show the host's waiting screen. */
+  onCreateRoom: (settings: { turnOrder: "complete" | "alternate"; winMode: "classic" | "lives" }) => void;
   onBack: () => void;
   notice?: string | null;
 }) {
   const friends = useFriends({ displayName: name ?? "" });
   const [query, setQuery] = useState("");
+  /**
+   * Create-room settings. These used to live on the multiplayer lobby menu,
+   * which is gone, so the host picks them here — the only place a room is
+   * created now. The options are unchanged; only the location moved.
+   */
+  const [turnOrder, setTurnOrder] = useState<"complete" | "alternate">("complete");
+  const [livesOn, setLivesOn] = useState(false);
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -93,7 +100,55 @@ export function FriendsScreen({
 
       <div className="friends-footer">
         <p className="friends-footer-hint">Or invite anyone with a room code</p>
-        <button className="outline-button mp-wide" onClick={onCreateRoom} disabled={!friends.configured}>
+        <div className="mp-rules">
+          <p className="mp-rules-heading">TURN ORDER</p>
+          <div className="mp-rule-row">
+            <button
+              className={turnOrder === "complete" ? "mp-rule-opt active" : "mp-rule-opt"}
+              onClick={() => setTurnOrder("complete")}
+              aria-pressed={turnOrder === "complete"}
+            >
+              <b>Complete Turns</b>
+              <small>Each player hides 10 turns in a row. Default.</small>
+            </button>
+            <button
+              className={turnOrder === "alternate" ? "mp-rule-opt active" : "mp-rule-opt"}
+              onClick={() => setTurnOrder("alternate")}
+              aria-pressed={turnOrder === "alternate"}
+            >
+              <b>Alternate Turns</b>
+              <small>Players trade the Dealer every round.</small>
+            </button>
+          </div>
+
+          <p className="mp-rules-heading">LIVES</p>
+          <div className="mp-rule-row">
+            <button
+              className={!livesOn ? "mp-rule-opt active" : "mp-rule-opt"}
+              onClick={() => setLivesOn(false)}
+              aria-pressed={!livesOn}
+            >
+              <b>Classic Score</b>
+              <small>Original point rules.</small>
+            </button>
+            <button
+              className={livesOn ? "mp-rule-opt active" : "mp-rule-opt"}
+              onClick={() => setLivesOn(true)}
+              aria-pressed={livesOn}
+            >
+              <b>5 Lives</b>
+              <small>Find the King to cost a life. First to 0 loses.</small>
+            </button>
+          </div>
+          {livesOn && turnOrder !== "alternate" ? (
+            <p className="mp-note">5 Lives uses the continuous-turn court format.</p>
+          ) : null}
+        </div>
+        <button
+          className="outline-button mp-wide"
+          onClick={() => onCreateRoom({ turnOrder, winMode: livesOn ? "lives" : "classic" })}
+          disabled={!friends.configured}
+        >
           CREATE ROOM
         </button>
       </div>

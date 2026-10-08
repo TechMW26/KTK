@@ -237,6 +237,18 @@ export default function useMultiplayer() {
     return room.order?.find((o) => o && o !== uid) ?? null;
   }, [room, uid]);
 
+  /**
+   * This player's own display name, as the room recorded it.
+   *
+   * Needed for actions that write MY name onto someone else's record — the
+   * mutual "add friend" mirror edge carries it — so it cannot be read from the
+   * opponent. Null until the room has our player entry.
+   */
+  const myName = useMemo<string | null>(() => {
+    if (!uid) return null;
+    return room?.players?.[uid]?.name ?? null;
+  }, [room, uid]);
+
   const amDealer = !!game && game.dealerSeat === mySeat && mySeat != null;
   const myTurnToAct = !!game && game.actingSeat === mySeat && mySeat != null;
   const guessSeconds = game ? levelConfig(game.level).seconds : null;
@@ -410,6 +422,7 @@ export default function useMultiplayer() {
     uid,
     code,
     mySeat,
+    myName,
     room,
     game,
     roomError,

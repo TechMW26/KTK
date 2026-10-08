@@ -11,7 +11,7 @@
  *
  * `toFriends` is pure (no Firebase), which is why it can be tested directly.
  */
-import { toFriends, PRESENCE_STALE_MS } from "../lib/multiplayer/friends.ts";
+import { toFriends, isMutualFriend, PRESENCE_STALE_MS } from "../lib/multiplayer/friends.ts";
 import { strict as assert } from "node:assert";
 
 let passed = 0;
@@ -96,6 +96,17 @@ check("records without a uid are dropped (no phantom rows)", () => {
   );
   assert.equal(friends.length, 1);
   assert.equal(friends[0].uid, "good");
+});
+
+/**
+ * The in-game "+" affordance hides on `isMutualFriend`, so this is the rule that
+ * guarantees BOTH players stop seeing it after either one taps it.
+ */
+check("a friendship in either direction counts as already friends", () => {
+  assert.equal(isMutualFriend(false, false), false, "strangers still see the +");
+  assert.equal(isMutualFriend(true, false), true, "I added them -> hidden for me");
+  assert.equal(isMutualFriend(false, true), true, "they added me -> hidden for me");
+  assert.equal(isMutualFriend(true, true), true, "both sides -> hidden");
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

@@ -4,12 +4,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { isFirebaseConfigured } from "@/lib/firebase/config";
 import { ensureSignedIn } from "@/lib/firebase/auth";
+import { isMutualFriend } from "@/lib/multiplayer/friends";
 import {
   addFriend as addFriendEdge,
   bindFriendPresence,
   isFriend as isFriendEdge,
   loadFriends,
   removeFriend as removeFriendEdge,
+  watchFriendEdge,
   watchFriends,
   type Friend,
 } from "@/services/friendsService";
@@ -34,12 +36,18 @@ export interface FriendsState {
   loading: boolean;
   /** Ids currently being added, so the UI can disable per-row buttons. */
   pending: Set<string>;
-  /** Add (idempotently) and return true on success. */
+  /** Add (idempotently and MUTUALLY) and return true on success. */
   addFriend: (friend: { uid: string; name: string }) => Promise<boolean>;
   /** Remove a friend from this player's list. */
   removeFriend: (friendUid: string) => Promise<void>;
   /** Whether a uid is already on the list (local check). */
   hasFriend: (friendUid: string) => boolean;
+  /**
+   * Whether the two players are ALREADY friends in either direction, i.e. this
+   * player's list holds them OR their list holds this player. The in-game
+   * affordance keys off this so it disappears for both players after one tap.
+   */
+  isFriendWith: (friendUid: string) => boolean;
 }
 
 export interface UseFriendsOptions {
@@ -54,10 +62,17 @@ export interface UseFriendsOptions {
    * false` and just read the list.
    */
   announce?: boolean;
+  /**
+   * The other player's uid, when the caller only cares about ONE relationship
+   * (the in-game "add friend" affordance). Setting it turns on the live
+   * reciprocal watch behind `isFriendWith`, so the affordance vanishes for both
+   * players as soon as either of them taps it.
+   */
+  reciprocalUid?: string | null;
 }
 
 export function useFriends(options: UseFriendsOptions = {}): FriendsState {
-  const { enabled = true, displayName = "", announce = true } = options;
+  const { enabled = true, displayName = "", announce = true, reciprocalUid = null } = options;
   const configured = isFirebaseConfigured();
   const [uid, setUid] = useState<string | null>(null);
   const [friends, setFriends] = useState<Friend[]>([]);
@@ -118,6 +133,21 @@ export function useFriends(options: UseFriendsOptions = {}): FriendsState {
     };
   }, [enabled, configured, uid]);
 
+  /**
+   * Whether the OTHER player has this player on their list — i.e. the incoming
+   * half of the mutual friendship. Kept live via `watchFriendEdge`, so the
+   * moment one side taps "add friend" the other side stops offering it.
+   */
+  const [incomingFriend, setIncomingFriend] = useState(false);
+  useEffect(() => {
+    if (!enabled || !configured || !uid || !reciprocalUid) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- reflecting a disabled/absent watch
+      setIncomingFriend(false);
+      return;
+    }
+    return watchFriendEdge(reciprocalUid, uid, setIncomingFriend);
+  }, [enabled, configured, uid, reciprocalUid]);
+
   // ------------------------------------------------------------------ presence
   useEffect(() => {
     if (!enabled || !configured || !announce || !uid) return;
@@ -133,8 +163,8 @@ export function useFriends(options: UseFriendsOptions = {}): FriendsState {
       try {
         const got = uid ?? (await ensureSignedIn());
         if (!uid) setUid(got);
-        const added = await addFriendEdge(got, friend);
-        return added !== null;
+        // The mirror shows the other player's name, so send our own.
+        return await addFriendEdge(got, friend, { name: displayName });
       } catch {
         return false;
       } finally {
@@ -145,7 +175,7 @@ export function useFriends(options: UseFriendsOptions = {}): FriendsState {
         });
       }
     },
-    [configured, uid],
+    [configured, uid, displayName],
   );
 
   const removeFriend = useCallback(
@@ -161,6 +191,11 @@ export function useFriends(options: UseFriendsOptions = {}): FriendsState {
     [],
   );
 
+  const isFriendWith = useCallback(
+    (friendUid: string) => isMutualFriend(hasFriend(friendUid), incomingFriend),
+    [hasFriend, incomingFriend],
+  );
+
   return {
     configured,
     uid,
@@ -170,6 +205,7 @@ export function useFriends(options: UseFriendsOptions = {}): FriendsState {
     addFriend,
     removeFriend,
     hasFriend,
+    isFriendWith,
   };
 }
 
