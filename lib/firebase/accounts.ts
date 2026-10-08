@@ -54,6 +54,24 @@ export type AuthFailureReason =
   | "timeout"
   | "unknown";
 
+/** Providers the account screens can offer. Each maps to one Firebase provider. */
+export type OAuthProviderName = "google" | "apple" | "facebook";
+
+/**
+ * Build the Firebase provider for an OAuth name.
+ *
+ * Facebook and Apple are both generic `OAuthProvider`s; Google has a dedicated
+ * class. The Facebook App ID/secret live in the Firebase console, never here.
+ */
+function oauthProviderFor(name: OAuthProviderName) {
+  if (name === "google") return new GoogleAuthProvider();
+  const id = name === "facebook" ? "facebook.com" : "apple.com";
+  const provider = new OAuthProvider(id);
+  provider.addScope("email");
+  if (name === "apple") provider.addScope("name");
+  return provider;
+}
+
 /** Map a raw Firebase error code to a reason the UI can render copy for. */
 function reasonFor(code: string): AuthFailureReason {
   switch (code) {
@@ -142,7 +160,7 @@ export async function upgradeWithEmail(
 }
 
 /**
- * Start Google sign-in.
+ * Start a provider sign-in, upgrading the guest in place.
  *
  * REDIRECT, NOT POPUP. The popup flow depends on `window.open` and a
  * cross-origin postMessage handshake, which browsers block outright in the
@@ -154,12 +172,12 @@ export async function upgradeWithEmail(
  * the page unloads and the result is collected by `completeRedirectSignIn()`
  * when the player comes back.
  */
-export async function startGoogleSignIn(): Promise<AuthOutcome> {
+export async function startOAuthSignIn(name: OAuthProviderName): Promise<AuthOutcome> {
   const auth = authOrFail();
   if ("ok" in auth) return auth;
 
   try {
-    const provider = new GoogleAuthProvider();
+    const provider = oauthProviderFor(name);
     const current = auth.currentUser;
     // Linking keeps the guest uid, so pre-existing data is preserved.
     if (current && current.isAnonymous) {
@@ -172,6 +190,22 @@ export async function startGoogleSignIn(): Promise<AuthOutcome> {
   } catch (error) {
     return { ok: false, reason: reasonFor(codeOf(error)) };
   }
+}
+
+/** Google sign-in. Thin alias kept for existing callers. */
+export function startGoogleSignIn(): Promise<AuthOutcome> {
+  return startOAuthSignIn("google");
+}
+
+/**
+ * Facebook sign-in.
+ *
+ * Identical flow to Google: it upgrades the anonymous guest with
+ * `linkWithRedirect`, so the uid (and everything scoped to it) survives.
+ * The Facebook App ID/secret are configured in the Firebase console, not here.
+ */
+export function startFacebookSignIn(): Promise<AuthOutcome> {
+  return startOAuthSignIn("facebook");
 }
 
 /**
@@ -188,20 +222,12 @@ export async function startGoogleSignIn(): Promise<AuthOutcome> {
  * data wins, and silently fusing them is exactly what the design forbids
  * (docs/ACCOUNTS_DESIGN.md §3.2).
  */
-export async function signInToExisting(provider: "google" | "apple"): Promise<AuthOutcome> {
+export async function signInToExisting(provider: OAuthProviderName): Promise<AuthOutcome> {
   const auth = authOrFail();
   if ("ok" in auth) return auth;
 
   try {
-    const oauth =
-      provider === "google"
-        ? new GoogleAuthProvider()
-        : (() => {
-            const p = new OAuthProvider("apple.com");
-            p.addScope("email");
-            p.addScope("name");
-            return p;
-          })();
+    const oauth = oauthProviderFor(provider);
     // signInWithRedirect, NOT linkWithRedirect: the whole point is to move to
     // the existing account's uid rather than attach a credential to this one.
     await signInWithRedirect(auth, oauth);
@@ -244,9 +270,7 @@ export async function startAppleSignIn(): Promise<AuthOutcome> {
   if ("ok" in auth) return auth;
 
   try {
-    const provider = new OAuthProvider("apple.com");
-    provider.addScope("email");
-    provider.addScope("name");
+    const provider = oauthProviderFor("apple");
     const current = auth.currentUser;
     if (current && current.isAnonymous) {
       await linkWithRedirect(current, provider);
@@ -330,7 +354,7 @@ export function linkedProviders(user: User | null): string[] {
  * add a sign-in method; a plain sign-in would switch to a different uid.
  */
 export async function linkAdditionalProvider(
-  provider: "google" | "apple",
+  provider: OAuthProviderName,
 ): Promise<AuthOutcome> {
   const auth = authOrFail();
   if ("ok" in auth) return auth;
@@ -338,15 +362,7 @@ export async function linkAdditionalProvider(
   if (!current) return { ok: false, reason: "not-configured" };
 
   try {
-    const oauth =
-      provider === "google"
-        ? new GoogleAuthProvider()
-        : (() => {
-            const p = new OAuthProvider("apple.com");
-            p.addScope("email");
-            p.addScope("name");
-            return p;
-          })();
+    const oauth = oauthProviderFor(provider);
     await linkWithRedirect(current, oauth);
     return { ok: true, user: current, profile: null };
   } catch (error) {

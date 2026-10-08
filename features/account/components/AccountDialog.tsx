@@ -9,6 +9,7 @@ import {
   upgradeWithEmail,
   startGoogleSignIn,
   startAppleSignIn,
+  startFacebookSignIn,
   signInWithEmail,
   signInToExisting,
   requestPasswordReset,
@@ -35,7 +36,7 @@ type View = "options" | "email" | "reset" | "verify" | "collision";
  * Which provider triggered a collision, so the escape hatch can offer to sign in
  * with the same one. Null when no collision is pending.
  */
-type CollisionProvider = "google" | "apple" | "email";
+type CollisionProvider = "google" | "apple" | "facebook" | "email";
 
 /** Player-facing copy for each failure. Raw Firebase codes never reach the UI. */
 const MESSAGES: Record<AuthFailureReason, string> = {
@@ -167,11 +168,11 @@ export function AccountDialog({
    * straight away.
    */
   const signInToColliding = async () => {
-    if (collision === "email") {
+    if (collision === "email" || !collision) {
       setView("email");
       return;
     }
-    await run(() => signInToExisting(collision === "apple" ? "apple" : "google"));
+    await run(() => signInToExisting(collision));
   };
 
   return (
@@ -213,6 +214,15 @@ export function AccountDialog({
             }
           >
             CONTINUE WITH APPLE
+          </button>
+          <button
+            className="outline-button wide"
+            disabled={busy}
+            onClick={() =>
+              void run(() => startFacebookSignIn(), { collisionProvider: "facebook" })
+            }
+          >
+            CONTINUE WITH FACEBOOK
           </button>
           <button className="gold-button wide" disabled={busy} onClick={() => setView("email")}>
             CONTINUE WITH EMAIL
@@ -370,6 +380,7 @@ function providerLabel(id: string): string {
   if (id === "password") return "Email";
   if (id === "google.com") return "Google";
   if (id === "apple.com") return "Apple";
+  if (id === "facebook.com") return "Facebook";
   if (id === "anonymous") return "Guest";
   return id;
 }

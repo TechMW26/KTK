@@ -114,11 +114,14 @@ prerequisite for slice S1.** Required work:
 
 - Create the Firebase project(s) for dev/staging (and confirm which project
   local dev and production each point at).
-- Firebase console: enable Email/Password, Google, Apple.
+- Firebase console: enable Email/Password, Google, Apple, Facebook.
 - Google OAuth client IDs for **web + Android (SHA-1 keystore fingerprint) + iOS**.
 - Apple Service ID, Team ID, Key ID, private key.
+- Facebook App ID + App Secret, entered **in the Firebase console only**
+  (Authentication → Sign-in method → Facebook). Neither value belongs in the
+  client bundle or in a `NEXT_PUBLIC_*` variable; the client only ever names the
+  provider (`facebook.com`) and Firebase performs the token exchange.
 - Authorised domains for the deployed origin.
-- **Note:** Facebook is *not* in this design; MOM item 9 stays separate.
 
 ### 3.4b Redirect sign-in requires a same-origin auth helper
 

@@ -155,7 +155,7 @@ export function AccountScreen({
       window.setTimeout(() => setSaved(false), 2000);
     });
 
-  const linkProvider = (provider: "google" | "apple") =>
+  const linkProvider = (provider: "google" | "apple" | "facebook") =>
     act(async () => {
       const result = await linkAdditionalProvider(provider);
       if (!result.ok) {
@@ -389,6 +389,15 @@ export function AccountScreen({
               ADD APPLE
             </button>
           )}
+          {!providers.includes("facebook.com") && (
+            <button
+              className="outline-button wide"
+              disabled={busy}
+              onClick={() => void linkProvider("facebook")}
+            >
+              ADD FACEBOOK
+            </button>
+          )}
         </section>
 
         {/* ---- Wallet ---- */}
@@ -474,6 +483,7 @@ function providerLabel(id: string): string {
   if (id === "password") return "Email";
   if (id === "google.com") return "Google";
   if (id === "apple.com") return "Apple";
+  if (id === "facebook.com") return "Facebook";
   if (id === "anonymous") return "Guest";
   return id;
 }
