@@ -37,9 +37,7 @@ export default function GameView({ mp, onLeave }: { mp: MP; onLeave: () => void 
   if (!g) {
     return (
       <MpFrame>
-        <button className="quit-button" onClick={onLeave} aria-label="Leave match">
-          ↪
-        </button>
+        <HeaderActions onLeave={onLeave} label="Leave match" />
         <Center title="SYNCING" eyebrow="RESTORING THE KINGDOM" onLeave={onLeave}>
           <p className="mp-muted">Rebuilding the game state…</p>
         </Center>
@@ -166,7 +164,27 @@ export default function GameView({ mp, onLeave }: { mp: MP; onLeave: () => void 
   );
 }
 
-function Header({ mp, activeSeconds, friendAction }: { mp: MP; activeSeconds: number | null; friendAction?: ReactNode }) {
+/** Top-right action cluster: the friend affordance sits immediately left of Leave. */
+function HeaderActions({
+  onLeave,
+  label,
+  friendAction,
+}: {
+  onLeave: () => void;
+  label: string;
+  friendAction?: ReactNode;
+}) {
+  return (
+    <div className="mp-head-actions">
+      {friendAction}
+      <button className="quit-button" onClick={onLeave} aria-label={label}>
+        ↪
+      </button>
+    </div>
+  );
+}
+
+function Header({ mp, activeSeconds }: { mp: MP; activeSeconds: number | null }) {
   const g = mp.game!;
   const cfg = levelConfig(g.level);
   const me = mp.mySeat ?? 0;
@@ -178,7 +196,6 @@ function Header({ mp, activeSeconds, friendAction }: { mp: MP; activeSeconds: nu
 
   return (
     <div className="mp-head">
-      {friendAction}
       <header className="game-header">
         <MpLogo compact />
         <div className="round-medallion">
@@ -289,9 +306,7 @@ function LiveRound({
   if (!mp.opponentConnected) {
     return (
       <MpFrame>
-        <button className="quit-button" onClick={onRequestExit} aria-label="Leave">
-          ↪
-        </button>
+        <HeaderActions onLeave={onRequestExit} label="Leave" friendAction={friendAction} />
         <Center title="OPPONENT DISCONNECTED" eyebrow="CONNECTION ISSUE" onLeave={onRequestExit}>
           <MpOrnament />
           <p className="mp-muted">
@@ -316,10 +331,8 @@ const opponentPick =
 
   return (
     <MpFrame>
-      <button className="quit-button" onClick={onRequestExit} aria-label="Leave match">
-        ↪
-      </button>
-      <Header mp={mp} activeSeconds={iAct && isGuess ? actingSeconds : null} friendAction={friendAction} />
+      <HeaderActions onLeave={onRequestExit} label="Leave match" friendAction={friendAction} />
+      <Header mp={mp} activeSeconds={iAct && isGuess ? actingSeconds : null} />
 
       {g.phase === "shuffle" ? <ShuffleStage mp={mp} /> : null}
       {isDealerRound && iAmDealer && iAct ? <HideStage mp={mp} /> : null}
@@ -627,10 +640,8 @@ function Reveal({ mp, onRequestExit, friendAction }: { mp: MP; onRequestExit: ()
 
   return (
     <MpFrame>
-      <button className="quit-button" onClick={onRequestExit} aria-label="Leave match">
-        ↪
-      </button>
-      <Header mp={mp} activeSeconds={null} friendAction={friendAction} />
+      <HeaderActions onLeave={onRequestExit} label="Leave match" friendAction={friendAction} />
+      <Header mp={mp} activeSeconds={null} />
       <section className="mp-stage">
         <div className="stage-title">
           <MpEyebrow>ROUND {result.round} RESULT</MpEyebrow>
@@ -720,10 +731,8 @@ function LevelEnd({ mp, onRequestExit, friendAction }: { mp: MP; onRequestExit: 
     setBusy(false);
   };  return (
     <MpFrame>
-      <button className="quit-button" onClick={onRequestExit} aria-label="Leave match">
-        ↪
-      </button>
-      <Header mp={mp} activeSeconds={null} friendAction={friendAction} />
+      <HeaderActions onLeave={onRequestExit} label="Leave match" friendAction={friendAction} />
+      <Header mp={mp} activeSeconds={null} />
       <section className="mp-stage">
         <MpEyebrow>LEVEL {g.level + 1} COMPLETE</MpEyebrow>
         <h2 className="mp-title">{LEVELS[g.level].name}</h2>
@@ -768,9 +777,7 @@ function MatchEnd({ mp, onLeave }: { mp: MP; onLeave: () => void }) {
 
   return (
     <MpFrame>
-      <button className="quit-button" onClick={onLeave} aria-label="Leave match">
-        ↪
-      </button>
+      <HeaderActions onLeave={onLeave} label="Leave match" />
       <section className="mp-stage">
         <span className="level-crown">♛</span>
         <MpEyebrow>THE KINGDOM HAS SPOKEN</MpEyebrow>

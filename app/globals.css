@@ -1898,17 +1898,21 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .friends-footer-hint { margin: 0; color: var(--on-glass-faint, #8b7a56); font-size: 9px; letter-spacing: .1em; }
 
 /* --- In-game Add Friend affordance ------------------------------------- */
-/* A compact + pinned inside the top-right corner, just below the header's own
-   controls so the board is never pushed around mid-match. */
+/* Sits immediately LEFT of the Leave button in one right-aligned row, so the
+   board is never pushed around mid-match. */
+.mp-head-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin: 0 0 6px;
+}
+.mp-head-actions .quit-button { margin: 0 !important; align-self: center; }
 .add-friend-button {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  z-index: 45;
-  width: 34px;
-  height: 34px;
   display: grid;
   place-items: center;
+  width: 42px;
+  height: 42px;
   padding: 0;
   border: 1px solid #74501b;
   border-radius: 50%;
