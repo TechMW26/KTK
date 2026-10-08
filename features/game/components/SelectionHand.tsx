@@ -50,8 +50,8 @@ export function SelectionHand({
         .join(" ")}
       src="/guesser-hand.png"
       alt=""
-      width={980}
-      height={1792}
+      width={928}
+      height={1695}
       unoptimized
       aria-hidden="true"
       style={
