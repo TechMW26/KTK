@@ -1,4 +1,4 @@
-import type { MatchPhase, OutcomeCopy, RoundOutcomeKind, TurnAnnouncement } from "../types/game.ts";
+import type { MatchPhase, OutcomeCopy, RoundOutcomeKind, Seat, TurnAnnouncement } from "../types/game.ts";
 
 /**
  * Every string the match screen says, in one place.
@@ -54,6 +54,37 @@ export const ONLINE_RESULT_COPY: Record<RoundOutcomeKind, OutcomeCopy> = {
     tone: "danger",
   },
 };
+
+/**
+ * The reveal copy for one outcome, phrased for WHO it happened to.
+ *
+ * The stored copy is written in second person ("You found the King") because the
+ * single-player board was authored for the case where the human is the guesser.
+ * In a vs-bot match the bot guesses too, so that same line would claim the human
+ * found a King the bot actually found — the screen would celebrate a loss.
+ *
+ * This re-phrases ONLY the outcomes that name an actor, and only when the actor
+ * is the OTHER side, substituting the real display name. Neutral lines ("The
+ * accusation was correct") pass through untouched, and so does the original copy
+ * whenever the human is the subject — so nothing the single-player player already
+ * reads changes.
+ *
+ * @param kind        the resolved outcome
+ * @param perspective the seat the board is speaking to (the human)
+ * @param winnerNames display name per seat, used for the substituted subject
+ * @param guesser     seat that guessed this round (the actor for "found the King")
+ */
+export function revealCopyFor(
+  kind: RoundOutcomeKind,
+  perspective: Seat,
+  winnerNames: [string, string],
+  guesser: Seat,
+): OutcomeCopy {
+  const base = RESULT_COPY[kind];
+  if (kind !== "king") return base;
+  if (guesser === perspective) return base;
+  return { ...base, subtitle: `${winnerNames[guesser]} found the King` };
+}
 
 /** Seat-relative phrasing for the turn banner. */
 const TURN_COPY = {

@@ -50,6 +50,12 @@ export interface PlayingCardProps {
   kingPlacing?: boolean;
   /** Play the "player pulls the card" beat. */
   pulling?: boolean;
+  /**
+   * This card is being physically inspected (hovered / aimed at) right now, so
+   * it lifts toward its owner and stays fully lit while the rest of the row
+   * rests. Presentation only — it is NOT a selection and never affects a rule.
+   */
+  inspected?: boolean;
 }
 
 export function PlayingCard({
@@ -68,6 +74,7 @@ export function PlayingCard({
   fanCount,
   kingPlacing,
   pulling,
+  inspected,
 }: PlayingCardProps) {
   const className = [
     "playing-card",
@@ -77,6 +84,7 @@ export function PlayingCard({
     wrong ? "shattered" : "",
     kingPlacing ? "king-placing" : "",
     pulling ? "card-pulling" : "",
+    inspected ? "card-inspected" : "",
   ]
     .filter(Boolean)
     .join(" ");

@@ -167,6 +167,22 @@ export interface GameState {
    * prevents a duplicate deduction (see services/multiplayerService).
    */
   kingPendingLife?: boolean;
+  /**
+   * TEMPORARY presentation state: the card POSITION the acting player is
+   * currently inspecting (hovering / aiming at), or null for "nobody is
+   * inspecting anything".
+   *
+   * It is written ONLY by the acting player and cleared whenever attention
+   * leaves the row, the pick is confirmed, or a new round / turn begins. The
+   * opponent reads it purely to draw the physical "hand picks up a card"
+   * animation — it never feeds a rule, never bumps `seq` and is never read to
+   * decide an outcome.
+   *
+   * SECURITY: it synchronises a POSITION ONLY. It deliberately does NOT carry the
+   * card's identity, value or suit — the card stays face-down at that slot, so
+   * the opponent learns "they are looking at slot 3", never what is in it.
+   */
+  inspectingCardIndex?: number | null;
 }
 
 export interface RoundResultRecord {

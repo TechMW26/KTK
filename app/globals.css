@@ -40,21 +40,54 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 
 .game-shell {
   min-height: 100svh;
+  min-height: 100dvh;
   display: grid;
   place-items: center;
+  /* `border-box` keeps the padding INSIDE the 100dvh box, so the shell can never
+     be taller than the viewport and introduce a scrollbar on a roomy screen. */
+  box-sizing: border-box;
   padding: 18px;
   padding: max(env(safe-area-inset-top), 18px) max(env(safe-area-inset-right), 18px) max(env(safe-area-inset-bottom), 18px) max(env(safe-area-inset-left), 18px);
   background:
     radial-gradient(circle at 50% 18%, rgba(151, 94, 14, .14), transparent 34%),
     linear-gradient(125deg, #050403, #0c0905 46%, #030303);
+  /* The board is centred by a grid, but a grid track is sized by its content —
+     so without this the board's own width inflates the track, and every `vw`
+     term computed inside the board then resolves against an oversized viewport
+     (which is exactly how the board ended up wider than the phone). Pinning the
+     track to the available width severs that feedback loop. */
+  grid-template-columns: minmax(0, 1fr);
+  justify-items: center;
 }
 
 .game-screen {
   position: relative;
   isolation: isolate;
-  width: min(100%, 430px);
-  height: min(900px, calc(100svh - 36px));
-  min-height: 700px;
+  /* --- Canonical game board ------------------------------------------------
+     The board is ONE fixed-design composition authored at 430 x 900, and it may
+     only ever SCALE to fit — never distort. `aspect-ratio` enforces the shape;
+     the `min()` on the width is what makes "the whole board, or as much of it as
+     fits" true for every device:
+
+       - 430px            : the canonical width, on anything roomy enough;
+       - the interpolated term : 430px down to 350px across a 430..320 viewport,
+                            so the five-card fan is never clipped on a 320px phone;
+       - calc((100dvh - 36px) * 430/900) : the HEIGHT-bound cap. `100dvh` (not
+                            `100vh`) tracks the mobile URL bar, and the 36px is
+                            the shell's 18px top+bottom padding, so a short phone
+                            shrinks the whole board instead of overflowing it.
+
+     `max-width` repeats both caps because a centring grid track is sized by its
+     content: without an independent ceiling the board's own width would inflate
+     the track and every `vw` inside it would resolve against an oversized viewport.
+     ------------------------------------------------------------------------ */
+  width: min(430px, 350px + (100vw - 320px) * 0.727, calc((100dvh - 36px) * 430 / 900));
+  max-width: min(100%, calc((100dvh - 36px) * 430 / 900));
+  aspect-ratio: 430 / 900;
+  /* The old hard 700px minimum height (which forced the board taller than a short
+     phone and clipped the dock) is deliberately gone; the caps above shrink the
+     whole board instead. */
+  min-height: 0;
   overflow: hidden;
   border: 1px solid #a8751e;
   background:
@@ -633,6 +666,11 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 
 .cards-row {
   --gap: 8px;
+  /* The direction the inspected card rises. +1 = the inspecting player sits at
+     the BOTTOM of this screen; a mirrored row flips it so the card still travels
+     toward its own player. The card INHERITS this from the row, while the hand
+     sets it inline — both read the same flag, so they can never separate. */
+  --inspect-dir: 1;
   position: relative;
   width: 100%;
   display: flex;
@@ -687,7 +725,7 @@ button:disabled { cursor: not-allowed; opacity: .42; }
   align-items: flex-start;
   gap: 0;
 }
-.cards-row.fanned.mirrored { --pull-dir: -1; }
+.cards-row.fanned.mirrored { --pull-dir: -1; --inspect-dir: -1; }
 .cards-row.fanned .playing-card {
   /* Width comes from the tier above (the short-viewport rules already step the
      card down), so the fan never overrides the responsive size. */
@@ -1586,7 +1624,13 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 
 @media (max-width: 460px) {
   .game-shell { padding: 0; }
-  .game-screen { width: 100%; height: 100svh; min-height: 650px; border-left: 0; border-right: 0; }
+  /* Width/height now come from the canonical-board rules (`.game-screen` above),
+     which already scale the board with the viewport. Only the edge treatment
+     changes here: at this width the board reaches the screen edges, so the side
+     borders/radii are dropped. The old unconditional `height: 100svh` +
+     `min-height: 650px` is REMOVED — it re-imposed an oversized board on short
+     phones and was exactly the inconsistency this change removes. */
+  .game-screen { border-left: 0; border-right: 0; }
   /* Icon-only top bar on narrow phones: at 320px two labelled pills would be
      wider than the screen allows alongside each other. The aria-label still
      names each button for assistive tech. */
@@ -1687,6 +1731,106 @@ button:disabled { cursor: not-allowed; opacity: .42; }
   .play-stage .stage-title h2 { font-size: clamp(26px, 8.5vw, 38px); }
   .play-stage .ornament { height: 14px; }
   .play-stage .stage-title p { font-size: 11px; margin-top: 4px; }
+}
+
+/* ===========================================================================
+   Turn indication  (WHOSE TURN IS IT)
+   ===========================================================================
+   Driven entirely by the authoritative `actingSeat`. The row the acting player
+   owns keeps its normal brightness and gains a slow gold bloom; the other row
+   settles back a touch. Both are gentle — a glow and a brightness step, not a
+   banner — so the board reads as "hot seat / cold seat" rather than a new screen.
+   --------------------------------------------------------------------------- */
+.cards-row.turn-active .playing-card {
+  animation: turn-bloom 2.6s ease-in-out infinite;
+}
+.cards-row.turn-idle .playing-card {
+  filter: brightness(.82) saturate(.94);
+}
+/* An inspection lifts the card out of the idle dim, so the inspected slot stays
+   fully legible even while the rest of the row rests. */
+.cards-row.turn-idle .playing-card.card-inspected {
+  filter: brightness(1) saturate(1);
+}
+@keyframes turn-bloom {
+  0%, 100% { filter: drop-shadow(0 0 0 rgba(247,194,73,0)); }
+  50%      { filter: drop-shadow(0 0 10px rgba(247,194,73,.42)); }
+}
+
+/* ===========================================================================
+   Physical card inspection  (HAND PICKS UP A CARD)
+   ===========================================================================
+   The inspected card rises toward the player who owns it by ~50% of ITS OWN
+   rendered height — expressed as a percentage of the card in `--fan-*` terms,
+   never a hard-coded px, so the lift is identical on a 61px card and a 52px one.
+   The hand rides on the SAME `--inspect-x` the card uses, so the two can never
+   drift apart when the board scales.
+
+   `--inspect-dir` is +1 when the inspecting player sits at the bottom of the
+   screen and -1 for the mirrored (top) seat, so the same rule serves both.
+   --------------------------------------------------------------------------- */
+.cards-row .playing-card.card-inspected {
+  z-index: 55;
+  filter: drop-shadow(0 14px 16px rgba(0,0,0,.74));
+  transition: transform .22s cubic-bezier(.22,.9,.28,1), filter .22s ease;
+}
+/* Straight (non-fanned) rows — the dealer's `dealer-choice` row and the plain
+   opponent reveal row — have no `--fan-*` geometry, so they get the same 50%
+   lift without the arc terms. */
+.cards-row:not(.fanned) .playing-card.card-inspected {
+  transform: translateY(calc(-50% * var(--inspect-dir, 1)));
+}
+
+/* The lift consumes the card's own height via a percentage translate, so it is
+   proportional by construction (Part 6) rather than a magic pixel value.
+   `--inspect-dir` uses the SAME +1/-1 convention as `--pull-dir` (a mirrored row
+   travels the other way), so the card always rises toward its own player.
+
+   A local card is ALSO `.chosen` while it is merely aimed at, and `.chosen`
+   carries its own (smaller) lift plus the gold glow. Rather than have the two
+   transforms fight, the inspected rule is stated later and therefore wins, and
+   it re-creates the glow the `chosen` filter contributed — so the local aim and
+   the remote inspection produce the identical composition. */
+.cards-row.fanned .playing-card.card-inspected {
+  transform:
+    translateY(calc(var(--fan-y, 0px) + (-50% - var(--lift, 0px)) * var(--inspect-dir, 1)))
+    rotate(var(--fan-rotate, 0deg))
+    scale(calc(var(--fan-scale, 1) * 1.04));
+  filter: drop-shadow(0 0 9px rgba(247,194,73,.72)) drop-shadow(0 14px 16px rgba(0,0,0,.62));
+}
+
+/* The hand that holds the inspected card, anchored to the card's slot.
+ *
+ * It must ride the card's LIFT, not the card's resting slot: the card rises 50%
+ * of its own height, so the hand is offset by exactly half the card height —
+ * read from the SAME `--fan-card-h` token the card's geometry comes from, so the
+ * two stay glued together at every board size. No fixed pixel offset anywhere. */
+.inspection-hand {
+  position: absolute;
+  z-index: 56;
+  /* +1 (player at the bottom): the card rose UP, so the hand moves up with it.
+     -1 (mirrored seat): the card rose DOWN, so the sign flips with it. */
+  top: calc(70px + var(--inspect-y, 0px) - (var(--fan-card-h, 112px) * 0.5 * var(--inspect-dir, 1)));
+  left: calc(50% + var(--inspect-x, 0px));
+  width: var(--fan-card-w, 61px);
+  height: auto;
+  /* -1 flips the art so it reads as reaching in from the far side of the table. */
+  transform: translateX(-50%) scaleY(var(--inspect-dir, 1)) rotate(calc(-7deg + var(--inspect-tilt, 0deg)));
+  transform-origin: 50% 0;
+  filter: drop-shadow(0 14px 12px rgba(0,0,0,.75));
+  animation: inspect-hold 1.9s cubic-bezier(.45,0,.55,1) infinite;
+  pointer-events: none;
+  will-change: transform, left;
+}
+/* A hand belonging to the OTHER player is drawn a touch recessed so it never
+   competes with your own chrome. */
+.inspection-hand.remote {
+  opacity: .86;
+  filter: drop-shadow(0 14px 12px rgba(0,0,0,.75)) grayscale(.06);
+}
+@keyframes inspect-hold {
+  0%, 100% { transform: translateX(-50%) scaleY(var(--inspect-dir, 1)) translateY(2px) rotate(calc(-7deg + var(--inspect-tilt, 0deg))); }
+  50%      { transform: translateX(-50%) scaleY(var(--inspect-dir, 1)) translateY(-3px) rotate(calc(-5.5deg + var(--inspect-tilt, 0deg))); }
 }
 
 /* ===========================================================================

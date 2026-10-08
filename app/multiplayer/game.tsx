@@ -7,6 +7,7 @@ import { RULESET_ROUNDS, roundInCourt, consecutiveLabel } from "@/lib/game/flow"
 import { dealTimings, PULL_MS, SHUFFLE_MS } from "@/features/game/constants/pacing";
 import { PowerDock } from "@/features/game/components/PowerDock";
 import { SelectionHand } from "@/features/game/components/SelectionHand";
+import { InspectionVisual } from "@/features/game/components/InspectionVisual";
 import { StrategyModal } from "@/features/game/components/StrategyModal";
 import { indexToSlot } from "@/features/game/logic/cardFan";
 import { picksThisCourt, summarisePicks } from "@/features/game/logic/strategy";
@@ -338,13 +339,21 @@ const opponentPick =
       {g.phase === "shuffle" ? <ShuffleStage mp={mp} /> : null}
       {isDealerRound && iAmDealer && iAct ? <HideStage mp={mp} /> : null}
       {isDealerRound && !(iAmDealer && iAct) ? (
-        <Waiting title="OPPONENT'S TURN" text={`${mp.opponent ?? "Opponent"} is hiding the King…`} />
+        <Waiting
+          title="OPPONENT'S TURN"
+          text={`${mp.opponent ?? "Opponent"} is hiding the King…`}
+          row={<OpponentRow mp={mp} />}
+        />
       ) : null}
       {isGuess && iAct ? (
         <GuessStage mp={mp} onCallBluff={() => setBluffOpen(true)} bluffOpen={bluffOpen} />
       ) : null}
       {isGuess && !iAct ? (
-        <Waiting title="OPPONENT'S TURN" text={`${mp.opponent ?? "Opponent"} is guessing a card…`} />
+        <Waiting
+          title="OPPONENT'S TURN"
+          text={`${mp.opponent ?? "Opponent"} is guessing a card…`}
+          row={<OpponentRow mp={mp} />}
+        />
       ) : null}
       {opponentPick !== null ? (
         <div className="cards-row">
@@ -359,6 +368,45 @@ const opponentPick =
         <p className="mp-muted mp-waitsmall">Waiting for the other player. Do not close this tab.</p>
       )}
     </MpFrame>
+  );
+}
+
+/**
+ * The opponent's card row, seen while it is THEIR turn.
+ *
+ * It mirrors the row the acting player sees — same fan, same indices, painted in
+ * reverse because we are looking from the far side of the table — and overlays
+ * the SYNCHRONISED inspection: the card at `inspectingCardIndex` lifts and our
+ * opponent's hand appears to hold it.
+ *
+ * Nothing here is interactive. The only value read from the network is a card
+ * POSITION, which is exactly why the lift is safe to show: the card is still
+ * face-down, so we learn "they are looking at slot 3", never what is in it.
+ */
+function OpponentRow({ mp }: { mp: MP }) {
+  const g = mp.game!;
+  const cfg = levelConfig(g.level);
+  // Seat 1 always sees seat 0's row mirrored, and vice versa — the same rule the
+  // acting player's own GuessStage uses for its fan.
+  const mirrored = (mp.mySeat ?? 0) === 1;
+  const inspecting = g.inspectingCardIndex ?? null;
+
+  return (
+    <div className={["cards-row fanned turn-idle", mirrored ? "mirrored" : ""].filter(Boolean).join(" ")}>
+      {Array.from({ length: cfg.cards }, (_, i) => (
+        <PlayingCard
+          key={i}
+          index={i}
+          fanCount={cfg.cards}
+          fanSlot={indexToSlot(i, cfg.cards, mirrored)}
+          disabled
+          inspected={inspecting === i}
+        />
+      ))}
+      {inspecting !== null ? (
+        <InspectionVisual index={inspecting} cardCount={cfg.cards} mirrored={mirrored} remote />
+      ) : null}
+    </div>
   );
 }
 
@@ -456,8 +504,23 @@ function HideStage({ mp }: { mp: MP }) {
   const [busy, setBusy] = useState(false);
   const canLock = isBluff || kingIndex !== null;
 
+  /**
+   * The dealer's chosen slot IS their inspection: while they consider card #4 the
+   * opponent watches them hold it, exactly as the guesser's aim is mirrored.
+   * Reuses the existing `kingIndex` state, and clears on a bluff (nothing is held).
+   */
+  useEffect(() => {
+    mp.setInspecting(isBluff ? null : kingIndex);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kingIndex, isBluff]);
+
+  // Release the hold if this stage unmounts (turn changed, round resolved).
+  useEffect(() => () => mp.setInspecting(null), []); // eslint-disable-line react-hooks/exhaustive-deps
+
   const lock = async () => {
     if (!canLock || busy) return;
+    // Locking ends the inspection: the opponent should see the deal, not a hold.
+    mp.setInspecting(null);
     setBusy(true);
     await mp.hideCard(kingIndex, isBluff);
     setBusy(false);
@@ -474,12 +537,13 @@ function HideStage({ mp }: { mp: MP }) {
           <p className="block-note">HIDING {consecutiveLabel(me, g.round, "complete")}</p>
         ) : null}
       </div>
-      <div className="cards-row dealer-choice">
+      <div className="cards-row dealer-choice turn-active">
         {Array.from({ length: cfg.cards }, (_, i) => (
           <PlayingCard
             key={i}
             index={i}
             chosen={!isBluff && kingIndex === i}
+            inspected={!isBluff && kingIndex === i}
             disabled={busy || isBluff}
             onClick={() => {
               setIsBluff(false);
@@ -544,6 +608,22 @@ function GuessStage({
   const mirrored = (mp.mySeat ?? 0) === 1;
   const done = busy || picked !== null || bluffOpen;
 
+  /**
+   * The aim IS the local inspection: aiming at card #2 (without confirming)
+   * both lights it up here and tells the opponent to draw the physical pick-up.
+   * This is deliberately the SAME `targetCard` the existing two-tap interaction
+   * already maintains, so no new gesture and no new mechanic is introduced — the
+   * only addition is that the temporary state is now also mirrored to RTDB.
+   */
+  useEffect(() => {
+    mp.setInspecting(done ? null : targetCard);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [targetCard, done]);
+
+  // Never leave a stale hand behind when this stage unmounts (round over, turn
+  // changed, tab closed mid-aim) — Part 14.
+  useEffect(() => () => mp.setInspecting(null), []); // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     // Reset the countdown when a new round begins (pre-existing behaviour).
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -574,6 +654,11 @@ function GuessStage({
       setTargetCard(i);
       return;
     }
+    // Confirming ends the inspection: release the aim before the pull plays, so
+    // the opponent's screen stops showing the hold and reads the committed pick
+    // instead. The game action itself is untouched (still only `mp.guess`).
+    setTargetCard(null);
+    mp.setInspecting(null);
     // Play the pull before handing off to the existing guess write, so the card
     // appears to leave the table with the player. The outcome is unchanged: the
     // write below is still the only thing that affects game state.
@@ -593,7 +678,7 @@ function GuessStage({
         <MpOrnament />
         <p>{done ? "Revealing the cards…" : `Pick a card before the timer ends — ${left}s.`}</p>
       </div>
-      <div className={["cards-row fanned", mirrored ? "mirrored" : ""].filter(Boolean).join(" ")}>
+      <div className={["cards-row fanned turn-active", mirrored ? "mirrored" : ""].filter(Boolean).join(" ")}>
         {Array.from({ length: cfg.cards }, (_, i) => (
           <PlayingCard
             key={i}
@@ -603,6 +688,7 @@ function GuessStage({
             chosen={picked === i || targetCard === i}
             disabled={done}
             pulling={pullCard === i}
+            inspected={!done && picked === null && targetCard === i}
             onClick={() => pick(i)}
           />
         ))}
@@ -618,7 +704,7 @@ function GuessStage({
   );
 }
 
-function Waiting({ title, text }: { title: string; text: string }) {
+function Waiting({ title, text, row }: { title: string; text: string; row?: ReactNode }) {
   return (
     <section className="mp-stage">
       <div className="turn-indicator opponent-turn mp-turnpulse">
@@ -634,6 +720,9 @@ function Waiting({ title, text }: { title: string; text: string }) {
         <MpOrnament />
         <p>{text}</p>
       </div>
+      {/* The opponent's live row, when supplied: their cards plus the physical
+          hand they are inspecting with, synced over RTDB (Parts 4, 8, 9). */}
+      {row}
     </section>
   );
 }

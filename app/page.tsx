@@ -20,6 +20,7 @@ import { TurnIndicator, TurnTransition } from "@/features/game/components/TurnIn
 import { COURTS, hidesPerBlock, roundsInCourt, setCurrentCourtIndex, STARTING_LIVES } from "@/features/game/constants/courts";
 import {
   RESULT_COPY,
+  revealCopyFor,
   turnAnnouncement,
   turnKey as buildTurnKey,
 } from "@/features/game/constants/copy";
@@ -140,6 +141,23 @@ export default function Home() {
     [config.cards, motion],
   );
   const displayNames: [string, string] = [names[0].trim() || "Player 1", mode === "bot" ? "The Rival" : names[1].trim() || "Player 2"];
+  /**
+   * The seat this board is speaking TO, i.e. whose perspective the reveal copy
+   * addresses. The human always holds seat 0 in bot mode; in Pass & Play the
+   * device is handed to whoever acts, so the ACTING seat is the perspective for
+   * that round — which is why this is derived per phase rather than fixed.
+   */
+  const perspectiveSeat: Seat = mode === "bot" ? 0 : (phase === "guess" ? guesser : dealer);
+  /**
+   * The seat that won the whole match, or null for a draw. Derived once here so
+   * the match-end heading, the scoreboard and the recorded account statistic can
+   * never disagree about who actually won.
+   */
+  const matchWinner: Seat | null = useMemo(() => {
+    if (mode === "local" && livesOn && lifeWinner !== null) return lifeWinner;
+    if (scores[0] === scores[1]) return null;
+    return (scores[0] > scores[1] ? 0 : 1) as Seat;
+  }, [scores, mode, livesOn, lifeWinner]);
   const currentTurn = turnAnnouncement({ phase, dealerIsBot, guesserIsBot });
   const turnKey = buildTurnKey(currentTurn, phase);
 
@@ -580,10 +598,9 @@ export default function Home() {
     const user = account.user;
     if (!user || user.isAnonymous) return;
 
-    const localLivesWin = mode === "local" && livesOn && lifeWinner !== null;
-    const won = localLivesWin
-      ? lifeWinner === 0
-      : scores[0] !== scores[1] && scores[0] > scores[1];
+    // Same source of truth as the match-end heading, so the recorded statistic
+    // and the result the player just saw can never disagree.
+    const won = matchWinner === 0;
 
     void recordMatchResult(user.uid, won).then((result) => {
       if (!result.ok && result.reason !== "no-profile") {
@@ -869,7 +886,7 @@ export default function Home() {
                   <p className="eyebrow">ROUND {round} RESULT</p>
                   <h2>{RESULT_COPY[result.kind].title}</h2>
                   <Ornament />
-                  <p>{RESULT_COPY[result.kind].subtitle}</p>
+                  <p>{revealCopyFor(result.kind, perspectiveSeat, displayNames, guesser).subtitle}</p>
                 </div>
                 <div className="cards-row fanned reveal-row">
                   {Array.from({ length: config.cards }, (_, index) => (
@@ -951,9 +968,18 @@ export default function Home() {
                   </>
                 ) : (
                   <>
-                    <h2>{scores[0] === scores[1] ? "A ROYAL DRAW" : `${displayNames[scores[0] > scores[1] ? 0 : 1]} WINS!`}</h2>
+                    <h2>
+                      {matchWinner === null
+                        ? "A ROYAL DRAW"
+                        : mode === "bot"
+                          ? // Speak to the player directly. "Player 1 WINS!" reads
+                            // like a personal victory even when seat 0 is the LOSS,
+                            // which is exactly how a bot win was mistaken for a win.
+                            (matchWinner === 0 ? "YOU WIN!" : `${displayNames[1]} WINS!`)
+                          : `${displayNames[matchWinner]} WINS!`}
+                    </h2>
                     <Ornament />
-                    <p>Twenty rounds. Three courts. One ruler.</p>
+                    <p>{mode === "bot" && matchWinner === 1 ? `You lost all three courts to ${displayNames[1]}.` : "Twenty rounds. Three courts. One ruler."}</p>
                   </>
                 )}
                 <div className="score-board large final">

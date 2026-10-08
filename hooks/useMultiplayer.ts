@@ -17,6 +17,7 @@ import {
   dealerReveals,
   advanceNext,
   rematchGame,
+  publishInspecting,
 } from "@/services/multiplayerService";
 import { normalizeRoomCode } from "@/lib/multiplayer/roomCode";
 import { cleanupMatchmaking } from "@/services/matchmakingService";
@@ -315,6 +316,34 @@ export default function useMultiplayer() {
   }, [session, game]);
 
   /**
+   * Publish the acting player's current inspection position (the card they are
+   * hovering / aiming at), or clear it with `null`.
+   *
+   * Called from pointer/aim changes, so it is deliberately cheap and IDEMPOTENT:
+   * a pointer that wanders within one card would otherwise fire a write per
+   * mousemove. `inspectingRef` remembers the last index WE wrote and swallows a
+   * repeat, so the RTDB sees exactly one update per real target change and never
+   * a stream of animation frames (Part 10).
+   */
+  const inspectingRef = useRef<number | null>(null);
+  const setInspecting = useCallback(
+    (index: number | null) => {
+      if (!session || mySeat == null || !game) return;
+      if (inspectingRef.current === index) return;
+      const phaseOk = game.phase === "guess" || game.phase === "dealer-hide";
+      if (index !== null && (!phaseOk || game.actingSeat !== mySeat)) return;
+      inspectingRef.current = index;
+      void publishInspecting(session.code, {
+        seat: mySeat,
+        level: game.level,
+        round: game.round,
+        index,
+      });
+    },
+    [session, mySeat, game],
+  );
+
+  /**
    * Safety net: if the client that ran the deal animation drops mid-shuffle, the
    * other client still advances the phase once the deal window has elapsed so the
    * match can never stall on the presentation beat.
@@ -328,6 +357,15 @@ export default function useMultiplayer() {
     );
     return () => window.clearTimeout(id);
   }, [session, game]);
+
+  /**
+   * A round / turn change invalidates the last index we published, so forget it
+   * here. Without this the dedup guard would treat the first hover of the NEXT
+   * round as a repeat and silently drop it.
+   */
+  useEffect(() => {
+    inspectingRef.current = null;
+  }, [game?.level, game?.round, game?.actingSeat, game?.phase]);
 
   const advance = useCallback(async () => {
     if (!session) return false;
@@ -452,6 +490,7 @@ export default function useMultiplayer() {
     hideCard,
     beginGuess,
     guess,
+    setInspecting,
     advance,
     rematch,
     copyCode,

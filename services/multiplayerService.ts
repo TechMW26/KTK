@@ -129,6 +129,49 @@ async function commit(
 }
 
 // ---------------------------------------------------------------------------
+// Transient inspection state (presentation only)
+// ---------------------------------------------------------------------------
+
+/**
+ * Publish (or clear) the acting player's current inspection position.
+ *
+ * This is the one "temporary UI state" the two clients synchronise so the
+ * opponent can render the physical hand/card animation. It is intentionally
+ * SEPARATE from every gameplay transition:
+ *
+ *  - it writes a single field and does NOT touch the `seq` counter, so a client
+ *    listening for "has the authoritative state moved on?" is not woken by a
+ *    hover;
+ *  - it refuses to write while it is not the caller's turn, which is what keeps
+ *    the invariant "only the acting player can generate an inspection";
+ *  - it is guarded on the SAME level/round it was asked for, so a stale write
+ *    that races a round change is dropped by the transaction rather than
+ *    bleeding an old hand into the next round.
+ *
+ * `null` clears the inspection (pointer left the row, pick confirmed, etc).
+ */
+export async function publishInspecting(
+  code: string,
+  args: { seat: Seat; level: number; round: number; index: number | null },
+): Promise<boolean> {
+  const clamp =
+    args.index === null
+      ? null
+      : Math.max(0, Math.min(levelConfig(args.level).cards - 1, Math.round(args.index)));
+  return commit(
+    code,
+    (cur) =>
+      // Only the seat whose turn it is may speak, and only during the phases in
+      // which a card is actually on the table to inspect.
+      cur.actingSeat === args.seat &&
+      (cur.phase === "guess" || cur.phase === "dealer-hide") &&
+      cur.level === args.level &&
+      cur.round === args.round,
+    (cur) => ({ ...cur, inspectingCardIndex: clamp }),
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Dealer
 // ---------------------------------------------------------------------------
 
@@ -186,6 +229,9 @@ export async function dealerPlaces(
         // before the guesser's clock starts. Either client advances it (idempotent).
         phase: "shuffle",
         actingSeat: actingGuess,
+        // The dealer's hide turn is over, so release their inspection in the same
+        // write (Part 14).
+        inspectingCardIndex: null,
       };
     },
   );
@@ -254,6 +300,10 @@ export async function guesserMoves(
         },
         phase: "reveal",
         actingSeat: dealer,
+        // The guesser has committed, so their inspection is over: drop the hand
+        // in the SAME atomic write that ends their turn, which also covers the
+        // race where their client never got to clear it (Part 14).
+        inspectingCardIndex: null,
       };
     },
   );
@@ -317,6 +367,8 @@ export async function dealerReveals(
         pendingGuess: null,
         awaitingNext: true,
         phase: "reveal",
+        // Round resolved: no hand may remain on the board (Part 14).
+        inspectingCardIndex: null,
       };
       if (lives) next.lives = lives;
       return next;
@@ -361,6 +413,8 @@ function advanceClassic(cur: GameState): GameState {
       phase: "dealer-hide",
       dealerSeat: dealerSeatFor(1),
       actingSeat: dealerSeatFor(1),
+      // A new hide round: start with no hand on the board (Part 14).
+      inspectingCardIndex: null,
     };
   }
   const isLastRoundOfLevel = cur.round >= roundsPerLevel(cur.level);
@@ -395,6 +449,7 @@ function advanceClassic(cur: GameState): GameState {
     phase: "dealer-hide",
     dealerSeat: dealerSeatFor(nextRound),
     actingSeat: dealerSeatFor(nextRound),
+    inspectingCardIndex: null,
   };
 }
 
@@ -472,6 +527,8 @@ function advanceOptional(cur: GameState, settings: MatchSettings): GameState {
     phase: "dealer-hide",
     dealerSeat: dealer,
     actingSeat: dealer,
+    // A new hide round: start with no hand on the board (Part 14).
+    inspectingCardIndex: null,
   };
 }
 
