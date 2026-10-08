@@ -1,21 +1,21 @@
 import Image from "next/image";
 
+import { cardFanSlot } from "@/features/game/logic/cardFan";
+
 /**
  * The hand that hovers over the card row.
  *
  * Purely presentational: it shows WHERE attention is, which is why every variant
  * is a visual modifier rather than a behaviour.
  *
- * The horizontal offset is computed from the card index so the hand lines up
- * with a real card. `76` is the card pitch in CSS — if the card geometry changes,
- * this and `.selection-hand-img` must change together.
+ * The offset is read from the SAME layout the cards use
+ * (`features/game/logic/cardFan.ts`), so the hand can never drift out of
+ * alignment with a card when the arc geometry is tuned. It also rides the arc
+ * vertically, so it lands on the card rather than beside it.
  */
 
-/** Horizontal distance between adjacent cards, in px. Must match the CSS pitch. */
-const CARD_PITCH = 76;
-
 /** Half-pitch of the row, used to size the roaming sweep. */
-const HALF_PITCH = 38;
+const HALF_PITCH = 22;
 
 export function SelectionHand({
   index,
@@ -23,6 +23,7 @@ export function SelectionHand({
   settled = false,
   faint = false,
   roaming = false,
+  mirrored = false,
 }: {
   /** Card the hand points at, or null to hide the hand entirely. */
   index: number | null;
@@ -33,10 +34,15 @@ export function SelectionHand({
   faint?: boolean;
   /** Sweep slowly from side to side while the opponent deliberates. */
   roaming?: boolean;
+  /** Point from the opposite side of the table, matching the mirrored row. */
+  mirrored?: boolean;
 }) {
   if (index === null) return null;
 
-  const offset = index - (cardCount - 1) / 2;
+  // `index` is identity, so translate it into the slot it is painted in before
+  // asking the fan where that slot sits.
+  const slot = mirrored ? cardCount - 1 - index : index;
+  const { x, y, rotate } = cardFanSlot(slot, cardCount);
 
   return (
     <Image
@@ -45,6 +51,7 @@ export function SelectionHand({
         settled ? "settled" : "",
         faint ? "faint" : "",
         roaming ? "roaming" : "",
+        mirrored ? "mirrored" : "",
       ]
         .filter(Boolean)
         .join(" ")}
@@ -56,7 +63,9 @@ export function SelectionHand({
       aria-hidden="true"
       style={
         {
-          "--hand-x": `${offset * CARD_PITCH}px`,
+          "--hand-x": `${x}px`,
+          "--hand-y": `${y}px`,
+          "--hand-tilt": `${rotate}deg`,
           "--roam-span": `${(cardCount - 1) * HALF_PITCH}px`,
         } as React.CSSProperties
       }

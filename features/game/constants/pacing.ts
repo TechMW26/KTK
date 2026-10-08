@@ -144,6 +144,22 @@ export const BOT_ACCUSE_MS = 500;
  */
 export const REVEAL_LOCK_MS = 600;
 
+/**
+ * How long the picked card takes to travel toward the player who chose it.
+ *
+ * A presentation-only beat played just before the reveal. It must stay shorter
+ * than REVEAL_LOCK_MS so the pull finishes before the row flips, otherwise the
+ * two animations would fight over the same transform.
+ */
+export const PULL_MS = 460;
+
+/**
+ * How long the hidden King takes to travel from the player's side into its
+ * slot. Played when the dealer commits a real King; never played for a bluff,
+ * which has no King to place.
+ */
+export const KING_PLACE_MS = 500;
+
 /** Durations used when the player has turned card animations off. */
 export const REDUCED = {
   veil: 120,

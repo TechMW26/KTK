@@ -4,10 +4,11 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import Image from "next/image";
 import { LEVELS, levelConfig, RESULT_COPY, LEVEL_COUNT, roundsPerLevel } from "@/lib/game/rules";
 import { RULESET_ROUNDS, roundInCourt, consecutiveLabel } from "@/lib/game/flow";
-import { dealTimings, SHUFFLE_MS } from "@/features/game/constants/pacing";
+import { dealTimings, PULL_MS, SHUFFLE_MS } from "@/features/game/constants/pacing";
 import { PowerDock } from "@/features/game/components/PowerDock";
 import { SelectionHand } from "@/features/game/components/SelectionHand";
 import { StrategyModal } from "@/features/game/components/StrategyModal";
+import { indexToSlot } from "@/features/game/logic/cardFan";
 import { picksThisCourt, summarisePicks } from "@/features/game/logic/strategy";
 import type useMultiplayer from "@/hooks/useMultiplayer";
 import { useFriends } from "@/hooks/useFriends";
@@ -529,6 +530,18 @@ function GuessStage({
   const [left, setLeft] = useState(seconds);
   /** Card aimed at with the first tap, awaiting the confirming second tap. */
   const [targetCard, setTargetCard] = useState<number | null>(null);
+  /**
+   * The card playing its "pulled toward this player" beat. Presentation only —
+   * it is cleared when the animation ends and nothing reads it to decide an
+   * outcome. The direction comes from the row's perspective, so seat 1 sees the
+   * card pulled the opposite way to seat 0.
+   */
+  const [pullCard, setPullCard] = useState<number | null>(null);
+  /**
+   * Seat 1 sits on the far side of the table, so it sees the row mirrored. The
+   * cards keep their indices; only the paint order flips.
+   */
+  const mirrored = (mp.mySeat ?? 0) === 1;
   const done = busy || picked !== null || bluffOpen;
 
   useEffect(() => {
@@ -561,6 +574,11 @@ function GuessStage({
       setTargetCard(i);
       return;
     }
+    // Play the pull before handing off to the existing guess write, so the card
+    // appears to leave the table with the player. The outcome is unchanged: the
+    // write below is still the only thing that affects game state.
+    setPullCard(i);
+    window.setTimeout(() => setPullCard(null), PULL_MS);
     setPicked(i);
     setBusy(true);
     await mp.guess(i, false);
@@ -575,17 +593,22 @@ function GuessStage({
         <MpOrnament />
         <p>{done ? "Revealing the cards…" : `Pick a card before the timer ends — ${left}s.`}</p>
       </div>
-      <div className="cards-row">
+      <div className={["cards-row fanned", mirrored ? "mirrored" : ""].filter(Boolean).join(" ")}>
         {Array.from({ length: cfg.cards }, (_, i) => (
           <PlayingCard
             key={i}
             index={i}
+            fanCount={cfg.cards}
+            fanSlot={indexToSlot(i, cfg.cards, mirrored)}
             chosen={picked === i || targetCard === i}
             disabled={done}
+            pulling={pullCard === i}
             onClick={() => pick(i)}
           />
         ))}
-        {picked === null && <SelectionHand index={targetCard} cardCount={cfg.cards} />}
+        {picked === null && (
+          <SelectionHand index={targetCard} cardCount={cfg.cards} mirrored={mirrored} />
+        )}
       </div>
       <button className="outline-button wide mp-wide" onClick={onCallBluff} disabled={done}>
         CALL THE BLUFF

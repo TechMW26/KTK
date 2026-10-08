@@ -8,7 +8,14 @@
  *
  * Dimensions come from CSS (`aspect-ratio`), never from props, because the card
  * geometry is load-bearing for the hand and deal animations.
+ *
+ * The curved fan is OPT-IN. Pass `fanCount` (with `fanSlot` when the view is
+ * mirrored) to lay the card out on the arc; omit them and the card behaves
+ * exactly as it always has, in a straight flex row. `index` is identity and is
+ * never affected by the fan — only `fanSlot` moves a card around the table.
  */
+
+import { cardFanStyle } from "@/features/game/logic/cardFan";
 
 export interface PlayingCardProps {
   /** Seat-local card number; also used for the face-up rank and aria label. */
@@ -31,6 +38,18 @@ export interface PlayingCardProps {
   dealDelay?: number;
   /** Seconds to wait before this card flips over at the reveal. */
   flipDelay?: number;
+  /**
+   * Left-to-right paint position in the fanned row. Defaults to `index`, which
+   * is correct whenever the view is NOT mirrored; pass the mirrored slot when it
+   * is. Supplying it switches the card into the curved layout.
+   */
+  fanSlot?: number;
+  /** Number of cards in the row. Enables the curved layout when provided. */
+  fanCount?: number;
+  /** Play the "King is placed" beat. Ignored visually unless `fanCount` is set. */
+  kingPlacing?: boolean;
+  /** Play the "player pulls the card" beat. */
+  pulling?: boolean;
 }
 
 export function PlayingCard({
@@ -45,6 +64,10 @@ export function PlayingCard({
   onHover,
   dealDelay,
   flipDelay,
+  fanSlot,
+  fanCount,
+  kingPlacing,
+  pulling,
 }: PlayingCardProps) {
   const className = [
     "playing-card",
@@ -52,6 +75,8 @@ export function PlayingCard({
     king ? "is-king" : "",
     chosen ? "chosen" : "",
     wrong ? "shattered" : "",
+    kingPlacing ? "king-placing" : "",
+    pulling ? "card-pulling" : "",
   ]
     .filter(Boolean)
     .join(" ");
@@ -62,6 +87,11 @@ export function PlayingCard({
       : `Card ${index + 1}`
     : `Choose card ${index + 1}`;
 
+  // The curve is opt-in: a call site that does not pass `fanCount` keeps the
+  // original straight flex row exactly as before.
+  const fanned = typeof fanCount === "number" && fanCount > 0;
+  const slot = fanSlot ?? index;
+
   return (
     <button
       className={className}
@@ -71,12 +101,11 @@ export function PlayingCard({
       onFocus={() => onHover?.(true)}
       onBlur={() => onHover?.(false)}
       style={
-        dealDelay === undefined && flipDelay === undefined
-          ? undefined
-          : ({
-              ...(dealDelay === undefined ? {} : { "--deal-delay": `${dealDelay}s` }),
-              ...(flipDelay === undefined ? {} : { "--flip-delay": `${flipDelay}s` }),
-            } as React.CSSProperties)
+        {
+          ...(dealDelay === undefined ? {} : { "--deal-delay": `${dealDelay}s` }),
+          ...(flipDelay === undefined ? {} : { "--flip-delay": `${flipDelay}s` }),
+          ...(fanned ? cardFanStyle(slot, fanCount) : {}),
+        } as React.CSSProperties
       }
       disabled={disabled}
       aria-label={label}

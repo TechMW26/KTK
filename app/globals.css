@@ -655,6 +655,125 @@ button:disabled { cursor: not-allowed; opacity: .42; }
   overflow: visible;
   transition: transform .22s ease, filter .22s ease;
 }
+
+/* --- Curved fan -----------------------------------------------------------
+   The row is laid out as an arc instead of a straight line: the centre card
+   sits highest and each step toward an edge drops lower, tilts, and shrinks a
+   touch. Geometry comes from features/game/logic/cardFan.ts and is handed in as
+   the --fan-* custom properties, so the CSS never re-derives the maths and the
+   selection hand can read the same numbers.
+
+   The cards STAY IN FLOW (flex), and the arc is applied entirely through
+   `transform`. Positioning them absolutely instead collapses the row to zero
+   height, which pushes the cards out of the stage and makes them untappable —
+   transforms keep the row's real size, so the layout and the hit areas stay in
+   agreement. Negative margins pull the overlapping cards back together, giving
+   the fan its ~43px pitch while each card still paints its own exposed strip. */
+.cards-row.fanned {
+  /* +1 pulls toward the bottom of the screen. A mirrored row (the player sitting
+     opposite) flips this so the card still travels toward ITS player. */
+  --pull-dir: 1;
+  /* The pitch is CARD_PITCH (43px) in features/game/logic/cardFan.ts. The cards
+     are 61px wide, so each is pulled back by 18px to overlap its neighbour. */
+  --fan-overlap: -18px;
+  /* The row reserves card height PLUS the arc drop, because the outer cards
+     genuinely hang lower than the centre one. That extra 26px is the price of
+     the curve; the stage rules below reclaim it so the dealer's LOCK button
+     still clears the power dock on a short screen. */
+  --fan-card-w: 61px;
+  --fan-card-h: 112px;
+  --fan-drop: 26px;
+  height: calc(var(--fan-card-h) + var(--fan-drop));
+  align-items: flex-start;
+  gap: 0;
+}
+.cards-row.fanned.mirrored { --pull-dir: -1; }
+.cards-row.fanned .playing-card {
+  /* Width comes from the tier above (the short-viewport rules already step the
+     card down), so the fan never overrides the responsive size. */
+  flex: 0 0 var(--fan-card-w, 61px);
+  width: var(--fan-card-w, 61px);
+  margin-left: var(--fan-overlap);
+  /* `--lift` and `--pull-*` are layered into the single transform: hover/chosen
+     raise the card, and the pull animation animates it away from the table,
+     without either overwriting the fan geometry. */
+  transform:
+    translateY(calc(var(--fan-y, 0px) + var(--lift, 0px) + var(--pull-y, 0px)))
+    rotate(calc(var(--fan-rotate, 0deg) + var(--pull-rotate, 0deg)))
+    scale(calc(var(--fan-scale, 1) * var(--pull-scale, 1)));
+  transform-origin: 50% 100%;
+  z-index: var(--fan-z, 1);
+}
+/* The first card must not be shifted by the overlap, or the whole fan slides. */
+.cards-row.fanned .playing-card:first-child { margin-left: 0; }
+/* The fan supplies the transform, so the stock hover/chosen rules must not
+   replace it — they only set `--lift`, which the transform above consumes. */
+.cards-row.fanned .playing-card:not(:disabled):hover { --lift: -9px; }
+.cards-row.fanned .playing-card.chosen { --lift: -7px; }
+/* Hover/chosen must also outrank a neighbour's baked-in --fan-z, otherwise the
+   lifted card would slide under the card painted after it. */
+.cards-row.fanned .playing-card:not(:disabled):hover,
+.cards-row.fanned .playing-card.chosen { z-index: 40; }
+/* The stock `.playing-card:not(:disabled):hover` / `.chosen` rules set their own
+   `transform`, which would clobber the fan. Re-state the composed transform at a
+   higher specificity so the arc survives a hover. */
+.cards-row.fanned .playing-card:not(:disabled):hover,
+.cards-row.fanned .playing-card.chosen {
+  transform:
+    translateY(calc(var(--fan-y, 0px) + var(--lift, 0px) + var(--pull-y, 0px)))
+    rotate(calc(var(--fan-rotate, 0deg) + var(--pull-rotate, 0deg)))
+    scale(calc(var(--fan-scale, 1) * var(--pull-scale, 1)));
+}
+
+/* --- The King is placed --------------------------------------------------
+   A short beat played when the dealer commits the hidden King: the card rises
+   from the player's own side and settles into the chosen face-down slot. It is
+   purely presentational — the card is face-down throughout and the game state
+   is already whatever the existing logic produced. Never fires for a bluff,
+   because a bluff has no King to place. */
+.cards-row.fanned .playing-card.king-placing {
+  animation: king-place .5s cubic-bezier(.22,.9,.28,1) both;
+}
+@keyframes king-place {
+  0% {
+    /* Starts low and slightly scaled up, as though held closer to the player. */
+    transform:
+      translateY(calc(var(--fan-y, 0px) + 84px))
+      rotate(var(--fan-rotate, 0deg))
+      scale(calc(var(--fan-scale, 1) * 1.1));
+    filter: drop-shadow(0 22px 18px rgba(0,0,0,.8));
+  }
+  100% {
+    transform:
+      translateY(var(--fan-y, 0px))
+      rotate(var(--fan-rotate, 0deg))
+      scale(var(--fan-scale, 1));
+    filter: drop-shadow(0 8px 8px rgba(0,0,0,.6));
+  }
+}
+
+/* --- The guesser pulls the card ------------------------------------------
+   On commit, the picked card lifts off the table and travels toward the player
+   who chose it. `--pull-dir` is +1 when that player is at the bottom of the
+   screen (the default view) and -1 when the view is mirrored for the player
+   sitting opposite, so the same animation serves both seats. */
+.cards-row.fanned .playing-card.card-pulling {
+  z-index: 60;
+  animation: card-pull .46s cubic-bezier(.3,.85,.3,1) both;
+}
+@keyframes card-pull {
+  0% { --pull-y: 0px; --pull-scale: 1; --pull-rotate: 0deg; }
+  45% {
+    --pull-y: calc(-14px * var(--pull-dir, 1));
+    --pull-scale: 1.05;
+    --pull-rotate: calc(3deg * var(--pull-dir, 1));
+  }
+  100% {
+    --pull-y: calc(58px * var(--pull-dir, 1));
+    --pull-scale: 1.16;
+    --pull-rotate: calc(6deg * var(--pull-dir, 1));
+  }
+}
 .playing-card:not(:disabled):hover { z-index: 3; transform: translateY(-9px); filter: drop-shadow(0 0 8px rgba(245,195,83,.7)); }
 
 /* --- Mystical edge glow on selectable cards ------------------------------
@@ -1011,14 +1130,18 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .guess-stage .cards-row { margin-top: 74px; }
 .selection-hand-img {
   --hand-x: 0px;
+  --hand-y: 0px;
+  --hand-tilt: 0deg;
   --roam-span: 0px;
   position: absolute;
   z-index: 9;
-  top: 70px;
+  /* The row is centred, so the hand is placed from the row's centre with the
+     same --hand-x the cards use; --hand-y drops it onto the card it points at. */
+  top: calc(70px + var(--hand-y));
   left: calc(50% + var(--hand-x));
   width: 50px;
   height: auto;
-  transform: translateX(-50%) rotate(-7deg);
+  transform: translateX(-50%) rotate(calc(-7deg + var(--hand-tilt)));
   transform-origin: 50% 0;
   filter: drop-shadow(0 12px 10px rgba(0,0,0,.72));
   animation: hand-hover 1.75s cubic-bezier(.45,0,.55,1) infinite;
@@ -1041,18 +1164,20 @@ button:disabled { cursor: not-allowed; opacity: .42; }
   width: 100%;
 }
 .reveal-hand-wrap .selection-hand-img { top: 70px; width: 44px; }
+/* The hand animations add their bob on top of the arc tilt rather than replacing
+   it, so a hand pointing at a tilted edge card stays tilted. */
 @keyframes hand-hover {
-  0%,100% { transform: translateX(-50%) translateY(3px) rotate(-7deg); }
-  50% { transform: translateX(-50%) translateY(-3px) rotate(-5.5deg); }
+  0%,100% { transform: translateX(-50%) translateY(3px) rotate(calc(-7deg + var(--hand-tilt, 0deg))); }
+  50% { transform: translateX(-50%) translateY(-3px) rotate(calc(-5.5deg + var(--hand-tilt, 0deg))); }
 }
 @keyframes hand-press {
-  0% { transform: translateX(-50%) translateY(-7px) rotate(-7deg); }
-  62% { transform: translateX(-50%) translateY(5px) rotate(-4deg) scale(.98); }
-  100% { transform: translateX(-50%) translateY(2px) rotate(-5deg); }
+  0% { transform: translateX(-50%) translateY(-7px) rotate(calc(-7deg + var(--hand-tilt, 0deg))); }
+  62% { transform: translateX(-50%) translateY(5px) rotate(calc(-4deg + var(--hand-tilt, 0deg))) scale(.98); }
+  100% { transform: translateX(-50%) translateY(2px) rotate(calc(-5deg + var(--hand-tilt, 0deg))); }
 }
 @keyframes opponent-roam {
-  from { transform: translateX(calc(-50% - var(--roam-span))) translateY(2px) rotate(-7deg); }
-  to { transform: translateX(calc(-50% + var(--roam-span))) translateY(-3px) rotate(-4.5deg); }
+  from { transform: translateX(calc(-50% - var(--roam-span))) translateY(2px) rotate(calc(-7deg + var(--hand-tilt, 0deg))); }
+  to { transform: translateX(calc(-50% + var(--roam-span))) translateY(-3px) rotate(calc(-4.5deg + var(--hand-tilt, 0deg))); }
 }
 
 .result-stage .cards-row { margin-top: 93px; }
@@ -1522,12 +1647,46 @@ button:disabled { cursor: not-allowed; opacity: .42; }
   .result-stage .ornament { height: 12px; }
   .result-stage .cards-row { margin-top: 16px; }
   .result-stage .cards-row .playing-card { flex-basis: 54px; width: 54px; }
+  /* The verdict panel follows the row immediately, so the arc must fit inside the
+     height the straight row used. Reserving the TRUE card height for the 54px
+     card (54 x 1624/884 = 99px) keeps the row's box honest, and the extra margin
+     below is what stops the lowest card landing on the verdict. */
+  .result-stage .cards-row.fanned {
+    --fan-card-w: 54px;
+    --fan-card-h: 99px;
+    --fan-drop: 8px;
+    margin-bottom: 10px;
+  }
   .result-stage .round-verdict {
     margin-top: 16px;
     padding: 9px 12px;
     font-size: 10px;
   }
   .result-stage .result-next { margin-top: 10px; min-height: 42px; }
+
+  /* --- Fanned row, short viewport ---------------------------------------
+     The dealer stage stacks title + arc + LOCK button above the fixed power
+     dock, and at 320x568 that stack has no slack: raising the cards into the
+     title simply pushed them onto the dock. So the arc, the card and the gaps
+     all step down together and the row is positioned to clear BOTH neighbours
+     rather than trading one collision for the other. */
+  .cards-row.fanned {
+    --fan-card-w: 52px;
+    --fan-card-h: 96px;
+    /* A shallower arc: the outer cards must not swing down into the dock, and
+       the centre card must not ride up into the title. */
+    --fan-drop: 8px;
+    --fan-overlap: -15px;
+    margin-top: 8px;
+  }
+  .cards-row.fanned .selection-hand-img { width: 40px; }
+  /* Shrink the dealer title the same way the result stage already does at this
+     height, which is what actually frees the space the arc needs. */
+  .dealer-actions { margin-top: 8px; }
+  .play-stage .stage-title { margin-bottom: 6px; }
+  .play-stage .stage-title h2 { font-size: clamp(26px, 8.5vw, 38px); }
+  .play-stage .ornament { height: 14px; }
+  .play-stage .stage-title p { font-size: 11px; margin-top: 4px; }
 }
 
 /* ===========================================================================

@@ -10,6 +10,7 @@ import { GameHeader } from "@/features/game/components/GameHeader";
 import { RulesModal, SettingsModal } from "@/features/game/components/InfoDialogs";
 import { PowerDock } from "@/features/game/components/PowerDock";
 import { SelectionHand } from "@/features/game/components/SelectionHand";
+import { indexToSlot } from "@/features/game/logic/cardFan";
 import { StrategyModal } from "@/features/game/components/StrategyModal";
 import { AccountDialog } from "@/features/account/components/AccountDialog";
 import { AccountScreen } from "@/features/account/components/AccountScreen";
@@ -30,6 +31,8 @@ import {
   BOT_THINK_AFTER_VEIL_MS,
   COUNTDOWN_WARNING_SECONDS,
   dealTimings,
+  KING_PLACE_MS,
+  PULL_MS,
   REDUCED,
   REVEAL_LOCK_MS,
   SHUFFLE_MS,
@@ -89,6 +92,17 @@ export default function Home() {
    * the pick before every card flips. Null on a bluff call (no card picked).
    */
   const [revealPick, setRevealPick] = useState<number | null>(null);
+  /**
+   * The card currently playing its "pulled toward the player" beat. Held only
+   * for the length of the animation, then cleared — it is presentation, never
+   * game state, so nothing reads it to decide an outcome.
+   */
+  const [pullCard, setPullCard] = useState<number | null>(null);
+  /**
+   * Which card is playing the hidden-King placement beat. Null unless the
+   * dealer just committed a real King; a bluff has no King, so it stays null.
+   */
+  const [placingKing, setPlacingKing] = useState<number | null>(null);
   const [opponentActiveCard, setOpponentActiveCard] = useState<number | null>(null);
   const [strategyTab, setStrategyTab] = useState<0 | 1>(0);
   const [sound, setSound] = useState(true);
@@ -104,6 +118,17 @@ export default function Home() {
   const guesser = guesserForRound(round);
   const dealerIsBot = mode === "bot" && dealer === 1;
   const guesserIsBot = mode === "bot" && guesser === 1;
+  /**
+   * Whether the card row is painted from the other side of the table.
+   *
+   * Local play is always viewed from the acting seat — the device is handed to
+   * whoever must act, so that player is at the bottom of the screen and the row
+   * is never mirrored. Multiplayer is where two players genuinely sit opposite,
+   * so the row is mirrored whenever the PLAYER AT THE BOTTOM is dealer and the
+   * opponent is across the table (seat 1 looking at a seat 0 view). Identity is
+   * untouched either way; see features/game/logic/cardFan.ts.
+   */
+  const guesserViewMirrored = false;
   // Complete-turn blocks: which hide this is inside the current player's run.
   // Round resets to 1 each court, so the block restarts there too.
   const hidesThisCourt = hidesPerBlock(level);
@@ -246,6 +271,15 @@ export default function Home() {
     // Show the locked pick and every card turning over BEFORE the verdict, so
     // the selected card locks and then ALL cards reveal. The verdict screen
     // (phase "result") follows after the reveal beat.
+    //
+    // The pull beat runs first: the picked card travels toward the player who
+    // chose it, then the existing reveal takes over. `pullCard` is presentation
+    // only — it never influences `revealPick` or the outcome, both of which are
+    // already decided by the time we get here.
+    if (pick !== null && motion) {
+      setPullCard(pick);
+      window.setTimeout(() => setPullCard(null), PULL_MS);
+    }
     setRevealPick(pick);
     setPhase("reveal");
   };
@@ -614,9 +648,15 @@ export default function Home() {
                   <p className="block-note">{hideLabel} · ROUND {round}</p>
                 </div>
                 {dealerIsBot && (
-                  <div className="cards-row dealer-choice opponent-choice">
+                  <div className="cards-row fanned dealer-choice opponent-choice">
                     {Array.from({ length: config.cards }, (_, index) => (
-                      <PlayingCard key={index} index={index} disabled />
+                      <PlayingCard
+                        key={index}
+                        index={index}
+                        fanCount={config.cards}
+                        fanSlot={index}
+                        disabled
+                      />
                     ))}
                     <SelectionHand
                       index={Math.floor((config.cards - 1) / 2)}
@@ -628,13 +668,27 @@ export default function Home() {
                 )}
                 {!dealerIsBot && (
                   <>
-                    <div className="cards-row dealer-choice">
+                    <div className="cards-row fanned dealer-choice">
                       {Array.from({ length: config.cards }, (_, index) => (
                         <PlayingCard
                           key={index}
                           index={index}
+                          fanCount={config.cards}
+                          fanSlot={index}
                           chosen={!isBluff && kingPosition === index}
-                          onClick={() => { setIsBluff(false); setKingPosition(index); }}
+                          kingPlacing={placingKing === index}
+                          onClick={() => {
+                            setIsBluff(false);
+                            setKingPosition(index);
+                            // The existing placement action, given a visual beat:
+                            // the chosen card rises from this player's side and
+                            // settles into its slot. Purely presentational — the
+                            // King stays hidden and no state depends on it.
+                            if (motion) {
+                              setPlacingKing(index);
+                              window.setTimeout(() => setPlacingKing(null), KING_PLACE_MS);
+                            }
+                          }}
                           onHover={(hovered) => setHoveredCard(hovered ? index : null)}
                         />
                       ))}
@@ -745,21 +799,33 @@ export default function Home() {
                   <p>{guesserIsBot ? "The opponent is reading the table…" : "Pick a card before time runs out."}</p>
                   <p className="block-note">ROUND {round} · {displayNames[dealer]} HIDES</p>
                 </div>
-                <div className="cards-row">
+                <div className="cards-row fanned">
                   {Array.from({ length: config.cards }, (_, index) => (
                     <PlayingCard
                       key={index}
                       index={index}
+                      fanCount={config.cards}
+                      fanSlot={indexToSlot(index, config.cards, guesserViewMirrored)}
                       chosen={index === (guesserIsBot ? opponentActiveCard : targetCard)}
                       disabled={guesserIsBot}
+                      pulling={pullCard === index}
                       onClick={() => handleCardTap(index)}
                       onHover={(hovered) => setHoveredCard(hovered ? index : null)}
                     />
                   ))}
                   {guesserIsBot ? (
-                    <SelectionHand index={opponentActiveCard} cardCount={config.cards} faint />
+                    <SelectionHand
+                      index={opponentActiveCard}
+                      cardCount={config.cards}
+                      mirrored={guesserViewMirrored}
+                      faint
+                    />
                   ) : (
-                    <SelectionHand index={targetCard ?? hoveredCard} cardCount={config.cards} />
+                    <SelectionHand
+                      index={targetCard ?? hoveredCard}
+                      cardCount={config.cards}
+                      mirrored={guesserViewMirrored}
+                    />
                   )}
                 </div>
                 <p className="bottom-copy">Find the King.</p>
@@ -774,7 +840,7 @@ export default function Home() {
                   <Ornament />
                   <p>Every card turns over…</p>
                 </div>
-                <div className="cards-row reveal-row">
+                <div className="cards-row fanned reveal-row">
                   {Array.from({ length: config.cards }, (_, index) => (
                     <PlayingCard
                       key={index}
@@ -785,10 +851,12 @@ export default function Home() {
                       chosen={index === revealPick}
                       disabled
                       flipDelay={(index * 70) / 1000}
+                      fanCount={config.cards}
+                      fanSlot={indexToSlot(index, config.cards, guesserViewMirrored)}
                     />
                   ))}
                   {revealPick !== null && (
-                    <SelectionHand index={revealPick} cardCount={config.cards} settled faint={guesserIsBot} />
+                    <SelectionHand index={revealPick} cardCount={config.cards} mirrored={guesserViewMirrored} settled faint={guesserIsBot} />
                   )}
                 </div>
               </section>
@@ -803,7 +871,7 @@ export default function Home() {
                   <Ornament />
                   <p>{RESULT_COPY[result.kind].subtitle}</p>
                 </div>
-                <div className="cards-row reveal-row">
+                <div className="cards-row fanned reveal-row">
                   {Array.from({ length: config.cards }, (_, index) => (
                     <PlayingCard
                       key={index}
@@ -815,9 +883,13 @@ export default function Home() {
                       wrong={(result.kind === "wrong" || result.kind === "bluff-worked") && index === result.pick}
                       disabled
                       flipDelay={(index * 70) / 1000}
+                      fanCount={config.cards}
+                      fanSlot={indexToSlot(index, config.cards, guesserViewMirrored)}
                     />
                   ))}
-                  {result.pick !== null && <SelectionHand index={result.pick} cardCount={config.cards} settled faint={guesserIsBot} />}
+                  {result.pick !== null && (
+                    <SelectionHand index={result.pick} cardCount={config.cards} mirrored={guesserViewMirrored} settled faint={guesserIsBot} />
+                  )}
                 </div>
                 <div className="round-verdict">
                   <b>{displayNames[result.winner]} WINS THE ROUND</b>
