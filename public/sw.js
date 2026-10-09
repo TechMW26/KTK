@@ -4,6 +4,29 @@ const PRECACHE = /*__PRECACHE__*/["/offline.html", "/manifest.webmanifest", "/ic
 const CACHE = `ktk-public-${VERSION}`;
 const PUBLIC_ASSET = /^\/(?:_next\/static\/|cards\/|icons\/|audio\/|video\/|maps\/|models\/|(?:dealer-swipe-hand|gauntlet-hand)\.png$|favicon\.svg$|manifest\.webmanifest$|offline\.html$)/;
 
+// Cached media is a complete 200 response; Safari requests a 206 byte slice.
+async function mediaResponse(response, range, ifRange) {
+  if (!range || response.status !== 200) return response;
+  if (ifRange && ifRange !== response.headers.get("etag") && ifRange !== response.headers.get("last-modified")) return response;
+  const match = /^bytes=(\d*)-(\d*)$/.exec(range);
+  if (!match || (!match[1] && !match[2])) return response;
+  const bytes = await response.arrayBuffer();
+  const size = bytes.byteLength;
+  const start = match[1] ? Number(match[1]) : Math.max(0, size - Number(match[2]));
+  const end = match[1] ? (match[2] ? Math.min(Number(match[2]), size - 1) : size - 1) : size - 1;
+  const headers = new Headers(response.headers);
+  headers.set("Accept-Ranges", "bytes");
+  if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start > end || start >= size || (!match[1] && Number(match[2]) === 0)) {
+    headers.set("Content-Range", `bytes */${size}`);
+    headers.set("Content-Length", "0");
+    return new Response(null, { status: 416, headers });
+  }
+  const part = bytes.slice(start, end + 1);
+  headers.set("Content-Range", `bytes ${start}-${end}/${size}`);
+  headers.set("Content-Length", String(part.byteLength));
+  return new Response(part, { status: 206, headers });
+}
+
 self.addEventListener("install", event => {
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE);
@@ -43,9 +66,10 @@ self.addEventListener("fetch", event => {
   event.respondWith((async () => {
     const cache = await caches.open(CACHE);
     const cached = await cache.match(request);
-    if (cached) return cached;
+    if (cached) return mediaResponse(cached, request.headers.get("range"), request.headers.get("if-range"));
     const response = await fetch(request);
-    if (response.ok && response.type !== "opaque") await cache.put(request, response.clone());
-    return response;
+    // A partial response must never replace the complete cached asset.
+    if (response.status === 200 && response.type !== "opaque") await cache.put(request, response.clone());
+    return mediaResponse(response, request.headers.get("range"), request.headers.get("if-range"));
   })());
 });

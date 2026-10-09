@@ -19,7 +19,7 @@ export default defineConfig(({ command, isPreview }) => ({
   // Nitro packages the production server. Local development uses vinext's
   // runnable RSC environments; Nitro's dev environments do not expose the
   // runner expected by @vitejs/plugin-rsc's request middleware.
-  plugins: [vinext(), ...(command === "build" || isPreview ? [nitro()] : []), tailwindcss()],
+  plugins: [vinext(), ...(command === "build" || isPreview ? [nitro({ plugins: ["./server/plugins/media-range.ts"] })] : []), tailwindcss()],
   server: {
     proxy: {
       // changeOrigin must be TRUE: the proxied request has to present

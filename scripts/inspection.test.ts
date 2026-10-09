@@ -168,7 +168,7 @@ check("card spacing follows usable width and hands paint above lifted cards", ()
   assert.match(royal, /--card-pitch:\s*calc\(\(96cqw[^;]*--card-count/);
   assert.match(royal, /--fan-overlap:\s*calc\(var\(--card-pitch\) - var\(--fan-card-w\)\)/);
   assert.match(royal, /\.game-screen \.cards-row \.selection-hand-img,\s*\.game-screen \.cards-row \.inspection-hand\s*\{[^}]*z-index:\s*80/);
-  assert.match(royal, /border:\s*2\.5px solid transparent/);
+  assert.match(royal, /\.game-screen::before\s*\{\s*content:\s*none/);
   assert.ok(!royal.includes("greek-key-corner.png"), "the frame uses no PNG corners");
 });
 

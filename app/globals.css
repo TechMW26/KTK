@@ -608,25 +608,17 @@ button:disabled { cursor: not-allowed; opacity: .42; }
   45% { text-shadow: 0 2px 0 #4a2b07, 0 0 26px rgba(250,205,90,.85); }
 }
 
-/* Opponent's turn: cards dimmed + non-interactive */
+/* Opponent's turn changes emphasis, never the shared fan geometry. */
 .guess-stage.opponent-turn .cards-row .playing-card,
 .play-stage.opponent-turn .cards-row.opponent-choice .playing-card {
   opacity: .6;
   filter: brightness(.7) saturate(.92);
-  transform: translateY(0);
   cursor: default;
 }
-.guess-stage.opponent-turn .cards-row .playing-card:not(:disabled):hover {
-  transform: none;
-}
-.guess-stage.opponent-turn .cards-row .playing-card:hover { transform: none; }
-/* The opponent's aimed / just-committed card must stay legible through the dim
-   `opponent-turn` treatment above: that block is MORE specific than the base
-   `.playing-card.chosen` rule, so without this the lift is cancelled and the gold
-   glow washed out exactly when the highlight needs to be seen. */
+/* Restore the aimed card's emphasis and compose its lift with the shared arc. */
 .guess-stage.opponent-turn .cards-row .playing-card.chosen {
   opacity: 1;
-  transform: translateY(-7px);
+  --lift: -7px;
   filter: drop-shadow(0 0 9px rgba(247,194,73,.8));
 }
 .guess-stage.opponent-turn .selection-hand-img { opacity: .42; filter: grayscale(.1) drop-shadow(0 8px 8px rgba(0,0,0,.5)); }

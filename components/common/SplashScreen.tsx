@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { startIntroPlayback } from "@/services/audio/introPlayback";
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import {
   claimSessionIntro, INTRO_FADE_MS, INTRO_ZOOM_MS,
@@ -103,6 +104,7 @@ export function SplashScreen({ onDone, logoRef, sound }: {
     const fadeOut = async () => {
       if (fadeStarted || disposed || completed) return;
       fadeStarted = true;
+      stopPlayback();
       clearTimeout(watchdog);
       video.pause(); // Hold the final/current frame throughout its fade.
       try { await sprite.decode(); } catch { finish(); return; }
@@ -149,16 +151,11 @@ export function SplashScreen({ onDone, logoRef, sound }: {
     void document.fonts.ready.then(resize);
     register();
 
-    // Keep sound where permitted, automatically retry muted when it is blocked.
-    video.muted = !sound;
-    void video.play().catch(async () => {
-      if (disposed || fadeStarted) return;
-      video.muted = true;
-      try { await video.play(); } catch { end(); }
-    });
+    const stopPlayback = startIntroPlayback(video, document, sound, end);
 
     return () => {
       disposed = true;
+      stopPlayback();
       clearTimeout(watchdog);
       observer.disconnect();
       window.removeEventListener("resize", resize);
@@ -180,7 +177,8 @@ export function SplashScreen({ onDone, logoRef, sound }: {
       <div ref={backdropRef} className="splash-backdrop" />
       <Image ref={spriteRef} className="splash-logo" src="/cards/ktk-emblem-gold.webp" alt="" width={720} height={720} unoptimized priority aria-hidden="true" />
       {/* Decorative animation without spoken content. */}
-      <video ref={videoRef} className="splash-video" src="/video/intro.mp4" aria-label="Kill the King intro animation" autoPlay muted playsInline preload="auto" />
+      {/* eslint-disable-next-line jsx-a11y/media-has-caption -- Soundtrack contains music and effects only, without dialogue. */}
+      <video ref={videoRef} className="splash-video" src="/video/intro.mp4" aria-label="Kill the King intro animation" autoPlay muted={!sound} playsInline preload="auto" />
       {phase === "playing" && <button id="intro-skip" className="splash-skip" type="button">SKIP</button>}
     </div>
   );
