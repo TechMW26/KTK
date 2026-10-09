@@ -39,12 +39,14 @@ production images are preloaded to avoid artwork appearing late during flips.
 The rustic gauntlet in `public/gauntlet-hand.png` was edited from the original
 pointing glove with the built-in imagegen tool. It has genuine alpha and a
 complete flared cuff, and paints above selected and inspected cards. The exact
-final prompt is saved in `assets/ui/gauntlet.prompt.txt`. The screen uses one reflective 2.5px gold frame. The outer frame and PNG
-corners were removed. Original artwork and hand sprites remain intact.
+final prompt is saved in `assets/ui/gauntlet.prompt.txt`. The textured screen is
+borderless, with narrower content gutters to use the space previously reserved
+for the frame. Gold detailing remains on cards and controls; PNG corners are
+no longer rendered. Original artwork and hand sprites remain intact.
 
 The table and utility footer occupy separate grid rows. Hide/bluff controls and
-the explicit guess confirmation stay in normal flow; short screens can scroll
-the table without covering controls. Every dealer, deal, guess, spectator and
+the explicit guess confirmation stay pinned above the footer without scrolling
+the playing board. Every dealer, deal, guess, spectator and
 reveal row uses the same arc, including mirrored slot order.
 
 The outer tilt is 18 degrees for five cards, 10 for three, and 6 for two.

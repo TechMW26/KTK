@@ -1,4 +1,4 @@
-/* One reflective frame, a responsive fan, and controls in normal flow. */
+/* An edge-to-edge textured surface, responsive fan and accessible controls. */
 .game-shell {
   --shell-top: env(safe-area-inset-top, 0px);
   --shell-bottom: env(safe-area-inset-bottom, 0px);
@@ -6,7 +6,7 @@
   background: #101110;
 }
 .game-screen {
-  --frame-gutter: clamp(18px, 5cqw, 28px);
+  --frame-gutter: clamp(12px, 3cqw, 20px);
   width: min(640px, 100%);
   max-width: 100%;
   height: calc(100dvh - var(--shell-top) - var(--shell-bottom));
@@ -19,15 +19,7 @@
     repeating-radial-gradient(circle at 20% 20%, #211b11 0 1px, #060605 1px 5px);
 }
 .game-screen::before {
-  inset: 4px;
-  z-index: 2;
-  border: 2.5px solid transparent;
-  border-radius: 0;
-  background: linear-gradient(135deg, #fbe5a5, #725121 18%, #c8a660 35%, #59401f 51%, #ffe7b0 73%, #8c672d 89%, #d8bc7b) border-box;
-  mask: linear-gradient(#fff 0 0) padding-box, linear-gradient(#fff 0 0);
-  mask-composite: exclude;
-  box-shadow: none;
-  pointer-events: none;
+  content: none;
 }
 /* Matte surfaces catch a little light along their top edge. */
 .game-screen .outline-button, .game-screen .topbar-button, .game-screen .bluff-choice {
@@ -46,8 +38,8 @@
   text-shadow: none;
   min-height: 48px;
 }
-.home-screen { padding: 76px var(--frame-gutter) 30px; }
-.home-topbar { top: 24px; left: var(--frame-gutter); right: var(--frame-gutter); }
+.home-screen { padding: 76px var(--frame-gutter) 20px; }
+.home-topbar { top: 16px; left: var(--frame-gutter); right: var(--frame-gutter); }
 .home-brand { margin: auto 0 32px; gap: 12px; }
 .home-brand .king-emblem { width: min(240px, 56cqw, 30dvh); }
 .home-menu { margin-bottom: auto; }
@@ -299,7 +291,7 @@
     margin-top: 12px;
   }
   .match-tools { padding-top: 8px; padding-bottom: 18px; }
-  .home-screen { padding-top: 76px; padding-bottom: 30px; }
+  .home-screen { padding-top: 76px; padding-bottom: 20px; }
   .home-brand { margin-bottom: 22px; }
   .game-screen .round-verdict { padding: 5px 0; margin: 8px auto; }
 }

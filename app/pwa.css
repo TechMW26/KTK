@@ -19,7 +19,6 @@ html, body { min-height: 100%; background: #101110; overscroll-behavior: none; }
 }
 .splash-screen { inset: 0 0 auto; height: var(--app-height); }
 .splash-skip { bottom: calc(20px + env(safe-area-inset-bottom, 0px)); }
-.game-screen::before { z-index: 100; }
 .game-screen:has(.mp-search) { padding: 0; }
 .game-screen .mp-frame.mp-search {
   padding-top: calc(var(--safe-top) + clamp(30px, 5dvh, 48px));
