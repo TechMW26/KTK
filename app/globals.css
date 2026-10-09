@@ -137,6 +137,9 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 }
 
 .settings-button, .mini-settings {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border: none;
   border-radius: 50%;
   background: rgba(0,0,0,.55);
@@ -350,6 +353,9 @@ button:disabled { cursor: not-allowed; opacity: .42; }
   bottom: 14px;
   left: 14px;
   z-index: 50;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 42px;
   height: 42px;
   border: 1px solid #8f4a27;
@@ -370,6 +376,9 @@ button:disabled { cursor: not-allowed; opacity: .42; }
   top: 14px;
   left: 14px;
   z-index: 50;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 42px;
   height: 42px;
   border: 1px solid var(--edge-line-strong, #74501b);
@@ -1315,6 +1324,9 @@ button:disabled { cursor: not-allowed; opacity: .42; }
   position: absolute;
   top: 14px;
   right: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 40px;
   height: 40px;
   border: 1px solid #9a6b1e;
@@ -1331,7 +1343,17 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .modal-card .gold-button + .outline-button { margin-top: 9px; }
 .rules-list { display: grid; gap: 12px; padding: 0; margin: 20px 0 22px; list-style: none; text-align: left; }
 .rules-list li { position: relative; padding-left: 24px; color: #ad9867; font-size: 11px; line-height: 1.45; }
-.rules-list li::before { content: "♛"; position: absolute; left: 0; color: var(--gold); }
+.rules-list li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 1px;
+  width: 13px;
+  height: 13px;
+  background-color: var(--gold);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M11.562 3.266a.5.5 0 0 1 .876 0L15.39 8.87a1 1 0 0 0 1.516.294L21.183 5.5a.5.5 0 0 1 .798.519l-2.834 10.246a1 1 0 0 1-.956.734H5.81a1 1 0 0 1-.957-.734L2.02 6.02a.5.5 0 0 1 .798-.519l4.276 3.664a1 1 0 0 0 1.516-.294z'/%3E%3Cpath d='M5 21h14'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M11.562 3.266a.5.5 0 0 1 .876 0L15.39 8.87a1 1 0 0 0 1.516.294L21.183 5.5a.5.5 0 0 1 .798.519l-2.834 10.246a1 1 0 0 1-.956.734H5.81a1 1 0 0 1-.957-.734L2.02 6.02a.5.5 0 0 1 .798-.519l4.276 3.664a1 1 0 0 0 1.516-.294z'/%3E%3Cpath d='M5 21h14'/%3E%3C/svg%3E") center / contain no-repeat;
+}
 .rules-list b { color: var(--gold-bright); }
 .settings-list { display: grid; gap: 10px; margin: 21px 0; text-align: left; }
 .settings-row { display: flex; align-items: center; justify-content: space-between; padding: 13px 14px; border: 1px solid #4c3514; background: rgba(0,0,0,.34); }
@@ -1365,6 +1387,56 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 }
 .account-actions input:focus { outline: none; border-color: var(--gold); box-shadow: 0 0 0 2px rgba(200,147,49,.22); }
 .account-copy { margin: 0 0 4px; color: #bfa872; font-size: 12px; line-height: 1.55; }
+
+/* Branded sign-in buttons (Google / Apple / Facebook / Email). */
+.social-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 46px;
+  padding: 0 16px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  font-family: inherit;
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  transition: filter 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+}
+.social-button svg { flex: 0 0 auto; }
+.social-button:hover:not(:disabled) { filter: brightness(1.08); }
+.social-button:active:not(:disabled) { transform: scale(0.985); }
+.social-button:disabled { opacity: 0.55; cursor: default; }
+
+.social-google {
+  background: #ffffff;
+  color: #1f1f1f;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+}
+.social-google:hover:not(:disabled) { filter: brightness(0.97); }
+
+.social-apple {
+  background: #000000;
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.4);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.55);
+}
+
+.social-facebook {
+  background: #1877f2;
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(8, 48, 102, 0.5);
+}
+
+.social-email {
+  background: linear-gradient(180deg, #f0c765 0%, #9a681f 52%, #6d4410 100%);
+  color: #160d02;
+  border-color: #f2cd72;
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.35), 0 5px 18px rgba(0, 0, 0, 0.45);
+}
 .account-identity { margin: 0 0 6px; color: var(--gold-bright); font-size: 15px; letter-spacing: .04em; word-break: break-word; }
 .account-error { margin: 10px 0 0; color: #e58265; font-size: 11px; line-height: 1.45; }
 .account-notice { margin: 10px 0 0; color: #d4ba79; font-size: 11px; line-height: 1.45; }
@@ -2230,3 +2302,52 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .add-friend-button:hover { border-color: #d0a03a; background: rgba(40,26,6,.7); color: #ffe6a8; }
 .add-friend-button:active { transform: scale(.92); }
 .add-friend-button:disabled { opacity: .55; }
+/* --- Lucide icon sizing -------------------------------------------------
+   SVG icons ignore the font-size set on their old glyph containers, so the
+   dimensions are pinned here to match the previous visual rhythm. */
+.inline-with-icon { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.inline-icon { display: inline-block; width: 13px; height: 13px; vertical-align: -2px; }
+
+.modal-symbol svg { width: 44px; height: 44px; }
+.logo-crown svg { width: 26px; height: 26px; }
+.logo.compact .logo-crown svg { width: 15px; height: 15px; }
+.ornament span svg { width: 10px; height: 10px; }
+
+.mini-settings svg { width: 28px; height: 28px; }
+.quit-button svg { width: 18px; height: 18px; }
+.back-button svg { width: 18px; height: 18px; }
+.topbar-button span[aria-hidden] svg { width: 16px; height: 16px; }
+
+.lives-row .life svg { width: 14px; height: 14px; }
+.turn-dot svg { width: 10px; height: 10px; }
+.turn-transition-crown svg { width: 30px; height: 30px; }
+
+.heart-pip svg { width: 31px; height: 31px; }
+.king-face svg { width: 42px; height: 42px; }
+.corner-rank small svg { width: 12px; height: 12px; }
+.card-crown svg { width: 28px; height: 28px; }
+.card-back b svg { width: 22px; height: 22px; }
+.card-back em svg { width: 14px; height: 14px; }
+
+.pass-icon svg { width: 78px; height: 78px; }
+.level-crown svg { width: 86px; height: 86px; }
+.held-card-mini i svg { width: 18px; height: 18px; }
+.bluff-choice > span svg { width: 29px; height: 29px; }
+.level-route i svg { width: 12px; height: 12px; }
+.account-lock svg { width: 14px; height: 14px; }
+
+/* --- Session intro: video fade, then app-logo handoff -------------------- */
+.splash-screen { position: fixed; inset: 0; z-index: 200; overflow: hidden; }
+.splash-backdrop { position: absolute; inset: 0; z-index: 0; background: #000; }
+.splash-video { position: absolute; inset: 0; z-index: 2; width: 100%; height: 100%; object-fit: cover; object-position: center; }
+.splash-logo { position: absolute; z-index: 1; max-width: none; object-fit: fill; transform-origin: 0 0; pointer-events: none; }
+.splash-screen[data-phase="playing"] .splash-logo { visibility: hidden; }
+.game-shell:has(.splash-screen) .home-app-logo { visibility: hidden; }
+.splash-skip {
+  position: absolute; z-index: 3; left: 50%; bottom: max(20px, env(safe-area-inset-bottom));
+  transform: translateX(-50%); min-height: 44px; padding: 0 18px;
+  border: 1px solid #8c753d; border-radius: 8px; background: #12130fde;
+  color: var(--gold-bright); font-size: 11px; letter-spacing: .1em;
+}
+.splash-skip:hover { border-color: var(--gold-bright); }
+@media (orientation: landscape) { .splash-video { object-fit: contain; } }

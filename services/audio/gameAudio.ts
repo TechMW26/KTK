@@ -26,8 +26,8 @@ const ALL_CUES: SoundCue[] = [
   "bluff-missed",
 ];
 
-const AMBIENT_SRC = "/audio/background.wav";
-const AMBIENT_VOLUME = 0.32;
+const AMBIENT_SRC = "/audio/background.mp3";
+const AMBIENT_VOLUME = 0.4;
 
 /** Cue volumes. The countdown sits slightly lower so it can nag without stinging. */
 const CUE_VOLUME = 0.82;

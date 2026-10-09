@@ -21,37 +21,44 @@
     "test:single-source": "node --experimental-strip-types scripts/single-source.test.ts",
     "test:friends": "node --experimental-strip-types scripts/friends.test.ts",
     "test:matchmaking": "node --experimental-strip-types scripts/matchmaking.test.ts",
+    "test:search-map": "node --experimental-strip-types scripts/search-map-tour.test.ts",
     "test:header-actions": "node --experimental-strip-types scripts/header-actions.test.ts",
     "test:facebook-auth": "node --experimental-strip-types scripts/facebook-auth.test.ts",
     "test:card-fan": "node --experimental-strip-types scripts/card-fan.test.ts",
     "test:inspection": "node --experimental-strip-types scripts/inspection.test.ts",
     "test:reveal-perspective": "node --experimental-strip-types scripts/reveal-perspective.test.ts",
     "test:rooms": "node --experimental-strip-types scripts/room-verdicts.test.ts",
-    "test": "npm run typecheck && npm run test:rules && npm run test:bot && npm run test:flow && npm run test:progression && npm run test:logic && npm run test:single-source && npm run test:friends && npm run test:matchmaking && npm run test:header-actions && npm run test:facebook-auth && npm run test:card-fan && npm run test:inspection && npm run test:reveal-perspective",
+    "test": "npm run typecheck && npm run test:rules && npm run test:bot && npm run test:flow && npm run test:progression && npm run test:logic && npm run test:single-source && npm run test:friends && npm run test:matchmaking && npm run test:header-actions && npm run test:facebook-auth && npm run test:card-fan && npm run test:inspection && npm run test:reveal-perspective && npm run test:intro && npm run test:dealer-swipe",
     "app:build": "node scripts/build-capacitor-web.mjs",
     "app:sync": "cap sync android",
     "app:apk": "cd android && gradlew.bat assembleDebug",
-    "app:build-run": "node scripts/build-capacitor-web.mjs && cap sync android"
+    "app:build-run": "node scripts/build-capacitor-web.mjs && cap sync android",
+    "test:intro": "node --experimental-strip-types scripts/intro-transition.test.ts",
+    "test:dealer-swipe": "node --experimental-strip-types scripts/dealer-swipe.test.ts"
   },
   "dependencies": {
     "@capacitor/android": "^8.5.1",
     "@capacitor/cli": "^8.5.1",
     "@capacitor/core": "^8.5.1",
-    "firebase": "^11.0.0",
-    "nitro": "3.0.260610-beta",
+    "firebase": "^9.14.0",
+    "lucide-react": "^1.54.0",
+    "nitro": "^3.0.260903-beta",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "three": "^0.186.1"
   },
   "devDependencies": {
     "@capacitor/assets": "^3.0.5",
     "@cloudflare/vite-plugin": "^1.53.1",
     "@eslint/js": "9.39.4",
-    "@next/eslint-plugin-next": "16.2.6",
+    "@next/eslint-plugin-next": "^16.2.6",
     "@tailwindcss/postcss": "4.2.1",
     "@tailwindcss/vite": "^4.3.3",
     "@types/node": "22.19.19",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
+    "@types/three": "^0.186.0",
+    "@vinext/types": "1.0.1",
     "@vitejs/plugin-react": "6.0.2",
     "@vitejs/plugin-rsc": "0.5.34",
     "cross-env": "^10.1.0",
@@ -64,9 +71,18 @@
     "tailwindcss": "4.2.1",
     "typescript": "5.9.3",
     "typescript-eslint": "8.59.3",
-    "vinext": "^1.0.0-beta.8",
+    "vinext": "1.0.0-beta.8",
     "vite": "^8.2.2",
-    "wrangler": "4.125.0"
+    "wrangler": "^4.149.0"
   },
-  "type": "module"
+  "type": "module",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@firebase/util",
+      "esbuild",
+      "protobufjs",
+      "sharp",
+      "workerd"
+    ]
+  }
 }

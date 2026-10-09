@@ -11,8 +11,10 @@ A mobile-first strategy and bluff card game built with React, TypeScript, Vinext
 - One bluff per player in each level
 - Local two-player and versus-bot modes
 - Five-turn strategy constellations for both players
-- Animated card dealing using the supplied illustrated hand assets
-- Individual card-throw animations synchronized with the Dealer hand
+- Responsive semicircle card fans with rustic gold artwork
+- A dealer gauntlet swipes in from above and places each card before withdrawing
+- A session-only autoplay intro fades into the app's golden logo
+- Online matchmaking, private rooms, and friend challenges using Firebase
 - Ambient music, countdown tension, win, loss, and Bluff sound effects
 - Confirmed quit-to-home flow
 
@@ -64,4 +66,16 @@ pnpm typecheck
 
 For a production-ready build, run `pnpm build`.
 
-The project does not require a database or environment variables.
+Local pass-and-play and bot practice work without a database. Online play and
+account features require Firebase Authentication and Realtime Database. Copy
+`.env.local.example` to `.env.local` and configure the `NEXT_PUBLIC_FIREBASE_*`
+values for your Firebase project. Keep `.env.local` out of Git.
+
+Run the full validation suite with `pnpm test`, plus `pnpm test:search-map`
+and `pnpm test:rooms` for the matchmaking map and room verdict checks.
+For a standalone Node production server, run `pnpm build:node`, then
+`pnpm preview:node` (set `PORT` to choose a listening port).
+
+Asset sources and generation prompts are in `assets/`; visual implementation
+notes are in `docs/`. Local screenshots and recordings in `artifacts/` are
+excluded from the repository.

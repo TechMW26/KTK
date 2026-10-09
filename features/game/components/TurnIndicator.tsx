@@ -1,5 +1,6 @@
 import { Ornament } from "@/components/common/Brand";
 import type { TurnAnnouncement } from "@/features/game/types/game";
+import { Circle, Crown } from "lucide-react";
 
 /**
  * The two ways the game announces whose turn it is.
@@ -17,7 +18,9 @@ export function TurnIndicator({ turn }: { turn: TurnAnnouncement | null }) {
   const isPlayer = turn.kind === "player";
   return (
     <div className={["turn-indicator", isPlayer ? "player-turn" : "opponent-turn"].join(" ")}>
-      <span className="turn-dot">●</span>
+      <span className="turn-dot">
+        <Circle fill="currentColor" strokeWidth={0} />
+      </span>
       <span className="turn-text">
         <b>{turn.title}</b>
         <small>{turn.subtitle}</small>
@@ -41,7 +44,9 @@ export function TurnTransition({ turn }: { turn: TurnAnnouncement | null }) {
       aria-hidden="true"
     >
       <div className="turn-transition-announce">
-        <span className="turn-transition-crown">♛</span>
+        <span className="turn-transition-crown">
+          <Crown strokeWidth={2} />
+        </span>
         <b className="turn-transition-title">{turn.title}</b>
         <Ornament />
         <small className="turn-transition-subtitle">{turn.subtitle}</small>

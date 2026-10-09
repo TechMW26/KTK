@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { ArrowLeft, Check } from "lucide-react";
 import useMultiplayer from "@/hooks/useMultiplayer";
 import { normalizeRoomCode } from "@/lib/multiplayer/roomCode";
 import { RESULT_COPY } from "@/lib/game/rules";
@@ -279,10 +280,6 @@ export default function MultiplayerPage() {
   return (
     <main className="game-shell mp">
       <section className={["game-screen", "mp-screen", revealTone].filter(Boolean).join(" ")}>
-        <div className="corner corner-tl" />
-        <div className="corner corner-tr" />
-        <div className="corner corner-bl" />
-        <div className="corner corner-br" />
         {revealTone ? <div className="impact-vignette" /> : null}
 
         {/* temporary full-screen busy / entrance veil */}
@@ -400,7 +397,8 @@ function JoinRoomScreen({
   return (
     <div className="mp-frame mp-flow">
       <button className="mp-back home-link" onClick={onBack}>
-        ← Back
+        <ArrowLeft size={16} strokeWidth={2.25} />
+        Back
       </button>
       <div className="mp-menu-brand">
         <MpLogo />
@@ -470,7 +468,8 @@ function WaitingScreen({
   return (
     <div className="mp-frame mp-flow">
       <button className="mp-back home-link" onClick={onLeave}>
-        ← Back
+        <ArrowLeft size={16} strokeWidth={2.25} />
+        Back
       </button>
       <div className="stage-title">
         <MpEyebrow>YOU ARE THE HOST</MpEyebrow>
@@ -483,7 +482,14 @@ function WaitingScreen({
         <small>ROOM CODE</small>
         <strong className="mp-room-code">{mp.code}</strong>
         <button className="gold-button mp-wide" onClick={onCopy}>
-          {copied ? "COPIED ✓" : "COPY CODE"}
+          {copied ? (
+            <span className="inline-with-icon">
+              <Check strokeWidth={2.75} />
+              COPIED
+            </span>
+          ) : (
+            "COPY CODE"
+          )}
         </button>
         <button className="outline-button mp-wide" onClick={() => void mp.shareInvite()}>
           SHARE

@@ -13,6 +13,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+const royal = readFileSync(new URL("../app/royal.css", import.meta.url), "utf8");
 const types = readFileSync(new URL("../lib/multiplayer/types.ts", import.meta.url), "utf8");
 const service = readFileSync(new URL("../services/multiplayerService.ts", import.meta.url), "utf8");
 const hook = readFileSync(new URL("../hooks/useMultiplayer.ts", import.meta.url), "utf8");
@@ -117,14 +118,14 @@ check("the opponent's hand is non-interactive", () => {
 
 // --- the hand asset --------------------------------------------------------
 
-check("the hand uses the existing project asset, no new art", () => {
-  assert.match(visual, /src="\/guesser-hand\.png"/);
+check("the hand uses the complete transparent gauntlet asset", () => {
+  assert.match(visual, /src="\/gauntlet-hand\.png"/);
   assert.ok(!/<img[^>]*>[^<]*<svg/.test(visual), "no inline replacement graphic");
 });
 
 check("the hand is anchored to the card slot, not the screen", () => {
   assert.match(visual, /cardFanSlot\(slot, cardCount\)/);
-  assert.match(visual, /"--inspect-x": `\$\{x\}px`/);
+  assert.match(visual, /"--inspect-x": `calc\(\$\{x \/ CARD_PITCH\} \* var\(--card-pitch/);
 });
 
 // --- proportional movement -------------------------------------------------
@@ -145,32 +146,30 @@ check("the card and hand share one direction flag so they move together", () => 
   assert.match(visual, /"--inspect-dir": mirrored \? -1 : 1/);
 });
 
-check("a height-bound viewport cannot leave the board wider than it is tall", () => {
-  const rule = css.match(/\.game-screen\s*\{[^}]*\}/)?.[0] ?? "";
-  // Both width and max-width must carry the dvh cap, or aspect-ratio keeps the
-  // board wide while the height cap clips it.
-  assert.match(rule, /width:\s*min\([^)]*100dvh/);
-  assert.match(rule, /max-width:\s*min\([^)]*100dvh/);
+check("the board fits viewport width and height independently", () => {
+  const rule = royal.match(/\.game-screen\s*\{[^}]*\}/)?.[0] ?? "";
+  assert.match(rule, /width:\s*min\(640px, 100%\)/);
+  assert.match(rule, /height:\s*calc\([^;]*100dvh/);
+  assert.match(rule, /max-width:\s*100%/);
   // The shell must not add its padding outside the viewport box.
   assert.match(css, /\.game-shell\s*\{[^}]*box-sizing:\s*border-box/);
 });
 
 // --- responsive board ------------------------------------------------------
 
-check("the hand rides the card's lift, not its resting slot", () => {
-  const rule = css.match(/\.inspection-hand\s*\{[^}]*\}/)?.[0] ?? "";
-  // Half the card height, from the shared token — no magic pixels, no `50%`
-  // (which would resolve against the wrong box).
-  assert.match(rule, /--fan-card-h[^;]*\*\s*0?\.5/);
-  assert.match(rule, /--inspect-dir/);
+check("the inspected hand follows the same lift as its card", () => {
+  const cardRule = royal.match(/\.game-screen \.cards-row\.fanned \.playing-card\.card-inspected\s*\{[^}]*\}/)?.[0] ?? "";
+  const handRule = royal.match(/\.game-screen \.cards-row \.inspection-hand\s*\{[^}]*top:[^}]*\}/)?.[0] ?? "";
+  assert.match(cardRule, /var\(--inspect-lift\) \* var\(--inspect-dir/);
+  assert.match(handRule, /var\(--inspect-lift\) \* var\(--inspect-dir/);
 });
 
-check("the canonical board scales as one unit", () => {
-  const rule = css.match(/\.game-screen\s*\{[^}]*\}/)?.[0] ?? "";
-  assert.match(rule, /aspect-ratio:\s*430\s*\/\s*900/);
-  // The old fixed minimum made the board overflow short phones.
-  const block = css.slice(css.indexOf(".game-screen {"), css.indexOf(".game-screen::before"));
-  assert.ok(!/min-height:\s*700px/.test(block), "the 700px floor must be gone");
+check("card spacing follows usable width and hands paint above lifted cards", () => {
+  assert.match(royal, /--card-pitch:\s*calc\(\(96cqw[^;]*--card-count/);
+  assert.match(royal, /--fan-overlap:\s*calc\(var\(--card-pitch\) - var\(--fan-card-w\)\)/);
+  assert.match(royal, /\.game-screen \.cards-row \.selection-hand-img,\s*\.game-screen \.cards-row \.inspection-hand\s*\{[^}]*z-index:\s*80/);
+  assert.match(royal, /border:\s*2\.5px solid transparent/);
+  assert.ok(!royal.includes("greek-key-corner.png"), "the frame uses no PNG corners");
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

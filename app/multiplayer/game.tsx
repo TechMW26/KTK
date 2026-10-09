@@ -1,12 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import Image from "next/image";
 import { LEVELS, levelConfig, RESULT_COPY, LEVEL_COUNT, roundsPerLevel } from "@/lib/game/rules";
-import { RULESET_ROUNDS, roundInCourt, consecutiveLabel } from "@/lib/game/flow";
+import { RULESET_ROUNDS, roundInCourt } from "@/lib/game/flow";
 import { dealTimings, PULL_MS, SHUFFLE_MS } from "@/features/game/constants/pacing";
 import { PowerDock } from "@/features/game/components/PowerDock";
 import { SelectionHand } from "@/features/game/components/SelectionHand";
+import { DealerSwipe } from "@/features/game/components/DealerSwipe";
 import { InspectionVisual } from "@/features/game/components/InspectionVisual";
 import { StrategyModal } from "@/features/game/components/StrategyModal";
 import { indexToSlot } from "@/features/game/logic/cardFan";
@@ -15,6 +15,7 @@ import type useMultiplayer from "@/hooks/useMultiplayer";
 import { useFriends } from "@/hooks/useFriends";
 import { PlayingCard } from "@/components/ui/PlayingCard";
 import { LifePips } from "@/features/game/components/GameHeader";
+import { Crown, LogOut, Menu } from "lucide-react";
 import { MpEyebrow, MpFrame, MpLogo, MpModal, MpOrnament } from "./ui";
 
 type MP = ReturnType<typeof useMultiplayer>;
@@ -114,7 +115,7 @@ export default function GameView({ mp, onLeave }: { mp: MP; onLeave: () => void 
         <MpModal
           eyebrow="LEAVE THE KINGDOM?"
           title="EXIT GAME"
-          symbol="↪"
+          symbol={<LogOut strokeWidth={1.75} />}
           onClose={() => setExitOpen(false)}
           className="quit-modal"
         >
@@ -140,29 +141,29 @@ export default function GameView({ mp, onLeave }: { mp: MP; onLeave: () => void 
   if (g.phase === "match-end") return <MatchEnd mp={mp} onLeave={onLeave} />;
   if (g.phase === "level-end")
     return (
-      <>
+      <div className="online-board">
         <LevelEnd mp={mp} onRequestExit={requestExit} friendAction={addFriend} />
-        {dock}
+        <footer className="match-tools">{dock}</footer>
         {panel}
-      </>
+      </div>
     );
 
   // Result of a round is available to replay.
   if (g.phase === "reveal" && g.lastResult)
     return (
-      <>
+      <div className="online-board">
         <Reveal mp={mp} onRequestExit={requestExit} friendAction={addFriend} />
-        {dock}
+        <footer className="match-tools">{dock}</footer>
         {panel}
-      </>
+      </div>
     );
 
   return (
-    <>
-      <LiveRound mp={mp} bluffOpen={bluffOpen} setBluffOpen={setBluffOpen} onRequestExit={requestExit} friendAction={addFriend} />
-      {dock}
+    <div className="online-board">
+      <LiveRound mp={mp} bluffOpen={bluffOpen} onRequestExit={requestExit} friendAction={addFriend} />
+      <footer className="match-tools">{dock}</footer>
       {panel}
-    </>
+    </div>
   );
 }
 
@@ -180,7 +181,7 @@ function HeaderActions({
     <div className="mp-head-actions">
       {friendAction}
       <button className="quit-button" onClick={onLeave} aria-label={label}>
-        ↪
+        <LogOut size={18} strokeWidth={2} />
       </button>
     </div>
   );
@@ -213,7 +214,7 @@ function Header({ mp, activeSeconds }: { mp: MP; activeSeconds: number | null })
             <b>{mp.livesMode && g.lives ? g.lives[me] : g.scores[me]}</b>
           </span>
           <i>
-            {cfg.cards} CARDS · {cfg.points}×
+            VS
           </i>
           <span>
             <b>{mp.livesMode && g.lives ? g.lives[them] : g.scores[them]}</b>
@@ -270,7 +271,9 @@ function MpLiveTimer({ seconds, cfgSeconds }: { seconds: number | null; cfgSecon
   if (seconds == null) {
     return (
       <div className="header-controls">
-        <span className="mini-settings mp-headstatic">♛</span>
+        <span className="mini-settings mp-headstatic">
+          <Crown strokeWidth={2} />
+        </span>
       </div>
     );
   }
@@ -288,13 +291,11 @@ function MpLiveTimer({ seconds, cfgSeconds }: { seconds: number | null; cfgSecon
 function LiveRound({
   mp,
   bluffOpen,
-  setBluffOpen,
   onRequestExit,
   friendAction,
 }: {
   mp: MP;
   bluffOpen: boolean;
-  setBluffOpen: (v: boolean) => void;
   onRequestExit: () => void;
   friendAction?: ReactNode;
 }) {
@@ -346,7 +347,7 @@ const opponentPick =
         />
       ) : null}
       {isGuess && iAct ? (
-        <GuessStage mp={mp} onCallBluff={() => setBluffOpen(true)} bluffOpen={bluffOpen} />
+        <GuessStage mp={mp} bluffOpen={bluffOpen} />
       ) : null}
       {isGuess && !iAct ? (
         <Waiting
@@ -356,9 +357,9 @@ const opponentPick =
         />
       ) : null}
       {opponentPick !== null ? (
-        <div className="cards-row">
+        <div className="cards-row fanned">
           {Array.from({ length: cfg.cards }, (_, i) => (
-            <PlayingCard key={i} index={i} chosen={i === opponentPick} disabled />
+            <PlayingCard key={i} index={i} fanCount={cfg.cards} fanSlot={i} chosen={i === opponentPick} disabled />
           ))}
           <SelectionHand index={opponentPick} cardCount={cfg.cards} faint />
         </div>
@@ -411,16 +412,13 @@ function OpponentRow({ mp }: { mp: MP }) {
 }
 
 /**
- * Card-distribution beat. The Dealer's illustrated hand sweeps the table and
- * throws one card into each slot — the exact `dealer-hand-rig` /
- * `flying-deal-card` choreography the single-player shuffle stage uses, so the
- * two modes look identical. Nobody acts; the animation owns the beat and hands
- * off to the guess phase when it lands (the parent guards a stalled peer).
+ * Shared local/online card-distribution beat. Nobody acts until the cards
+ * settle and the dealer's forearm has withdrawn above the screen. The parent
+ * still guards a stalled peer without changing the authoritative card order.
  */
 function ShuffleStage({ mp }: { mp: MP }) {
   const g = mp.game!;
   const cfg = levelConfig(g.level);
-  const iAmDealer = g.dealerSeat === mp.mySeat;
   // The deal cadence is driven by the shared pacing constant so both clients run
   // the identical animation window and leave the beat on the same frame.
   const deal = useMemo(() => dealTimings(cfg.cards, SHUFFLE_MS), [cfg.cards]);
@@ -440,56 +438,12 @@ function ShuffleStage({ mp }: { mp: MP }) {
       className="mp-stage play-stage shuffle-stage"
       style={{ "--shuffle-ms": `${deal.windowSec}s` } as React.CSSProperties}
     >
-      <div
-        className="dealer-hand-rig"
-        aria-hidden="true"
-        style={{
-          "--deal-start": `${-((cfg.cards - 1) * 38)}px`,
-          "--deal-end": `${(cfg.cards - 1) * 38}px`,
-        } as React.CSSProperties}
-      >
-        <span className="held-card-mini"><i>♛</i></span>
-        <Image
-          className="dealer-hand-img"
-          src="/dealer-hand.png"
-          alt=""
-          width={392}
-          height={952}
-          unoptimized
-        />
+      <div className="stage-title">
+        <MpEyebrow>DEALING</MpEyebrow>
+        <h2 className="mp-title">FIND THE KING</h2>
+        <p>Arranging the cards…</p>
       </div>
-      <div className="stage-title above-hand">
-        <MpEyebrow>THE CARDS ARE IN MOTION</MpEyebrow>
-        <h2 className="mp-title">GAME SETUP</h2>
-        <MpOrnament />
-        <p>
-          {iAmDealer
-            ? "You locked the King in. The cards are being dealt…"
-            : `${mp.opponent ?? "Opponent"} is arranging the cards…`}
-        </p>
-      </div>
-      <div className="cards-row dealing">
-        <div className="deal-flight-layer" aria-hidden="true">
-          {Array.from({ length: cfg.cards }, (_, index) => {
-            const offset = index - (cfg.cards - 1) / 2;
-            return (
-              <span
-                key={index}
-                className="flying-deal-card"
-                style={{
-                  "--slot-x": `${offset * 76}px`,
-                  "--flight-delay": `${deal.launch()}s`,
-                  "--flight-duration": `${deal.flight}s`,
-                } as React.CSSProperties}
-              />
-            );
-          })}
-        </div>
-        {Array.from({ length: cfg.cards }, (_, index) => (
-          <PlayingCard key={index} index={index} disabled dealDelay={deal.land()} />
-        ))}
-      </div>
-      <p className="bottom-copy">Cards are being placed.<br />Watch closely.</p>
+      <DealerSwipe cards={cfg.cards} mirrored={(mp.mySeat ?? 0) === 1} />
     </section>
   );
 }
@@ -529,19 +483,17 @@ function HideStage({ mp }: { mp: MP }) {
   return (
     <section className="mp-stage">
       <div className="stage-title">
-        <MpEyebrow>YOU ARE THE DEALER · ROUND {mp.useOptionalFlow ? roundInCourt(g.round) : g.round}</MpEyebrow>
+        <MpEyebrow>YOUR TURN</MpEyebrow>
         <h2 className="mp-title">HIDE THE KING</h2>
-        <MpOrnament />
-        <p>Choose a hiding place, then lock the cards.</p>
-        {mp.useOptionalFlow ? (
-          <p className="block-note">HIDING {consecutiveLabel(me, g.round, "complete")}</p>
-        ) : null}
+        <p>Tap a card to hide the King.</p>
       </div>
-      <div className="cards-row dealer-choice turn-active">
+      <div className="cards-row fanned dealer-choice turn-active">
         {Array.from({ length: cfg.cards }, (_, i) => (
           <PlayingCard
             key={i}
             index={i}
+            fanCount={cfg.cards}
+            fanSlot={i}
             chosen={!isBluff && kingIndex === i}
             inspected={!isBluff && kingIndex === i}
             disabled={busy || isBluff}
@@ -551,6 +503,7 @@ function HideStage({ mp }: { mp: MP }) {
             }}
           />
         ))}
+        <SelectionHand index={isBluff ? null : kingIndex} cardCount={cfg.cards} />
       </div>
       <div className="dealer-actions">
         <button
@@ -561,16 +514,18 @@ function HideStage({ mp }: { mp: MP }) {
             setKingIndex(null);
           }}
         >
-          <span>☵</span>
-          <b>{bluffUsed ? "BLUFF ALREADY USED" : "USE YOUR BLUFF"}</b>
+          <span>
+            <Menu strokeWidth={2} />
+          </span>
+          <b>{bluffUsed ? "BLUFF USED" : "BLUFF"}</b>
           <small>
             {bluffUsed
-              ? "One per court. Ready in the next court."
-              : "Place only empty cards. Once this court."}
+              ? "Ready next court"
+              : "No King · once per court"}
           </small>
         </button>
         <button className="gold-button" disabled={!canLock || busy} onClick={lock}>
-          {busy ? "LOCKING…" : "LOCK THE CARDS"}
+          {busy ? "LOCKING…" : isBluff ? "LOCK BLUFF" : "LOCK HIDING PLACE"}
         </button>
       </div>
     </section>
@@ -580,11 +535,9 @@ function HideStage({ mp }: { mp: MP }) {
 function GuessStage({
   mp,
   bluffOpen,
-  onCallBluff,
 }: {
   mp: MP;
   bluffOpen: boolean;
-  onCallBluff: () => void;
 }) {
   const g = mp.game!;
   const cfg = levelConfig(g.level);
@@ -673,10 +626,9 @@ function GuessStage({
   return (
     <section className="mp-stage">
       <div className="stage-title">
-        <MpEyebrow>YOUR TURN · GUESSER</MpEyebrow>
+        <MpEyebrow>YOUR TURN</MpEyebrow>
         <h2 className="mp-title">FIND THE KING</h2>
-        <MpOrnament />
-        <p>{done ? "Revealing the cards…" : `Pick a card before the timer ends — ${left}s.`}</p>
+        <p>{done ? "Revealing…" : "Tap a card, then confirm your pick."}</p>
       </div>
       <div className={["cards-row fanned turn-active", mirrored ? "mirrored" : ""].filter(Boolean).join(" ")}>
         {Array.from({ length: cfg.cards }, (_, i) => (
@@ -696,10 +648,11 @@ function GuessStage({
           <SelectionHand index={targetCard} cardCount={cfg.cards} mirrored={mirrored} />
         )}
       </div>
-      <button className="outline-button wide mp-wide" onClick={onCallBluff} disabled={done}>
-        CALL THE BLUFF
-      </button>
-      <p className="bottom-copy">Find the King — or call a bluff.</p>
+      <div className="guess-actions">
+        <button className="gold-button" disabled={done || targetCard === null} onClick={() => { if (targetCard !== null) void pick(targetCard); }}>
+          {targetCard === null ? "CHOOSE A CARD" : `CONFIRM CARD ${targetCard + 1}`}
+        </button>
+      </div>
     </section>
   );
 }
@@ -715,9 +668,8 @@ function Waiting({ title, text, row }: { title: string; text: string; row?: Reac
         </span>
       </div>
       <div className="stage-title">
-        <MpEyebrow>AWAY FROM THE BOARD</MpEyebrow>
-        <h2 className="mp-title">WATCH &amp; WAIT</h2>
-        <MpOrnament />
+        <MpEyebrow>OPPONENT’S TURN</MpEyebrow>
+        <h2 className="mp-title">{text.includes("hiding") ? "HIDING THE KING" : "FINDING THE KING"}</h2>
         <p>{text}</p>
       </div>
       {/* The opponent's live row, when supplied: their cards plus the physical
@@ -762,11 +714,13 @@ function Reveal({ mp, onRequestExit, friendAction }: { mp: MP; onRequestExit: ()
           <p>{copy.subtitle}</p>
         </div>
         <div className="reveal-hand-wrap">
-          <div className="cards-row reveal-row mp-reveal">
+          <div className="cards-row fanned reveal-row mp-reveal">
             {Array.from({ length: cfg.cards }, (_, i) => (
               <PlayingCard
                 key={i}
                 index={i}
+                fanCount={cfg.cards}
+                fanSlot={i}
                 faceUp
                 blank={result.wasBluff}
                 king={!result.wasBluff && i === result.kingIndex}
@@ -776,12 +730,12 @@ function Reveal({ mp, onRequestExit, friendAction }: { mp: MP; onRequestExit: ()
                 flipDelay={(i * 70) / 1000}
               />
             ))}
+            <MpRevealHand
+              pick={result.pick}
+              cards={cfg.cards}
+              self={result.guesserSeat === mp.mySeat}
+            />
           </div>
-          <MpRevealHand
-            pick={result.pick}
-            cards={cfg.cards}
-            self={result.guesserSeat === mp.mySeat}
-          />
         </div>
         <div className="round-verdict">
           <b>{meWon ? "YOU WIN THE ROUND" : `${mp.opponent ?? "Opponent"} WINS THE ROUND`}</b>
@@ -815,19 +769,7 @@ function MpRevealHand({
   cards: number;
   self: boolean;
 }) {
-  if (pick === null || cards <= 0) return null;
-  const offset = pick - (cards - 1) / 2;
-  const style = { "--hand-x": `${offset * 76}px` } as React.CSSProperties;
-  return (
-    /* eslint-disable-next-line @next/next/no-img-element */
-    <img
-      className={["selection-hand-img", self ? "" : "faint"].filter(Boolean).join(" ")}
-      style={style}
-      src="/guesser-hand.png"
-      alt=""
-      aria-hidden="true"
-    />
-  );
+  return <SelectionHand index={pick} cardCount={cards} settled faint={!self} />;
 }
 
 function LevelEnd({ mp, onRequestExit, friendAction }: { mp: MP; onRequestExit: () => void; friendAction?: ReactNode }) {
@@ -891,7 +833,9 @@ function MatchEnd({ mp, onLeave }: { mp: MP; onLeave: () => void }) {
     <MpFrame>
       <HeaderActions onLeave={onLeave} label="Leave match" />
       <section className="mp-stage">
-        <span className="level-crown">♛</span>
+        <span className="level-crown">
+          <Crown strokeWidth={1.75} />
+        </span>
         <MpEyebrow>THE KINGDOM HAS SPOKEN</MpEyebrow>
         <h2 className="mp-title">{drawn ? "A ROYAL DRAW" : meWon ? "YOU WIN!" : `${mp.opponent ?? "Opponent"} WINS!`}</h2>
         <MpOrnament />

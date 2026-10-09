@@ -1,5 +1,6 @@
 import { Modal as DialogShell } from "@/components/ui/Modal";
 import { Eyebrow, Ornament } from "@/components/common/Brand";
+import { Crown, Settings } from "lucide-react";
 
 /**
  * The two informational dialogs — the rulebook and the experience settings.
@@ -12,7 +13,9 @@ import { Eyebrow, Ornament } from "@/components/common/Brand";
 export function RulesModal({ onClose }: { onClose: () => void }) {
   return (
     <DialogShell onClose={onClose}>
-      <span className="modal-symbol">♛</span>
+      <span className="modal-symbol">
+        <Crown strokeWidth={1.75} />
+      </span>
       <Eyebrow>KNOW THE COURT</Eyebrow>
       <h3>HOW TO PLAY</h3>
       <Ornament />
@@ -58,7 +61,9 @@ export function SettingsModal({
 }) {
   return (
     <DialogShell onClose={onClose}>
-      <span className="modal-symbol">⚙</span>
+      <span className="modal-symbol">
+        <Settings strokeWidth={1.75} />
+      </span>
       <Eyebrow>YOUR EXPERIENCE</Eyebrow>
       <h3>SETTINGS</h3>
       <Ornament />

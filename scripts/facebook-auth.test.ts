@@ -83,7 +83,7 @@ check("the collision escape hatch passes the colliding provider through", () => 
 
 check("the sign-in dialog offers Facebook next to the other providers", () => {
   assert.match(dialog, /startFacebookSignIn/);
-  assert.match(dialog, /CONTINUE WITH FACEBOOK/);
+  assert.match(dialog, /Continue with Facebook/);
   assert.match(dialog, /collisionProvider: "facebook"/);
 });
 

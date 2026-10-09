@@ -3,6 +3,7 @@ import { Eyebrow } from "@/components/common/Brand";
 import { describePattern } from "@/features/game/logic/strategy";
 import type { PickFrequency } from "@/features/game/logic/strategy";
 import type { RoundHistoryEntry, Seat } from "@/features/game/types/game";
+import { Check, Triangle } from "lucide-react";
 
 /**
  * The Strategy board.
@@ -55,7 +56,9 @@ export function StrategyModal({
 
   return (
     <DialogShell onClose={onClose} className="strategy-modal">
-      <span className="modal-symbol">▱</span>
+      <span className="modal-symbol">
+        <Triangle strokeWidth={1.75} />
+      </span>
       <Eyebrow>{levelName}</Eyebrow>
       <h3>STRATEGY</h3>
 
@@ -108,7 +111,7 @@ export function StrategyModal({
                     {selected && (
                       <span>
                         {cardNumber}
-                        <small>✓</small>
+                        <small><Check strokeWidth={2.5} /></small>
                       </span>
                     )}
                     {entry?.calledBluff && column === 2 && (

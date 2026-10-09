@@ -1,6 +1,7 @@
 import { Logo } from "@/components/common/Brand";
 import { STARTING_LIVES } from "@/features/game/constants/courts";
 import type { Seat } from "@/features/game/types/game";
+import { Heart, Settings } from "lucide-react";
 
 /**
  * The match header: brand, round medallion, turn clock and score rail.
@@ -22,7 +23,7 @@ export function LifePips({ filled }: { filled: number }) {
     <>
       {Array.from({ length: STARTING_LIVES }, (_, pip) => (
         <span key={pip} className={`life ${pip < count ? "" : "lost"}`} aria-hidden="true">
-          ❤
+          <Heart fill="currentColor" strokeWidth={1.5} />
         </span>
       ))}
     </>
@@ -65,7 +66,7 @@ export function GameHeader({
   const progress = time === null ? 0 : Math.max(0, time / seconds) * 360;
 
   return (
-    <header className="game-header">
+    <header className="game-header" aria-label={`Level ${level + 1}, round ${round}, ${cardCount} cards, ${points} point stakes${activeAction ? `, ${activeAction}` : ""}`}>
       <Logo compact />
 
       <div className="round-medallion">
@@ -76,7 +77,7 @@ export function GameHeader({
       <div className="header-controls">
         {time === null ? (
           <button className="mini-settings" onClick={onSettings} aria-label="Settings">
-            ⚙
+            <Settings strokeWidth={2} />
           </button>
         ) : (
           <div className="timer" style={{ "--timer": `${progress}deg` } as React.CSSProperties}>
@@ -93,7 +94,7 @@ export function GameHeader({
           <b>{valueFor(0)}</b>
         </span>
         <i>
-          {cardCount} CARDS · {points}×
+          VS
         </i>
         <span className={activePlayer === 1 ? "active-turn" : ""}>
           <b>{valueFor(1)}</b>

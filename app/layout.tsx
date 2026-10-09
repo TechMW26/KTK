@@ -4,6 +4,9 @@ import "./globals.css";
 // the base styles (tokens, surface hierarchy, materials) without globals.css
 // needing to change.
 import "./glass.css";
+// Opaque matte card art and board finish, after the older glass treatment.
+import "./cards.css";
+import "./royal.css";
 
 export const metadata: Metadata = {
   title: "Kill the King",
@@ -41,6 +44,16 @@ export default function RootLayout({
   // does not hide mismatches in any child tree.
   return (
     <html lang="en" data-theme="dark" suppressHydrationWarning>
+      <head>
+        {/* Warm the complete deck before the first deal/reveal animation. */}
+        <link rel="preload" as="image" href="/cards/back-texture.webp" />
+        <link rel="preload" as="image" href="/cards/ktk-emblem-gold.webp" />
+        <link rel="preload" as="image" href="/cards/front-king.webp" />
+        <link rel="preload" as="image" href="/cards/front-heart.webp" />
+        <link rel="preload" as="image" href="/cards/front-empty.webp" />
+        <link rel="preload" as="image" href="/gauntlet-hand.png" />
+        <link rel="preload" as="image" href="/dealer-swipe-hand.png" />
+      </head>
       <body className="antialiased">
         {children}
       </body>

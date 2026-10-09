@@ -1,0 +1,85 @@
+/* The map and its overlay share one coordinate space at every screen size. */
+.mp-frame.mp-search {
+  isolation: isolate;
+  justify-content: flex-start;
+  padding: clamp(30px, 5dvh, 48px) 24px 24px;
+  overflow: hidden;
+  gap: 0;
+}
+.search-map { position: absolute; inset: 0; z-index: -1; overflow: hidden; background: #ad8a55; pointer-events: none; }
+.search-map-art, .search-map-riders, .search-map-tint { position: absolute; inset: 0; width: 100%; height: 100%; }
+.search-map { container-type: size; }
+.search-map-world {
+  position: absolute; top: 0; left: 0; width: 1024px; height: 1536px;
+  transform-origin: 0 0; will-change: transform;
+  /* An already cropped first paint, before the shared director measures it. */
+  transform: translate(calc(50cqw - 548px), calc(67cqh - 418px));
+}
+.search-map-art { display: block; }
+.search-map-riders { z-index: 3; }
+.search-scout-canvas { display: block; width: 100%; height: 100%; }
+.search-map-tint {
+  z-index: 2;
+  background: linear-gradient(180deg, #0c0e0cf7 0%, #0c0e0cf2 17%, #0c0e0ce0 28%, #0c0e0cb3 37%, #0c0e0c66 47%, #0c0e0c22 58%, #0c0e0c00 72%, #0c0e0c00 100%);
+}
+.search-map-route { fill: none; stroke: #ffdb8d; stroke-width: 2; stroke-linecap: round; }
+.search-map-road { stroke-dasharray: 2 10; opacity: .18; }
+.search-map-patrol { stroke-dasharray: 3 8; opacity: .08; }
+[data-kingdom][data-active="true"] .search-map-patrol { opacity: .65; animation: scout-route-flow 3s linear infinite; }
+.search-map-ring { fill: none; stroke: #ffdc92; stroke-width: 1.5; opacity: 0; transform-origin: 0 0; }
+[data-kingdom][data-active="true"] .search-map-ring { animation: scout-location-scan 4s ease-out infinite; }
+.search-map-pin { fill: #ffe2a0; stroke: #593b1b; stroke-width: 2; }
+.search-kingdom-pole { stroke: #3f2913; stroke-width: 3; }
+.search-kingdom-standard { fill: #493321; stroke: #dbbb78; stroke-width: 1.5; }
+[data-kingdom][data-active="true"] .search-kingdom-standard { fill: #863c2b; stroke: #ffe4a6; }
+.search-kingdom-sigil { fill: #ffe3a1; font-size: 17px; font-weight: 700; text-anchor: middle; }
+.search-kingdom-label { fill: #231b12e8; stroke: #caab72; stroke-width: .75; }
+.search-kingdom-name { fill: #f9e0a7; font-size: 10px; letter-spacing: 1.1px; text-anchor: middle; }
+.search-kingdom-number { fill: #bfa679; font-size: 6.5px; letter-spacing: 1.6px; text-anchor: middle; }
+.search-map-caption {
+  position: absolute; z-index: 4; left: 50%; bottom: 28px; transform: translateX(-50%);
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  min-width: 210px; padding: 12px 22px 10px;
+  border: 1px solid #c5a46b88; border-radius: 2px;
+  color: #f4dfb3; background: #211b13ee; box-shadow: 0 5px 25px #30201055;
+}
+.search-map-caption-phase { color: #e8c989; font-size: 8px; letter-spacing: .22em; }
+.search-map-caption strong { font-size: 19px; font-weight: 500; letter-spacing: .04em; line-height: 1; white-space: nowrap; }
+.search-map-caption-count { color: #bfa679; font-size: 7px; letter-spacing: .2em; }
+.search-map-steps { display: flex; align-items: center; gap: 5px; height: 8px; margin-top: 2px; }
+.search-map-steps span { width: 5px; height: 3px; background: #786342; transition: width .3s ease, background .3s ease; }
+.search-map-steps span[data-active="true"] { width: 19px; background: #f1d49b; box-shadow: 0 0 8px #e9c77850; }
+.search-countdown-dot { width: 5px; height: 5px; border-radius: 50%; background: #e9c778; box-shadow: 0 0 8px #e9c77880; animation: scout-status-glow 2s ease-in-out infinite; }
+.mp-search .mp-menu-brand { margin: 0 0 20px; }
+.mp-search .mp-menu-brand .logo { transform: none; }
+.mp-search .logo strong { font-size: clamp(29px, 8cqw, 39px); line-height: .95; }
+.mp-search .logo i { font-size: 10px; margin-block: 5px; }
+.mp-search .logo-crown { margin-bottom: 7px; }
+.game-screen .mp-search .stage-title { margin: 0; padding: 0; max-width: 340px; }
+.game-screen .mp-search .stage-title .eyebrow { font-size: 8px; letter-spacing: .25em; color: #c0a573; margin-bottom: 8px; }
+.game-screen .mp-search .stage-title h2.mp-title { font-size: clamp(24px, 6.5cqw, 32px); line-height: 1.12; letter-spacing: .045em; }
+.game-screen .mp-search .stage-title p:last-child { font-size: 11px; color: #dfd1b6; margin: 10px 0 0; }
+.search-countdown { display: flex; align-items: center; gap: 8px; margin: 16px 0 2px; color: #ddc99f; font-size: 11px; font-variant-numeric: tabular-nums; }
+.mp-search .text-button { margin: 0; padding: 9px 12px; min-height: 44px; font-size: 10px; letter-spacing: .12em; color: #e5c985; }
+.mp-search .text-button:focus-visible { outline: 1px solid #f7db9f; outline-offset: 2px; }
+.mp-search .mp-notice { max-width: 330px; font-size: 11px; margin: 0 0 12px; }
+@keyframes scout-route-flow { to { stroke-dashoffset: -45; } }
+@keyframes scout-location-scan { 0% { transform: scale(.35); opacity: 0; } 15% { opacity: .8; } 100% { transform: scale(2.4); opacity: 0; } }
+@keyframes scout-status-glow { 50% { opacity: .4; } }
+@media (max-height: 650px) {
+  .mp-frame.mp-search { padding-top: 24px; }
+  .mp-search .mp-menu-brand { margin-bottom: 14px; }
+  .mp-search .logo strong { font-size: 25px; }
+  .mp-search .logo i { margin-block: 3px; }
+  .game-screen .mp-search .stage-title h2.mp-title { font-size: 22px; }
+  .search-countdown { margin-top: 12px; }
+  .search-map-caption { bottom: 22px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mp-frame.mp-search, .search-map-route, .search-map-ring, .search-countdown-dot { animation: none; }
+  .search-map [data-kingdom][data-active="true"] .search-map-patrol,
+  .search-map [data-kingdom][data-active="true"] .search-map-ring { animation: none; }
+  .search-map-ring { opacity: .5; }
+  .search-map-world { will-change: auto; }
+  .search-map-steps span { transition: none; }
+}

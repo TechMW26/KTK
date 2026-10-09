@@ -1,6 +1,6 @@
 import Image from "next/image";
 
-import { cardFanSlot } from "@/features/game/logic/cardFan";
+import { ARC_DROP, CARD_PITCH, cardFanContact, cardFanSlot } from "@/features/game/logic/cardFan";
 
 /**
  * The hand that hovers over the card row.
@@ -13,9 +13,6 @@ import { cardFanSlot } from "@/features/game/logic/cardFan";
  * alignment with a card when the arc geometry is tuned. It also rides the arc
  * vertically, so it lands on the card rather than beside it.
  */
-
-/** Half-pitch of the row, used to size the roaming sweep. */
-const HALF_PITCH = 22;
 
 export function SelectionHand({
   index,
@@ -43,6 +40,7 @@ export function SelectionHand({
   // asking the fan where that slot sits.
   const slot = mirrored ? cardCount - 1 - index : index;
   const { x, y, rotate } = cardFanSlot(slot, cardCount);
+  const contact = cardFanContact(slot, cardCount);
 
   return (
     <Image
@@ -55,18 +53,20 @@ export function SelectionHand({
       ]
         .filter(Boolean)
         .join(" ")}
-      src="/guesser-hand.png"
+      src="/gauntlet-hand.png"
       alt=""
-      width={928}
-      height={1695}
+      width={929}
+      height={1694}
       unoptimized
       aria-hidden="true"
       style={
         {
-          "--hand-x": `${x}px`,
-          "--hand-y": `${y}px`,
+          "--hand-x": `calc(${x / CARD_PITCH} * var(--card-pitch, ${CARD_PITCH}px))`,
+          "--hand-y": `calc(${y / ARC_DROP} * var(--fan-drop, ${ARC_DROP}px))`,
           "--hand-tilt": `${rotate}deg`,
-          "--roam-span": `${(cardCount - 1) * HALF_PITCH}px`,
+          "--gauntlet-contact-x": `calc(${contact.x} * var(--fan-card-h, 112px))`,
+          "--gauntlet-contact-y": `calc(${contact.y} * var(--fan-card-h, 112px))`,
+          "--roam-span": `calc(${(cardCount - 1) / 2} * var(--card-pitch, ${CARD_PITCH}px))`,
         } as React.CSSProperties
       }
     />

@@ -16,7 +16,7 @@
  *    rather than five cards on a line.
  */
 
-/** Cards shrink 10% from the original 68px so a five-card fan fits 320px wide. */
+/** Reference dimensions; the live board scales width and pitch in CSS. */
 export const CARD_WIDTH = 61;
 
 /** Card height, derived from the same 884:1624 aspect ratio the CSS uses. */
@@ -26,10 +26,10 @@ export const CARD_HEIGHT = Math.round((CARD_WIDTH * 1624) / 884);
 export const CARD_PITCH = 43;
 
 /** Vertical drop of the outermost card below the centre card, in px. */
-export const ARC_DROP = 26;
+export const ARC_DROP = 48;
 
 /** Rotation of the outermost card, in degrees; halved and negated on the way out. */
-export const ARC_TILT = 7;
+export const ARC_TILT = 18;
 
 export interface CardFanSlot {
   /** Horizontal offset from the row centre, in px. */
@@ -81,13 +81,15 @@ export function cardFanSlot(slot: number, count: number): CardFanSlot {
   const centre = (count - 1) / 2;
   // -1 at the left edge, 0 dead centre, +1 at the right edge.
   const t = (slot - centre) / centre;
+  const tilt = count <= 2 ? 6 : count <= 3 ? 10 : ARC_TILT;
+  const depth = count <= 2 ? .3 : count <= 3 ? .55 : 1;
 
   return {
     x: (slot - centre) * CARD_PITCH,
     // A parabola: flat at the centre, falling away toward both edges. Squaring t
     // keeps the middle cards level with each other and puts the bend in the ends.
-    y: ARC_DROP * t * t,
-    rotate: ARC_TILT * t,
+    y: ARC_DROP * depth * t * t,
+    rotate: tilt * t,
     // Nearest-to-the-viewer reads as largest; 4% is enough to feel like depth
     // without the row looking like it steps in size.
     scale: 1 - 0.04 * Math.abs(t),
@@ -115,12 +117,25 @@ export function cardFan(count: number): CardFanSlot[] {
   return Array.from({ length: count }, (_, slot) => cardFanSlot(slot, count));
 }
 
+/** Contact at a fraction of the card's height, after its fan rotation/scale.
+ * Coordinates are fractions of the live card height, relative to its slot.
+ * Defaults to the pointing finger's 70% contact; the dealer uses 25%.
+ */
+export function cardFanContact(slot: number, count: number, fraction = .7): { x: number; y: number } {
+  const { rotate, scale } = cardFanSlot(slot, count);
+  const radians = rotate * Math.PI / 180;
+  const offset = fraction - .5;
+  return { x: -offset * Math.sin(radians) * scale, y: .5 + offset * Math.cos(radians) * scale };
+}
+
 /** CSS custom properties for one card, ready to spread onto a `style`. */
 export function cardFanStyle(slot: number, count: number): Record<string, string> {
   const { x, y, rotate, scale, z } = cardFanSlot(slot, count);
   return {
+    "--fan-slot": `${slot}`,
+    "--fan-overlap-step": slot === 0 ? "0" : "1",
     "--fan-x": `${x}px`,
-    "--fan-y": `${y}px`,
+    "--fan-y": `calc(${y / ARC_DROP} * var(--fan-drop, ${ARC_DROP}px))`,
     "--fan-rotate": `${rotate}deg`,
     "--fan-scale": `${scale}`,
     "--fan-z": `${z}`,

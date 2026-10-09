@@ -16,6 +16,7 @@
  */
 
 import { cardFanStyle } from "@/features/game/logic/cardFan";
+import { Crown, Heart } from "lucide-react";
 
 export interface PlayingCardProps {
   /** Seat-local card number; also used for the face-up rank and aria label. */
@@ -90,7 +91,9 @@ export function PlayingCard({
     .join(" ");
 
   const label = faceUp
-    ? king
+    ? blank
+      ? `Empty card ${index + 1}`
+      : king
       ? `King in card ${index + 1}`
       : `Card ${index + 1}`
     : `Choose card ${index + 1}`;
@@ -117,41 +120,31 @@ export function PlayingCard({
       }
       disabled={disabled}
       aria-label={label}
+      aria-pressed={Boolean(chosen)}
     >
       <span className="card-inner">
-        <span className="card-back">
-          <small>KTK</small>
-          <b>♛</b>
-          <em>◆</em>
-        </span>
-        <span className="card-front">
+        <span className="card-back" aria-hidden="true" />
+        <span className="card-front" data-face={blank ? "empty" : king ? "king" : "heart"} aria-hidden="true">
           {blank ? (
-            <span className="blank-card">
-              <b>?</b>
-              <small>EMPTY</small>
-            </span>
-          ) : king ? (
-            <>
-              <span className="corner-rank">
-                K<small>♥</small>
-              </span>
-              <span className="king-face">♚</span>
-              <span className="king-label">THE KING</span>
-            </>
+            <span className="card-face-label">EMPTY</span>
           ) : (
             <>
               <span className="corner-rank">
-                {index + 1}
-                <small>♥</small>
+                {king ? "K" : index + 1}
+                <small><Heart fill="currentColor" strokeWidth={1} /></small>
               </span>
-              <span className="heart-pip">♥</span>
+              <span className="corner-rank corner-rank-bottom">
+                {king ? "K" : index + 1}
+                <small><Heart fill="currentColor" strokeWidth={1} /></small>
+              </span>
+              {king && <span className="card-face-label">THE KING</span>}
             </>
           )}
         </span>
       </span>
       {king && faceUp && (
         <span className="card-crown" aria-hidden="true">
-          ♛
+          <Crown strokeWidth={2} />
         </span>
       )}
       {wrong && (

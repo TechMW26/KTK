@@ -1,0 +1,252 @@
+/* The deck keeps the shared fan/deal geometry. Its finish is opaque matte
+   paper with antique copper detailing; the original transparent KTK logo is
+   composed over the back texture. The golden bloom variant retains its
+   weathered metal silhouette while catching the game's warm key light. */
+:root {
+  --deck-back: url("/cards/ktk-emblem-gold.webp"), url("/cards/back-texture.webp");
+  --deck-copper: #b48b67;
+  /* The 540 × 990 artwork has roughly 56px corner radii on both axes. */
+  --deck-radius: 10.4% / 5.7%;
+}
+
+/* Opaque card artwork keeps the table texture from showing through the deck. */
+.game-screen {
+  container-type: inline-size;
+  background:
+    radial-gradient(ellipse at 50% 0%, rgba(154, 112, 75, .09), transparent 55%),
+    linear-gradient(155deg, #151412, #0b0c0c 50%, #080909);
+}
+.result-stage .stage-title h2 { font-size: clamp(24px, 10cqw, 38px); }
+.game-header { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); }
+.header-controls { min-width: 0; }
+.home-screen {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  padding: 76px clamp(18px, 8cqw, 34px) 38px;
+  background: radial-gradient(ellipse at 50% 30%, rgba(185, 129, 35, .07), transparent 50%);
+}
+.home-screen::-webkit-scrollbar { width: 0; height: 0; }
+.home-screen > * { flex-shrink: 0; }
+.home-brand {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  margin-top: auto;
+  margin-bottom: 36px;
+}
+.home-brand .logo { display: flex; align-items: baseline; gap: 9px; }
+.home-brand .logo-crown { display: none; }
+.home-brand .logo strong { font-size: clamp(18px, 7.4cqw, 32px); letter-spacing: .045em; line-height: 1.1; }
+.home-brand .logo i { margin: 0; font-size: clamp(9px, 2.7cqw, 12px); letter-spacing: .16em; }
+.home-brand .king-emblem {
+  width: min(220px, 58cqw);
+  height: auto;
+  aspect-ratio: 1;
+  margin: 0;
+  border: 0;
+  background: radial-gradient(ellipse, rgba(232, 164, 45, .15), transparent 68%);
+}
+.home-brand .king-emblem::before,
+.home-brand .king-emblem::after { content: none; }
+.home-brand .home-app-logo {
+  width: 100%;
+  height: 100%;
+  filter: drop-shadow(0 0 6px rgba(232, 180, 62, .16)) drop-shadow(0 8px 12px rgba(0, 0, 0, .6));
+}
+.home-menu { gap: 12px; margin-bottom: auto; }
+.home-menu .home-challenge { min-height: 56px; font-size: 14px; letter-spacing: .17em; }
+.home-menu .outline-button {
+  min-height: 48px;
+  font-size: 11px;
+  letter-spacing: .08em;
+  background: linear-gradient(180deg, rgba(49, 38, 19, .22), rgba(8, 8, 6, .6));
+  border-color: rgba(185, 142, 68, .36);
+  box-shadow: inset 0 1px rgba(246, 212, 138, .04);
+}
+.home-row { gap: 10px; }
+.home-links { margin-top: 14px; gap: 14px; }
+.home-links .text-button { font-size: 10px; letter-spacing: .1em; text-decoration: none; color: #bda371; }
+.home-links .text-button:hover { color: var(--gold-bright); }
+.home-topbar .topbar-button { background: rgba(8, 8, 6, .65); border-color: rgba(185, 142, 68, .35); }
+
+@media (max-height: 700px) {
+  .home-screen { padding-top: 66px; padding-bottom: 28px; }
+  .home-brand { gap: 12px; margin-bottom: 24px; }
+  .home-brand .king-emblem { width: min(150px, 48cqw); }
+  .home-menu { gap: 10px; }
+  .home-menu .home-challenge { min-height: 48px; }
+  .home-menu .outline-button { min-height: 44px; font-size: 10px; }
+  .home-links { margin-top: 8px; gap: 10px; }
+}
+
+.playing-card {
+  container-type: inline-size;
+}
+
+/* Scale the silhouette with the artwork, including small deal/history cards.
+   Keep the 3D wrapper unclipped so flips and the crown can still extend out. */
+.playing-card,
+.card-inner,
+.card-back,
+.card-front,
+.held-card-mini,
+.held-card-mini::before,
+.held-card-mini::after,
+.flying-deal-card,
+.strategy-mini-card { border-radius: var(--deck-radius); }
+
+/* Revealed, dealt and opponent-owned cards are disabled controls, not faded
+   content. Never apply button:disabled's transparency to physical cards. */
+.playing-card:disabled {
+  opacity: 1;
+  cursor: default;
+}
+
+.card-back,
+.card-front {
+  background-color: #111211;
+  border: 0;
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+  box-shadow: 0 8px 16px rgba(0, 0, 0, .55);
+}
+
+/* Every depiction of a face-down card uses the same two-layer artwork,
+   including the dealer's grip, flying cards and strategy history tiles. */
+.card-back,
+.held-card-mini,
+.held-card-mini::before,
+.held-card-mini::after,
+.flying-deal-card,
+.strategy-mini-card {
+  background-color: #111211;
+  background-image: var(--deck-back);
+  background-position: center, center;
+  background-size: 82% auto, 100% 100%;
+  background-repeat: no-repeat;
+  background-origin: border-box;
+  border: 0;
+}
+
+.card-front {
+  background-position: center;
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
+  background-origin: border-box;
+}
+.card-front[data-face="king"] { background-image: url("/cards/front-king.webp"); }
+.card-front[data-face="heart"] { background-image: url("/cards/front-heart.webp"); }
+.card-front[data-face="empty"] { background-image: url("/cards/front-empty.webp"); }
+.card-front::before { content: none; }
+.held-card-mini { box-shadow: 0 5px 12px rgba(0, 0, 0, .7); }
+
+.corner-rank {
+  top: 12%;
+  left: 12%;
+  display: grid;
+  justify-items: center;
+  color: #eadac3;
+  font-size: 14px;
+  font-size: 23cqw;
+  font-weight: 700;
+  line-height: 1;
+  text-shadow: 0 1px 2px #000;
+}
+.corner-rank small { margin-top: 2px; line-height: 1; color: #ce7765; }
+.corner-rank small svg { width: 8px; height: 8px; width: 13cqw; height: 13cqw; }
+.corner-rank-bottom {
+  top: auto;
+  left: auto;
+  right: 12%;
+  bottom: 12%;
+  transform: rotate(180deg);
+}
+.card-front[data-face="king"] .corner-rank { color: #e2c69c; }
+.card-face-label {
+  position: absolute;
+  bottom: 8%;
+  left: 23%;
+  right: 23%;
+  color: #d1b795;
+  font-size: 5px;
+  font-size: 8cqw;
+  line-height: 1.2;
+  letter-spacing: .08em;
+  text-align: center;
+}
+.card-front[data-face="empty"] .card-face-label { bottom: 29%; }
+
+/* Selection reads as a warm rim, preserving the matte material. */
+.playing-card:not(:disabled):hover,
+.playing-card.chosen {
+  filter: drop-shadow(0 4px 7px rgba(0, 0, 0, .6));
+}
+.playing-card.chosen .card-back,
+.playing-card.chosen .card-front {
+  border-color: #dcc09d;
+  box-shadow: 0 0 0 1px rgba(220, 192, 157, .55), 0 8px 18px rgba(0, 0, 0, .7);
+}
+.playing-card.is-king { filter: none; }
+.playing-card.is-king.face-up .card-front {
+  border-color: #ddba80;
+  box-shadow: 0 0 0 1px rgba(221, 186, 128, .35), 0 8px 18px rgba(0, 0, 0, .65);
+}
+.playing-card:not(.face-up):not(:disabled) .card-back { animation: none; }
+.playing-card:not(.face-up):not(:disabled) .card-inner::after { content: none; }
+.cards-row.turn-active .playing-card { animation: none; }
+.playing-card.shattered .card-front {
+  border-color: #c56a56;
+  box-shadow: inset 0 0 12px rgba(135, 29, 21, .35), 0 8px 18px rgba(0, 0, 0, .65);
+}
+.card-crown { color: #d9b98a; text-shadow: none; }
+
+/* The same original emblem also replaces the old flat gold home badge. */
+.home-app-logo {
+  filter: drop-shadow(0 5px 8px rgba(0, 0, 0, .55));
+}
+
+/* Short result boards need room for the crown above and the action below.
+   Keep Strategy available as a compact footer action; the inactive bluff
+   action does not need the large two-button dock during a resolved round. */
+@media (max-height: 640px) {
+  .result-stage .cards-row { margin-top: 34px; }
+  .result-stage .cards-row.fanned { margin-bottom: 4px; }
+  .result-stage .card-crown { top: -24px; }
+  .result-stage .card-crown svg { width: 20px; height: 20px; }
+  .result-stage .cards-row .selection-hand-img { width: 24px; top: 58px; }
+  .result-stage .round-verdict {
+    margin-top: 9px;
+    padding: 5px 6px;
+    gap: 6px;
+    align-items: center;
+    font-size: 9px;
+    letter-spacing: .02em;
+  }
+  .result-stage .round-verdict span { white-space: nowrap; }
+  .result-stage .result-next { margin-top: 6px; }
+  .game-screen:has(.result-stage) .power-dock {
+    left: auto;
+    right: 16px;
+    bottom: 10px;
+    width: 112px;
+    height: 44px;
+    padding: 0 6px;
+    grid-template-columns: 1fr;
+    border-radius: 8px;
+    transform: none;
+  }
+  .game-screen:has(.result-stage) .power-dock > div,
+  .game-screen:has(.result-stage) .power-dock button:last-child { display: none; }
+  .game-screen:has(.result-stage) .power-dock button:first-child {
+    height: 42px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+  }
+  .game-screen:has(.result-stage) .power-dock button span { font-size: 18px; }
+  .game-screen:has(.result-stage) .power-dock button b { font-size: 8px; }
+}

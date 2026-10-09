@@ -5,6 +5,8 @@ import type { User } from "firebase/auth";
 
 import { Modal as DialogShell } from "@/components/ui/Modal";
 import { Eyebrow, Ornament } from "@/components/common/Brand";
+import { AppleIcon, FacebookIcon, GoogleIcon } from "@/components/common/BrandIcons";
+import { Check, Crown, Lock } from "lucide-react";
 import {
   linkAdditionalProvider,
   setAccountDisplayName,
@@ -193,7 +195,9 @@ export function AccountScreen({
 
   return (
     <DialogShell onClose={onClose} className="account-modal">
-      <span className="modal-symbol">♛</span>
+      <span className="modal-symbol">
+        <Crown strokeWidth={1.75} />
+      </span>
       <Eyebrow>YOUR COURT</Eyebrow>
       <h3>YOUR ACCOUNT</h3>
       <Ornament />
@@ -306,7 +310,7 @@ export function AccountScreen({
             <output className="account-locked" aria-label="Email (read-only)">
               <span className="account-locked-value">{email || "—"}</span>
               <span className="account-lock" aria-hidden="true">
-                🔒
+                <Lock strokeWidth={2} />
               </span>
             </output>
             <small className="account-hint">
@@ -321,7 +325,16 @@ export function AccountScreen({
             disabled={busy || !profile}
             onClick={() => void saveDetails()}
           >
-            {busy ? "SAVING…" : saved ? "✓ SAVED" : "SAVE CHANGES"}
+            {busy ? (
+              "SAVING…"
+            ) : saved ? (
+              <span className="inline-with-icon">
+                <Check strokeWidth={2.75} />
+                SAVED
+              </span>
+            ) : (
+              "SAVE CHANGES"
+            )}
           </button>
           {!profile && (
             <small className="account-hint">Your profile is still loading. Try again in a moment.</small>
@@ -373,29 +386,32 @@ export function AccountScreen({
           </div>
           {!providers.includes("google.com") && (
             <button
-              className="outline-button wide"
+              className="social-button social-google"
               disabled={busy}
               onClick={() => void linkProvider("google")}
             >
-              ADD GOOGLE
+              <GoogleIcon />
+              <span>Add Google</span>
             </button>
           )}
           {!providers.includes("apple.com") && (
             <button
-              className="outline-button wide"
+              className="social-button social-apple"
               disabled={busy}
               onClick={() => void linkProvider("apple")}
             >
-              ADD APPLE
+              <AppleIcon />
+              <span>Add Apple</span>
             </button>
           )}
           {!providers.includes("facebook.com") && (
             <button
-              className="outline-button wide"
+              className="social-button social-facebook"
               disabled={busy}
               onClick={() => void linkProvider("facebook")}
             >
-              ADD FACEBOOK
+              <FacebookIcon />
+              <span>Add Facebook</span>
             </button>
           )}
         </section>

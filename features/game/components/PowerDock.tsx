@@ -1,5 +1,5 @@
 /**
- * The floating power bar at the base of the board.
+ * The utility bar at the base of the board.
  *
  * Two actions: open the Strategy panel (always available) and accuse the dealer
  * of bluffing (only meaningful while the human is guessing). The disabled state
@@ -22,11 +22,10 @@ export function PowerDock({
         <span>▱</span>
         <b>STRATEGY</b>
       </button>
-      <div />
-      <button onClick={onBluff} disabled={!bluffActive}>
+      {bluffActive && <button onClick={onBluff}>
         <span>◑</span>
         <b>CALL BLUFF</b>
-      </button>
+      </button>}
     </nav>
   );
 }

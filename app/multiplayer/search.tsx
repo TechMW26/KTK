@@ -19,6 +19,7 @@ import { joinRoom } from "@/services/roomService";
 import { MATCHMAKING_TIMEOUT_MS } from "@/lib/multiplayer/types";
 import type { MatchSettings } from "@/lib/game/flow";
 import { MpEyebrow, MpLogo, MpOrnament } from "./ui";
+import SearchMap from "./search-map";
 
 type SearchState =
   | { kind: "searching" }
@@ -288,7 +289,8 @@ export default function SearchOnline({
   }
 
   return (
-    <div className="mp-frame mp-flow">
+    <div className="mp-frame mp-flow mp-search">
+      <SearchMap />
       <div className="mp-menu-brand">
         <MpLogo />
       </div>
@@ -298,13 +300,15 @@ export default function SearchOnline({
         </p>
       ) : null}
       <div className="stage-title">
-        <MpEyebrow>RONDEZVOUS</MpEyebrow>
+        <MpEyebrow>RENDEZVOUS</MpEyebrow>
         <h2 className="mp-title">SEARCHING FOR OPPONENT</h2>
         <MpOrnament />
         <p>Scanning the kingdom for another player…</p>
       </div>
-      <span className="mp-pulse">◖◗</span>
-      <p className="mp-muted">{left}s remaining</p>
+      <p className="search-countdown" role="timer" aria-label={`${left} seconds remaining`}>
+        <span className="search-countdown-dot" aria-hidden="true" />
+        {left}s remaining
+      </p>
       <button className="text-button" onClick={stopAndBack}>
         CANCEL SEARCH
       </button>

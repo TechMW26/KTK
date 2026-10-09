@@ -11,6 +11,9 @@ out/
 .output/
 .vercel/
 
+# local visual checks and generated preview recordings
+artifacts/
+
 # TypeScript build info
 *.tsbuildinfo
 

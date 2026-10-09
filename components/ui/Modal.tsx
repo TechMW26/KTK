@@ -1,3 +1,5 @@
+import { X } from "lucide-react";
+
 /**
  * The dialog shell.
  *
@@ -22,7 +24,7 @@ export function Modal({
         aria-modal="true"
       >
         <button className="modal-close" onClick={onClose} aria-label="Close">
-          ×
+          <X size={20} strokeWidth={2.25} />
         </button>
         {children}
       </section>

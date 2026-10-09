@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { Crown, X } from "lucide-react";
 
 import { Eyebrow, Logo, Ornament } from "@/components/common/Brand";
 
@@ -29,14 +30,14 @@ export function MpFrame({ children }: { children: ReactNode }) {
 export function MpModal({
   title,
   eyebrow,
-  symbol = "♛",
+  symbol = <Crown strokeWidth={1.75} />,
   onClose,
   children,
   className = "",
 }: {
   title: string;
   eyebrow?: string;
-  symbol?: string;
+  symbol?: ReactNode;
   onClose?: () => void;
   children: ReactNode;
   className?: string;
@@ -46,7 +47,7 @@ export function MpModal({
       <section className={["modal-card", className].filter(Boolean).join(" ")} role="dialog" aria-modal="true">
         {onClose && (
           <button className="modal-close" onClick={onClose} aria-label="Close">
-            ×
+            <X size={20} strokeWidth={2.25} />
           </button>
         )}
         <span className="modal-symbol">{symbol}</span>

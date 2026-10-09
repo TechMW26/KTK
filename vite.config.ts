@@ -15,8 +15,11 @@ import tailwindcss from "@tailwindcss/vite";
 // in both.
 const FIREBASE_AUTH_ORIGIN = "https://killtheking-94396.firebaseapp.com";
 
-export default defineConfig({
-  plugins: [vinext(), nitro(), tailwindcss()],
+export default defineConfig(({ command, isPreview }) => ({
+  // Nitro packages the production server. Local development uses vinext's
+  // runnable RSC environments; Nitro's dev environments do not expose the
+  // runner expected by @vitejs/plugin-rsc's request middleware.
+  plugins: [vinext(), ...(command === "build" || isPreview ? [nitro()] : []), tailwindcss()],
   server: {
     proxy: {
       // changeOrigin must be TRUE: the proxied request has to present
@@ -27,4 +30,4 @@ export default defineConfig({
       "/__/firebase": { target: FIREBASE_AUTH_ORIGIN, changeOrigin: true },
     },
   },
-});
+}));

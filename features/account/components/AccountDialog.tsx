@@ -5,6 +5,8 @@ import type { User } from "firebase/auth";
 
 import { Modal as DialogShell } from "@/components/ui/Modal";
 import { Eyebrow, Ornament } from "@/components/common/Brand";
+import { AppleIcon, EmailIcon, FacebookIcon, GoogleIcon } from "@/components/common/BrandIcons";
+import { Crown } from "lucide-react";
 import {
   upgradeWithEmail,
   startGoogleSignIn,
@@ -177,7 +179,9 @@ export function AccountDialog({
 
   return (
     <DialogShell onClose={onClose} className="account-modal">
-      <span className="modal-symbol">♛</span>
+      <span className="modal-symbol">
+        <Crown strokeWidth={1.75} />
+      </span>
       <Eyebrow>{signedIn ? "YOUR COURT" : "KEEP YOUR PROGRESS"}</Eyebrow>
       <h3>{signedIn ? "YOUR ACCOUNT" : "SIGN IN"}</h3>
       <Ornament />
@@ -198,34 +202,42 @@ export function AccountDialog({
             reinstall or switch device.
           </p>
           <button
-            className="outline-button wide"
+            className="social-button social-google"
             disabled={busy}
             onClick={() =>
               void run(() => startGoogleSignIn(), { collisionProvider: "google" })
             }
           >
-            CONTINUE WITH GOOGLE
+            <GoogleIcon />
+            <span>Continue with Google</span>
           </button>
           <button
-            className="outline-button wide"
+            className="social-button social-apple"
             disabled={busy}
             onClick={() =>
               void run(() => startAppleSignIn(), { collisionProvider: "apple" })
             }
           >
-            CONTINUE WITH APPLE
+            <AppleIcon />
+            <span>Continue with Apple</span>
           </button>
           <button
-            className="outline-button wide"
+            className="social-button social-facebook"
             disabled={busy}
             onClick={() =>
               void run(() => startFacebookSignIn(), { collisionProvider: "facebook" })
             }
           >
-            CONTINUE WITH FACEBOOK
+            <FacebookIcon />
+            <span>Continue with Facebook</span>
           </button>
-          <button className="gold-button wide" disabled={busy} onClick={() => setView("email")}>
-            CONTINUE WITH EMAIL
+          <button
+            className="social-button social-email"
+            disabled={busy}
+            onClick={() => setView("email")}
+          >
+            <EmailIcon />
+            <span>Continue with Email</span>
           </button>
           <button className="account-link" disabled={busy} onClick={onClose}>
             Not now — keep playing as guest

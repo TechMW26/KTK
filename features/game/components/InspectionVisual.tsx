@@ -1,6 +1,6 @@
 import Image from "next/image";
 
-import { cardFanSlot } from "@/features/game/logic/cardFan";
+import { ARC_DROP, CARD_PITCH, cardFanContact, cardFanSlot } from "@/features/game/logic/cardFan";
 
 /**
  * The physical "a hand picks up a card and inspects it" overlay.
@@ -17,8 +17,8 @@ import { cardFanSlot } from "@/features/game/logic/cardFan";
  * The same component serves both seats:
  *   - the local acting player sees their own hand (dir = toward them);
  *   - the opponent sees it as `remote`, a hair recessed.
- * `mirrored` flips the slot lookup and the vertical direction together, because
- * seat 1 sees the row (and therefore "toward me") reversed.
+ * `mirrored` reverses the slot and card lift. The gauntlet still reaches upward
+ * from the bottom of the visible table, keeping the palm below the card.
  *
  * Purely visual: `pointer-events: none`, so it can never steal a tap.
  */
@@ -42,21 +42,24 @@ export function InspectionVisual({
   // before asking the fan where that slot sits (same rule the cards use).
   const slot = mirrored ? cardCount - 1 - index : index;
   const { x, y, rotate } = cardFanSlot(slot, cardCount);
+  const contact = cardFanContact(slot, cardCount);
 
   return (
     <Image
       className={["inspection-hand", remote ? "remote" : ""].filter(Boolean).join(" ")}
-      src="/guesser-hand.png"
+      src="/gauntlet-hand.png"
       alt=""
-      width={928}
-      height={1695}
+      width={929}
+      height={1694}
       unoptimized
       aria-hidden="true"
       style={
         {
-          "--inspect-x": `${x}px`,
-          "--inspect-y": `${y}px`,
+          "--inspect-x": `calc(${x / CARD_PITCH} * var(--card-pitch, ${CARD_PITCH}px))`,
+          "--inspect-y": `calc(${y / ARC_DROP} * var(--fan-drop, ${ARC_DROP}px))`,
           "--inspect-tilt": `${rotate}deg`,
+          "--gauntlet-contact-x": `calc(${contact.x} * var(--fan-card-h, 112px))`,
+          "--gauntlet-contact-y": `calc(${contact.y} * var(--fan-card-h, 112px))`,
           // +1 = the inspecting player is at the bottom of THIS screen; -1 = the
           // row is mirrored, so "toward the player" is up.
           "--inspect-dir": mirrored ? -1 : 1,

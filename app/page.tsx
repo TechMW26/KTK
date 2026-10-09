@@ -2,22 +2,35 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
+import {
+  ArrowLeft,
+  ChessRook,
+  CircleDot,
+  Crown,
+  Heart,
+  LogOut,
+  Menu,
+  Settings,
+  User,
+} from "lucide-react";
 
-import { Logo, Ornament } from "@/components/common/Brand";
+import { Ornament } from "@/components/common/Brand";
+import { SplashScreen } from "@/components/common/SplashScreen";
 import { Modal as DialogShell } from "@/components/ui/Modal";
 import { PlayingCard } from "@/components/ui/PlayingCard";
 import { GameHeader } from "@/features/game/components/GameHeader";
 import { RulesModal, SettingsModal } from "@/features/game/components/InfoDialogs";
 import { PowerDock } from "@/features/game/components/PowerDock";
 import { SelectionHand } from "@/features/game/components/SelectionHand";
+import { DealerSwipe } from "@/features/game/components/DealerSwipe";
 import { indexToSlot } from "@/features/game/logic/cardFan";
 import { StrategyModal } from "@/features/game/components/StrategyModal";
 import { AccountDialog } from "@/features/account/components/AccountDialog";
 import { AccountScreen } from "@/features/account/components/AccountScreen";
 import { useAccount } from "@/hooks/useAccount";
 import { recordMatchResult } from "@/lib/firebase/profile";
-import { TurnIndicator, TurnTransition } from "@/features/game/components/TurnIndicator";
-import { COURTS, hidesPerBlock, roundsInCourt, setCurrentCourtIndex, STARTING_LIVES } from "@/features/game/constants/courts";
+import { TurnTransition } from "@/features/game/components/TurnIndicator";
+import { COURTS, roundsInCourt, setCurrentCourtIndex, STARTING_LIVES } from "@/features/game/constants/courts";
 import {
   RESULT_COPY,
   revealCopyFor,
@@ -43,7 +56,7 @@ import { decideGuessTurn, decideHidingSpot } from "@/features/game/logic/bot";
 import { afterCourt, afterRound } from "@/features/game/logic/progression";
 import { resolveLocalRound, resolveTimedOutDealerChoice } from "@/features/game/logic/round";
 import { applyLifeLoss, applyRoundWin, lifeWinner as winnerFromLives } from "@/features/game/logic/scoring";
-import { dealerForRound, guesserForRound, hidesIntoBlock } from "@/features/game/logic/seats";
+import { dealerForRound, guesserForRound } from "@/features/game/logic/seats";
 import { picksThisCourt, summarisePicks } from "@/features/game/logic/strategy";
 import type {
   MatchPhase,
@@ -64,6 +77,9 @@ import {
 
 export default function Home() {
   const [phase, setPhase] = useState<MatchPhase>("home");
+  /** The component reserves intro playback once per tab/app session. */
+  const [splashOpen, setSplashOpen] = useState(true);
+  const homeLogoRef = useRef<HTMLImageElement>(null);
   const [mode, setMode] = useState<OpponentKind>("bot");
   const [names, setNames] = useState<[string, string]>(["", "The Rival"]);
   const [scores, setScores] = useState<[number, number]>([0, 0]);
@@ -132,9 +148,6 @@ export default function Home() {
   const guesserViewMirrored = false;
   // Complete-turn blocks: which hide this is inside the current player's run.
   // Round resets to 1 each court, so the block restarts there too.
-  const hidesThisCourt = hidesPerBlock(level);
-  const hideNumber = hidesIntoBlock(round);
-  const hideLabel = `HIDING ${hideNumber}/${hidesThisCourt}`;
   // Even, window-fitted deal choreography for the current court's card count.
   const deal = useMemo(
     () => dealTimings(config.cards, motion ? SHUFFLE_MS : REDUCED.shuffle),
@@ -614,14 +627,14 @@ export default function Home() {
 
   return (
     <main className={["game-shell", motion ? "" : "reduced-motion"].filter(Boolean).join(" ")}>
-      <section className={["game-screen", phase === "result" && result ? RESULT_COPY[result.kind].tone : ""].filter(Boolean).join(" ")}>
-        <div className="corner corner-tl" /><div className="corner corner-tr" />
-        <div className="corner corner-bl" /><div className="corner corner-br" />
+      {splashOpen && <SplashScreen logoRef={homeLogoRef} sound={sound} onDone={() => setSplashOpen(false)} />}
+      <section inert={splashOpen || undefined} className={["game-screen", phase === "result" && result ? RESULT_COPY[result.kind].tone : ""].filter(Boolean).join(" ")}>
 
         <TurnTransition turn={turnTransition} />
 
         {phase === "home" ? (
           <HomeScreen
+            logoRef={homeLogoRef}
             names={names}
             setNames={setNames}
             livesOn={livesOn}
@@ -652,17 +665,13 @@ export default function Home() {
               onSettings={() => setOverlay("settings")}
               hearts={mode === "local" && livesOn ? lives : null}
             />
-            <button className="quit-button" onClick={() => setOverlay("quit")} aria-label="Quit match" title="Quit match">↪</button>
 
             {phase === "dealer" && (
               <section className={["play-stage", dealerIsBot ? "opponent-turn" : "player-turn"].join(" ")}>
-                <TurnIndicator turn={currentTurn} />
                 <div className="stage-title">
-                  <p className="eyebrow">{displayNames[dealer]} IS THE DEALER</p>
+                  <p className="eyebrow">{dealerIsBot ? "OPPONENT’S TURN" : `${displayNames[dealer]} · YOUR TURN`}</p>
                   <h2>{dealerIsBot ? "OPPONENT'S TURN" : "HIDE THE KING"}</h2>
-                  <Ornament />
-                  <p>{dealerIsBot ? "Your opponent is choosing…" : `Choose a hiding place within ${config.seconds} seconds.`}</p>
-                  <p className="block-note">{hideLabel} · ROUND {round}</p>
+                  <p>{dealerIsBot ? "Hiding the King…" : "Tap a card to hide the King."}</p>
                 </div>
                 {dealerIsBot && (
                   <div className="cards-row fanned dealer-choice opponent-choice">
@@ -720,12 +729,14 @@ export default function Home() {
                         disabled={!bluffsAvailable[dealer]}
                         onClick={() => { setIsBluff(true); setKingPosition(null); }}
                       >
-                        <span>☵</span>
-                        <b>{bluffsAvailable[dealer] ? "USE YOUR BLUFF" : "BLUFF ALREADY USED"}</b>
-                        <small>Place only empty cards. Once this court.</small>
+                        <span>
+                          <Menu strokeWidth={2} />
+                        </span>
+                        <b>{bluffsAvailable[dealer] ? "BLUFF" : "BLUFF USED"}</b>
+                        <small>No King · once per court</small>
                       </button>
                       <button className="gold-button" disabled={!isBluff && kingPosition === null} onClick={confirmDealerChoice}>
-                        LOCK THE CARDS
+                        {isBluff ? "LOCK BLUFF" : "LOCK HIDING PLACE"}
                       </button>
                     </div>
                   </>
@@ -735,7 +746,9 @@ export default function Home() {
 
             {phase === "pass" && (
               <section className="center-stage">
-                <span className="pass-icon">♜</span>
+                <span className="pass-icon">
+                  <ChessRook strokeWidth={1.5} />
+                </span>
                 <p className="eyebrow">KEEP THE SECRET</p>
                 <h2>PASS THE DEVICE</h2>
                 <Ornament />
@@ -749,72 +762,25 @@ export default function Home() {
                 className="play-stage shuffle-stage"
                 style={{ "--shuffle-ms": `${deal.windowSec}s` } as React.CSSProperties}
               >
-                <div
-                  className="dealer-hand-rig"
-                  aria-hidden="true"
-                >
-                  <span className="held-card-mini"><i>♛</i></span>
-                  <Image
-                    className="dealer-hand-img"
-                    src="/dealer-hand.png"
-                    alt=""
-                    width={392}
-                    height={952}
-                    unoptimized
-                  />
+                <div className="stage-title">
+                  <p className="eyebrow">DEALING</p>
+                  <h2>{guesserIsBot ? "THE RIVAL IS GUESSING" : "FIND THE KING"}</h2>
+                  <p>Arranging the cards…</p>
                 </div>
-                <div className="stage-title above-hand">
-                  <p className="eyebrow">THE CARDS ARE IN MOTION</p>
-                  <h2>GAME SETUP</h2>
-                  <Ornament />
-                  <p>Dealer is arranging the cards…</p>
-                </div>
-                <div className="cards-row dealing" style={{ "--deal-fade": `${deal.fade}s` } as React.CSSProperties}>
-                  <div className="deal-flight-layer" aria-hidden="true">
-                    {Array.from({ length: config.cards }, (_, index) => {
-                      const offset = index - (config.cards - 1) / 2;
-                      return (
-                        <span
-                          key={index}
-                          className="flying-deal-card"
-                          style={{
-                            "--slot-x": `${offset * 76}px`,
-                            "--flight-delay": `${deal.launch()}s`,
-                            "--flight-duration": `${deal.flight}s`,
-                            // Spin alternates only so the fan looks hand-thrown
-                            // rather than mechanically uniform. Every card shares
-                            // the launch time and the flight duration.
-                            "--throw-spin": `${index % 2 === 0 ? 13 : -10}deg`,
-                          } as React.CSSProperties}
-                        />
-                      );
-                    })}
-                  </div>
-                  {Array.from({ length: config.cards }, (_, index) => {
-                    return (
-                      <PlayingCard
-                        key={index}
-                        index={index}
-                        chosen={index === opponentActiveCard}
-                        disabled
-                        dealDelay={deal.land()}
-                      />
-                    );
-                  })}
-                </div>
-                <p className="bottom-copy">Cards are being placed.<br />Watch closely.</p>
+                <DealerSwipe cards={config.cards} mirrored={guesserViewMirrored}
+                  windowMs={motion ? SHUFFLE_MS : REDUCED.shuffle} reducedMotion={!motion} />
+                {!guesserIsBot && <div className="guess-actions dealer-swipe-actions" aria-hidden="true">
+                  <button className="gold-button" disabled tabIndex={-1}>CHOOSE A CARD</button>
+                </div>}
               </section>
             )}
 
             {phase === "guess" && (
               <section className={["play-stage guess-stage", guesserIsBot ? "opponent-turn" : "player-turn"].join(" ")}>
-                <TurnIndicator turn={currentTurn} />
                 <div className="stage-title">
-                  <p className="eyebrow">{displayNames[guesser]} · GUESSER</p>
-                  <h2>{guesserIsBot ? "OPPONENT’S TURN" : "YOUR TURN"}</h2>
-                  <Ornament />
-                  <p>{guesserIsBot ? "The opponent is reading the table…" : "Pick a card before time runs out."}</p>
-                  <p className="block-note">ROUND {round} · {displayNames[dealer]} HIDES</p>
+                  <p className="eyebrow">{guesserIsBot ? "OPPONENT’S TURN" : `${displayNames[guesser]} · YOUR TURN`}</p>
+                  <h2>{guesserIsBot ? "THE RIVAL IS GUESSING" : "FIND THE KING"}</h2>
+                  <p>{guesserIsBot ? "Choosing a card…" : "Tap a card, then confirm your pick."}</p>
                 </div>
                 <div className="cards-row fanned">
                   {Array.from({ length: config.cards }, (_, index) => (
@@ -845,7 +811,11 @@ export default function Home() {
                     />
                   )}
                 </div>
-                <p className="bottom-copy">Find the King.</p>
+                {!guesserIsBot && <div className="guess-actions">
+                  <button className="gold-button" disabled={targetCard === null} onClick={() => { if (targetCard !== null) handleCardTap(targetCard); }}>
+                    {targetCard === null ? "CHOOSE A CARD" : `CONFIRM CARD ${targetCard + 1}`}
+                  </button>
+                </div>}
               </section>
             )}
 
@@ -934,9 +904,11 @@ export default function Home() {
                   aria-label="Leave match"
                   title="Leave match"
                 >
-                  ←
+                  <ArrowLeft size={18} strokeWidth={2.25} />
                 </button>
-                <span className="level-crown">♛</span>
+                <span className="level-crown">
+                  <Crown strokeWidth={1.75} />
+                </span>
                 <p className="eyebrow">TEN ROUNDS COMPLETE</p>
                 <h2>{config.name} CLEARED</h2>
                 <Ornament />
@@ -958,7 +930,9 @@ export default function Home() {
 
             {phase === "match-end" && (
               <section className="center-stage match-stage">
-                <span className="level-crown">♛</span>
+                <span className="level-crown">
+                  <Crown strokeWidth={1.75} />
+                </span>
                 <p className="eyebrow">THE KINGDOM HAS SPOKEN</p>
                 {mode === "local" && livesOn && lifeWinner !== null ? (
                   <>
@@ -998,6 +972,8 @@ export default function Home() {
               </section>
             )}
 
+            <footer className="match-tools">
+              <button className="quit-button" onClick={() => setOverlay("quit")} aria-label="Quit match" title="Quit match"><LogOut size={18} strokeWidth={2} /></button>
             {gameplay && phase !== "match-end" && (
               <PowerDock
                 bluffActive={phase === "guess" && !guesserIsBot}
@@ -1008,6 +984,7 @@ export default function Home() {
                 }}
               />
             )}
+            </footer>
           </>
         )}
 
@@ -1046,7 +1023,9 @@ export default function Home() {
         )}
         {overlay === "quit" && (
           <DialogShell onClose={() => setOverlay(null)} className="quit-modal">
-            <span className="modal-symbol">↪</span>
+            <span className="modal-symbol">
+              <LogOut strokeWidth={1.75} />
+            </span>
             <p className="eyebrow">LEAVE THE KINGDOM?</p>
             <h3>QUIT MATCH</h3>
             <Ornament />
@@ -1057,7 +1036,9 @@ export default function Home() {
         )}
         {overlay === "bluff" && (
           <DialogShell onClose={() => setOverlay(null)} className="bluff-modal">
-            <span className="modal-symbol">◑ ◒</span>
+            <span className="modal-symbol">
+              <CircleDot strokeWidth={1.75} />
+            </span>
             <p className="eyebrow">TRUST YOUR INSTINCT</p>
             <h3>CALL THE BLUFF?</h3>
             <Ornament />
@@ -1086,10 +1067,11 @@ export default function Home() {
 
 
 function HomeScreen({
-  names, setNames, livesOn, setLivesOn,
+  logoRef, names, setNames, livesOn, setLivesOn,
   onChallenge, onPlayWithFriend, onPassAndPlay, onPracticeBot, onJoinWithCode,
   openRules, openSettings, openAccount, accountLabel,
 }: {
+  logoRef: React.RefObject<HTMLImageElement | null>;
   names: [string, string];
   setNames: React.Dispatch<React.SetStateAction<[string, string]>>;
   livesOn: boolean;
@@ -1111,54 +1093,63 @@ function HomeScreen({
   accountLabel: string;
 }) {
   const [showPassSetup, setShowPassSetup] = useState(false);
+  const passSetupRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (showPassSetup) passSetupRef.current?.scrollIntoView({ block: "center" });
+  }, [showPassSetup]);
 
   return (
     <section className="home-screen" aria-labelledby="game-title">
       <div className="home-topbar">
         <button className="topbar-button" onClick={openAccount} aria-label={accountLabel}>
-          <span aria-hidden="true">👤</span>
+          <span aria-hidden="true">
+            <User size={16} strokeWidth={2} />
+          </span>
           <span className="topbar-label">{accountLabel}</span>
         </button>
         <button className="topbar-button" onClick={openSettings} aria-label="Settings">
-          <span aria-hidden="true">⚙️</span>
+          <span aria-hidden="true">
+            <Settings size={16} strokeWidth={2} />
+          </span>
           <span className="topbar-label">SETTINGS</span>
         </button>
       </div>
 
-      <Logo />
-      <p className="tagline">Outsmart. Bluff. Win.</p>
-      <div className="king-emblem">
-        <Image
-          className="home-app-logo"
-          src="/app-logo.png"
-          alt="Kill the King mask and sword emblem"
-          width={1324}
-          height={1296}
-          priority
-          unoptimized
-        />
+      <h1 id="game-title" className="sr-only">Kill the King</h1>
+      <div className="home-brand">
+        <div className="king-emblem">
+          <Image
+            ref={logoRef}
+            className="home-app-logo"
+            src="/cards/ktk-emblem-gold.webp"
+            alt="Kill the King mask and sword emblem"
+            width={1254}
+            height={1254}
+            priority
+            unoptimized
+          />
+        </div>
       </div>
 
       <div className="entry-panel home-menu">
         <button className="gold-button home-challenge" onClick={onChallenge}>
-          CHALLENGE
+          PLAY ONLINE
         </button>
-        <p className="home-hint">Find an online opponent</p>
 
         <div className="home-row">
-          <button className="outline-button" onClick={onPlayWithFriend}>PLAY WITH FRIEND</button>
+          <button className="outline-button" onClick={onPlayWithFriend}>WITH FRIENDS</button>
           <button className="outline-button" onClick={() => setShowPassSetup((open) => !open)}>
-            PASS N PLAY
+            PASS &amp; PLAY
           </button>
         </div>
 
-        <button className="outline-button" onClick={onPracticeBot}>
-          PRACTICE WITH BOT
+        <button className="outline-button" onClick={onPracticeBot} aria-label="Practice with bot">
+          PRACTICE
         </button>
 
         {showPassSetup && (
-          <div className="pass-setup">
-            <p className="panel-title">TWO PLAYERS · ONE DEVICE</p>
+          <div className="pass-setup" ref={passSetupRef}>
             <label htmlFor="player-one">YOUR NAME</label>
             <input
               id="player-one"
@@ -1183,29 +1174,23 @@ function HomeScreen({
                 onChange={(e) => setLivesOn(e.target.checked)}
               />
             </label>
-            {livesOn && <p className="settings-note">Finding the King costs the hider a life. First to ❤ 0 loses.</p>}
-            <button className="gold-button" onClick={onPassAndPlay}>START PASS N PLAY</button>
+            {livesOn && (
+              <p className="settings-note">
+                Finding the King costs the hider a life. First to{" "}
+                <Heart fill="currentColor" strokeWidth={1.5} className="inline-icon" /> 0 loses.
+              </p>
+            )}
+            <button className="gold-button" onClick={onPassAndPlay}>START GAME</button>
           </div>
         )}
 
         <div className="home-links">
-          <button className="text-button" onClick={onJoinWithCode}>ROOM CODE</button>
+          <button className="text-button" onClick={onJoinWithCode}>JOIN ROOM</button>
           <span aria-hidden="true">·</span>
           <button className="text-button" onClick={openRules}>HOW TO PLAY</button>
         </div>
       </div>
 
-      <div className="level-route">
-        {COURTS.map((court, index) => (
-          <span key={court.name}>
-            {index > 0 && <i>→</i>}
-            {court.cards} CARDS
-          </span>
-        ))}
-      </div>
-      <p className="round-note">
-        {COURTS.map((c) => `${c.cards} cards · ${c.hidesPerPlayer * 2} rounds`).join("  ·  ")}
-      </p>
     </section>
   );
 }

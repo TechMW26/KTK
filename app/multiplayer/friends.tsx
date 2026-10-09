@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { ArrowLeft } from "lucide-react";
 
 import { useFriends, type FriendsState } from "@/hooks/useFriends";
 import type { Friend } from "@/services/friendsService";
@@ -51,7 +52,8 @@ export function FriendsScreen({
   return (
     <div className="mp-frame mp-flow">
       <button className="mp-back home-link" onClick={onBack}>
-        ← Back
+        <ArrowLeft size={16} strokeWidth={2.25} />
+        Back
       </button>
 
       <div className="mp-menu-brand">

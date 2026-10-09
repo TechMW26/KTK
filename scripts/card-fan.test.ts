@@ -16,6 +16,7 @@ import {
   CARD_PITCH,
   CARD_WIDTH,
   cardFan,
+  cardFanContact,
   cardFanSlot,
   cardFanStyle,
   indexToSlot,
@@ -38,6 +39,25 @@ function check(name: string, fn: () => void) {
 }
 
 console.log("card-fan.test — curved layout and mirrored identity");
+
+check("fingertip follows the lower card face after rotation and scale", () => {
+  for (const count of [2, 3, 5]) {
+    for (let index = 0; index < count; index++) {
+      for (const mirrored of [false, true]) {
+        const slot = indexToSlot(index, count, mirrored);
+        const contact = cardFanContact(slot, count);
+        const { rotate, scale } = cardFanSlot(slot, count);
+        const angle = rotate * Math.PI / 180;
+        // Undo the actual card transform: contact must be on its centreline,
+        // 70% down its face, including mirrored edge cards.
+        const localX = (contact.x * Math.cos(angle) + (contact.y - .5) * Math.sin(angle)) / scale;
+        const localY = (-contact.x * Math.sin(angle) + (contact.y - .5) * Math.cos(angle)) / scale + .5;
+        assert.ok(Math.abs(localX) < 1e-10);
+        assert.ok(Math.abs(localY - .7) < 1e-10);
+      }
+    }
+  }
+});
 
 check("the centre card sits highest and the edges drop below it", () => {
   const row = cardFan(5);
@@ -148,7 +168,7 @@ check("a single card sits flat and centred", () => {
 check("emitted style carries the geometry as CSS custom properties", () => {
   const style = cardFanStyle(4, 5);
   assert.equal(style["--fan-x"], `${2 * CARD_PITCH}px`);
-  assert.equal(style["--fan-y"], `${ARC_DROP}px`);
+  assert.equal(style["--fan-y"], `calc(1 * var(--fan-drop, ${ARC_DROP}px))`);
   assert.equal(style["--fan-rotate"], `${ARC_TILT}deg`);
   assert.ok(style["--fan-z"]);
 });
@@ -166,6 +186,27 @@ check("paint order peaks at the centre, so every card keeps a tappable strip", (
   // exposed outer strip to tap. Ascending z (the bug this guards) buries the
   // outer cards entirely.
   assert.ok(row[0].z > 0, "the outermost card must still paint above the row");
+});
+
+check("mirrored DOM order and overlap follow screen slots in every court", () => {
+  for (const count of [2, 3, 5]) {
+    for (const mirrored of [false, true]) {
+      const painted = Array.from({ length: count }, (_, index) => ({ index, style: cardFanStyle(indexToSlot(index, count, mirrored), count) }))
+        .sort((a, b) => Number(a.style["--fan-slot"]) - Number(b.style["--fan-slot"]));
+      assert.deepEqual(painted.map(c => c.index), Array.from({ length: count }, (_, slot) => slotToIndex(slot, count, mirrored)));
+      assert.equal(painted[0].style["--fan-overlap-step"], "0");
+      assert.ok(painted.slice(1).every(c => c.style["--fan-overlap-step"] === "1"));
+    }
+  }
+});
+
+check("small courts use a gentler symmetric fan", () => {
+  assert.equal(cardFanSlot(0, 2).rotate, -6);
+  assert.equal(cardFanSlot(1, 2).rotate, 6);
+  assert.equal(cardFanSlot(0, 3).rotate, -10);
+  assert.equal(cardFanSlot(2, 3).rotate, 10);
+  assert.ok(cardFanSlot(0, 2).y < cardFanSlot(0, 3).y);
+  assert.ok(cardFanSlot(0, 3).y < cardFanSlot(0, 5).y);
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);
