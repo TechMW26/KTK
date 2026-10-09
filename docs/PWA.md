@@ -6,6 +6,13 @@ The OS ultimately controls status indicators and whether fullscreen is granted.
 `viewport-fit=cover` and safe-area CSS let the textured background fill the
 surface while keeping interactive content clear of the notch and home indicator.
 
+Installed mode uses an explicit `100vh` canvas rather than fixed `inset: 0` or
+`100dvh` bounds. This covers the bottom strip excluded by some iOS standalone
+viewport calculations ([WebKit issue 254868](https://bugs.webkit.org/show_bug.cgi?id=254868)).
+The intro shares that height; its Skip button receives the bottom safe inset
+plus 20px of spacing. Normal browser mode continues to track dynamic toolbar
+height with `100dvh`. Card sizes and fan geometry remain unchanged.
+
 ## Icons
 
 `pnpm pwa:icons` composites the existing golden emblem onto a matte background.
