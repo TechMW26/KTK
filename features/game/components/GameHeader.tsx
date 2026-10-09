@@ -2,6 +2,7 @@ import { Logo } from "@/components/common/Brand";
 import { STARTING_LIVES } from "@/features/game/constants/courts";
 import type { Seat } from "@/features/game/types/game";
 import { Heart, Settings } from "lucide-react";
+import { RoundMedallion } from "./RoundMedallion";
 
 /**
  * The match header: brand, round medallion, turn clock and score rail.
@@ -69,10 +70,7 @@ export function GameHeader({
     <header className="game-header" aria-label={`Level ${level + 1}, round ${round}, ${cardCount} cards, ${points} point stakes${activeAction ? `, ${activeAction}` : ""}`}>
       <Logo compact />
 
-      <div className="round-medallion">
-        <small>LEVEL {level + 1}</small>
-        <strong>{String(round).padStart(2, "0")}</strong>
-      </div>
+      <RoundMedallion level={level + 1} round={round} />
 
       <div className="header-controls">
         {time === null ? (

@@ -81,8 +81,10 @@ html, body { min-height: 100%; background: #101110; overscroll-behavior: none; }
 }
 @media (max-height: 520px) {
   .game-screen .game-header { height: 80px; padding-top: 8px; }
-  .game-screen .round-medallion { width: 40px; height: 40px; }
-  .game-screen .round-medallion strong { font-size: 20px; }
+  .game-screen .round-medallion { width: 56px; height: 36px; padding: 2px 6px; }
+  .game-screen .round-medallion small { font-size: 7px; line-height: 9px; }
+  .game-screen .round-medallion strong { font-size: 18px; }
+  .game-screen .round-caption { display: none; }
   .game-screen .stage-title h2 { font-size: 20px; }
   .game-screen .stage-title p:last-child { font-size: 11px; }
   .game-screen .stage-title .eyebrow { display: none; }

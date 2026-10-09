@@ -15,6 +15,7 @@ import type useMultiplayer from "@/hooks/useMultiplayer";
 import { useFriends } from "@/hooks/useFriends";
 import { PlayingCard } from "@/components/ui/PlayingCard";
 import { LifePips } from "@/features/game/components/GameHeader";
+import { RoundMedallion } from "@/features/game/components/RoundMedallion";
 import { Crown, LogOut, Menu } from "lucide-react";
 import { MpEyebrow, MpFrame, MpLogo, MpModal, MpOrnament } from "./ui";
 
@@ -201,10 +202,7 @@ function Header({ mp, activeSeconds }: { mp: MP; activeSeconds: number | null })
     <div className="mp-head">
       <header className="game-header">
         <MpLogo compact />
-        <div className="round-medallion">
-          <small>LEVEL {g.level + 1}</small>
-          <strong>{String(shownRound).padStart(2, "0")}</strong>
-        </div>
+        <RoundMedallion level={g.level + 1} round={shownRound} />
         <div className="header-controls">
           <MpLiveTimer seconds={activeSeconds} cfgSeconds={cfg.seconds} />
         </div>

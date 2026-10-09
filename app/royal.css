@@ -73,8 +73,30 @@
 .game-screen > .game-header { grid-row: 1; }
 .game-screen > .play-stage, .game-screen > .center-stage { grid-row: 2; }
 .game-header { height: 128px; padding: 22px var(--frame-gutter) 0; }
-.game-header .round-medallion { width: 58px; height: 58px; background: #191a16; box-shadow: inset 0 1px #fbe3a84d; border-color: #a58a51; }
-.game-header .round-medallion strong { font-size: 27px; }
+.game-header .round-medallion {
+  position: relative; isolation: isolate;
+  width: 76px; height: 66px; padding: 7px 8px; gap: 2px;
+  border: 1px solid transparent; border-radius: 12px;
+  background:
+    linear-gradient(155deg, #29261e, #171813 55%, #10110e) padding-box,
+    linear-gradient(135deg, #f2dca2, #a58953 24%, #504126 53%, #d8b879 78%, #78613c) border-box;
+  box-shadow: inset 0 1px #fff0c51a, 0 4px 9px #0005;
+  backdrop-filter: none; -webkit-backdrop-filter: none;
+}
+.game-header .round-medallion::before {
+  content: ""; position: absolute; inset: 3px; border-radius: 8px;
+  border: 1px solid #e7c98d17; pointer-events: none;
+}
+.game-header .round-medallion::after {
+  content: ""; position: absolute; top: 4px; left: 12px; right: 12px; height: 10px;
+  border-radius: 6px; background: linear-gradient(#fff0c509, transparent); pointer-events: none;
+}
+.game-header .round-medallion small { font-size: 8px; line-height: 10px; letter-spacing: .11em; color: #cfb981; }
+.game-header .round-medallion strong {
+  font-size: 28px; line-height: 1; font-weight: 600; letter-spacing: -.02em;
+  font-variant-numeric: tabular-nums; color: #f4d88e; text-shadow: 0 1px 1px #0008;
+}
+.game-header .round-caption { font-size: 7px; line-height: 8px; letter-spacing: .15em; color: #b9a477; }
 .game-header .mini-settings, .game-header .timer { width: 46px; height: 46px; }
 .game-header .score-strip {
   left: var(--frame-gutter); right: var(--frame-gutter);
@@ -265,6 +287,8 @@
 @media (max-height: 700px) {
   .game-screen .shuffle-stage .stage-title, .game-screen .guess-stage .stage-title { min-height: 84px; }
   .game-screen .game-header { height: 104px; padding-top: 12px; }
+  .game-header .round-medallion { width: 68px; height: 54px; padding: 4px 6px; gap: 1px; }
+  .game-header .round-medallion strong { font-size: 24px; }
   .game-screen .play-stage { padding-top: 8px; }
   .game-screen .stage-title { margin-bottom: 8px; }
   .game-screen .stage-title .eyebrow { margin-bottom: 5px; }
