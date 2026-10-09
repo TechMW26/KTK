@@ -1,0 +1,85 @@
+/* The surface reaches the edges; only content receives safe insets. */
+html, body { min-height: 100%; background: #101110; overscroll-behavior: none; }
+.game-shell { padding: 0; height: 100dvh; min-height: 0; overflow: hidden; }
+.game-screen {
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  height: 100dvh;
+  padding: var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left);
+}
+.home-screen { position: relative; }
+.game-screen::before { z-index: 100; }
+.game-screen:has(.mp-search) { padding: 0; }
+.game-screen .mp-frame.mp-search {
+  padding-top: calc(var(--safe-top) + clamp(30px, 5dvh, 48px));
+  padding-bottom: calc(var(--safe-bottom) + 24px);
+  padding-left: calc(var(--safe-left) + 24px);
+  padding-right: calc(var(--safe-right) + 24px);
+}
+.game-screen .search-map-caption { bottom: calc(var(--safe-bottom) + 28px); }
+
+/* Fixed action rows above the footer. Preserve the original large card sizes;
+   reserve the remaining cell for the fan instead of extending page height. */
+.game-screen .play-stage,
+.online-board .mp-stage:has(.cards-row) {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  width: 100%; min-height: 0; overflow: hidden;
+  gap: 0; padding: 10px 0 8px;
+}
+.game-screen .result-stage,
+.online-board .mp-stage:has(.round-verdict) { grid-template-rows: auto minmax(0, 1fr) auto auto; }
+.game-screen .play-stage .stage-title,
+.online-board .mp-stage:has(.cards-row) .stage-title { grid-row: 1; min-height: 0; margin-bottom: 12px; }
+.game-screen .play-stage > .cards-row,
+.online-board .mp-stage > .cards-row,
+.online-board .reveal-hand-wrap {
+  grid-row: 2; align-self: stretch; min-height: 0; height: 100%; margin: 0 auto;
+}
+.online-board .reveal-hand-wrap .cards-row { height: 100%; min-height: 0; }
+.game-screen .cards-row.fanned { --fan-drop: min(18cqw, 70px); }
+.game-screen .result-stage .cards-row.fanned { --fan-card-w: min(32cqw, var(--card-height-limit)); --fan-card-h: calc(var(--fan-card-w) * 1624 / 884); }
+.game-screen .result-stage .stage-title,
+.online-board .mp-stage:has(.round-verdict) .stage-title { margin-bottom: 32px; }
+.game-screen .dealer-actions, .game-screen .guess-actions,
+.online-board .mp-stage > .gold-button { grid-row: 3; align-self: end; margin-block: 0; z-index: 82; }
+.game-screen .dealer-actions, .game-screen .guess-actions { padding-top: 8px; }
+.game-screen .dealer-actions, .game-screen .guess-actions, .game-screen .round-verdict { position: relative; background: #101110; }
+.game-screen .round-verdict { grid-row: 3; margin: 6px auto; }
+.game-screen .result-next,
+.online-board .mp-stage:has(.round-verdict) > .gold-button { grid-row: 4; align-self: end; margin: 0 auto; z-index: 82; }
+.game-screen .result-next { min-height: 48px; }
+.game-screen .match-tools { position: relative; z-index: 83; }
+.game-screen .reveal-row .playing-card.face-up { animation-name: fan-reveal-settle; }
+.game-screen .card-crown { --crown-size: clamp(14px, 28cqw, 28px); top: calc(var(--crown-size) * -1 - 4px); font-size: var(--crown-size); }
+.game-screen .card-crown svg { width: var(--crown-size); height: var(--crown-size); }
+@keyframes fan-reveal-settle {
+  from { transform: translateY(calc(var(--fan-y) - 6px)) rotate(var(--fan-rotate)) scale(var(--fan-scale)); }
+  to { transform: translateY(var(--fan-y)) rotate(var(--fan-rotate)) scale(var(--fan-scale)); }
+}
+.game-screen .turn-transition { padding: var(--safe-top) 16px var(--safe-bottom); }
+.game-screen .turn-transition-announce { width: 100%; min-width: 0; padding: 30px 16px; }
+.game-screen .turn-transition-title { white-space: normal; overflow-wrap: anywhere; font-size: clamp(23px, 7cqw, 34px); letter-spacing: .055em; }
+.game-screen .turn-transition-subtitle { max-width: 100%; overflow-wrap: anywhere; letter-spacing: .06em; }
+@media (max-height: 700px) {
+  .game-screen .play-stage .stage-title, .online-board .mp-stage:has(.cards-row) .stage-title { margin-bottom: 8px; }
+  .game-screen .result-stage .stage-title, .online-board .mp-stage:has(.round-verdict) .stage-title { margin-bottom: 26px; }
+  .game-screen .card-crown { --crown-size: clamp(12px, 24cqw, 20px); }
+}
+@media (max-height: 520px) {
+  .game-screen .game-header { height: 80px; padding-top: 8px; }
+  .game-screen .round-medallion { width: 40px; height: 40px; }
+  .game-screen .round-medallion strong { font-size: 20px; }
+  .game-screen .stage-title h2 { font-size: 20px; }
+  .game-screen .stage-title p:last-child { font-size: 11px; }
+  .game-screen .stage-title .eyebrow { display: none; }
+  .game-screen .match-tools { padding-top: 4px; padding-bottom: 6px; }
+  .game-screen .cards-row.fanned { --fan-drop: min(12cqw, 36px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .game-screen .reveal-row .playing-card.face-up { animation: none; }
+}

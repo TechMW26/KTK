@@ -34,6 +34,19 @@ pnpm dev
 
 Open the local address printed in the terminal.
 
+## Install as an app
+
+The production build includes a fullscreen PWA with gold logo icons and an
+offline game shell. On iPhone, open the HTTPS site in Safari and choose Share →
+Add to Home Screen. On Android, use the browser's Install app / Add to Home
+screen option. Content clears the status bar and home indicator; the textured
+surface extends through those safe areas.
+
+After one online launch, practice and pass-and-play are available offline.
+Accounts and multiplayer need a connection. Service workers run only in
+production builds, served through HTTPS or localhost. See [PWA notes](docs/PWA.md)
+for packaging, updates, and device validation.
+
 ## Validate a production build
 
 ```bash

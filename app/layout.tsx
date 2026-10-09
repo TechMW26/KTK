@@ -7,13 +7,18 @@ import "./glass.css";
 // Opaque matte card art and board finish, after the older glass treatment.
 import "./cards.css";
 import "./royal.css";
+import "./pwa.css";
 
 export const metadata: Metadata = {
   title: "Kill the King",
   description: "A game of instinct, strategy, and deception.",
+  manifest: "/manifest.webmanifest",
+  applicationName: "Kill the King",
+  appleWebApp: { capable: true, title: "Kill the King", statusBarStyle: "black-translucent" },
   icons: {
-    icon: "/favicon.svg",
-    shortcut: "/favicon.svg",
+    icon: [{ url: "/icons/icon-48.png", sizes: "48x48", type: "image/png" }],
+    shortcut: "/icons/icon-192.png",
+    apple: [{ url: "/icons/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
   },
 };
 
@@ -26,7 +31,7 @@ export const viewport: Viewport = {
   maximumScale: 1,
   userScalable: false,
   viewportFit: "cover",
-  themeColor: "#050403",
+  themeColor: "#101110",
 };
 
 export default function RootLayout({

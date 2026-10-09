@@ -1,4 +1,5 @@
 "use client";
+import { PwaRegistration } from "@/components/common/PwaRegistration";
 
 import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, Check } from "lucide-react";
@@ -279,6 +280,7 @@ export default function MultiplayerPage() {
   // ------------------------------------------------------------------ body
   return (
     <main className="game-shell mp">
+      <PwaRegistration />
       <section className={["game-screen", "mp-screen", revealTone].filter(Boolean).join(" ")}>
         {revealTone ? <div className="impact-vignette" /> : null}
 

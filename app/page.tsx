@@ -23,6 +23,7 @@ import { RulesModal, SettingsModal } from "@/features/game/components/InfoDialog
 import { PowerDock } from "@/features/game/components/PowerDock";
 import { SelectionHand } from "@/features/game/components/SelectionHand";
 import { DealerSwipe } from "@/features/game/components/DealerSwipe";
+import { PwaRegistration } from "@/components/common/PwaRegistration";
 import { indexToSlot } from "@/features/game/logic/cardFan";
 import { StrategyModal } from "@/features/game/components/StrategyModal";
 import { AccountDialog } from "@/features/account/components/AccountDialog";
@@ -627,6 +628,7 @@ export default function Home() {
 
   return (
     <main className={["game-shell", motion ? "" : "reduced-motion"].filter(Boolean).join(" ")}>
+      <PwaRegistration />
       {splashOpen && <SplashScreen logoRef={homeLogoRef} sound={sound} onDone={() => setSplashOpen(false)} />}
       <section inert={splashOpen || undefined} className={["game-screen", phase === "result" && result ? RESULT_COPY[result.kind].tone : ""].filter(Boolean).join(" ")}>
 

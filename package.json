@@ -8,8 +8,8 @@
   },
   "scripts": {
     "dev": "vinext dev",
-    "build": "vite build",
-    "build:node": "cross-env NITRO_PRESET=node vite build",
+    "build": "vite build && node scripts/build-pwa.mjs",
+    "build:node": "cross-env NITRO_PRESET=node vite build && node scripts/build-pwa.mjs",
     "preview:node": "node .output/server/index.mjs",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit -p tsconfig.json",
@@ -28,13 +28,15 @@
     "test:inspection": "node --experimental-strip-types scripts/inspection.test.ts",
     "test:reveal-perspective": "node --experimental-strip-types scripts/reveal-perspective.test.ts",
     "test:rooms": "node --experimental-strip-types scripts/room-verdicts.test.ts",
-    "test": "npm run typecheck && npm run test:rules && npm run test:bot && npm run test:flow && npm run test:progression && npm run test:logic && npm run test:single-source && npm run test:friends && npm run test:matchmaking && npm run test:header-actions && npm run test:facebook-auth && npm run test:card-fan && npm run test:inspection && npm run test:reveal-perspective && npm run test:intro && npm run test:dealer-swipe",
+    "test": "npm run typecheck && npm run test:rules && npm run test:bot && npm run test:flow && npm run test:progression && npm run test:logic && npm run test:single-source && npm run test:friends && npm run test:matchmaking && npm run test:header-actions && npm run test:facebook-auth && npm run test:card-fan && npm run test:inspection && npm run test:reveal-perspective && npm run test:intro && npm run test:dealer-swipe && npm run test:pwa",
     "app:build": "node scripts/build-capacitor-web.mjs",
     "app:sync": "cap sync android",
     "app:apk": "cd android && gradlew.bat assembleDebug",
     "app:build-run": "node scripts/build-capacitor-web.mjs && cap sync android",
     "test:intro": "node --experimental-strip-types scripts/intro-transition.test.ts",
-    "test:dealer-swipe": "node --experimental-strip-types scripts/dealer-swipe.test.ts"
+    "test:dealer-swipe": "node --experimental-strip-types scripts/dealer-swipe.test.ts",
+    "pwa:icons": "node scripts/generate-pwa-icons.mjs",
+    "test:pwa": "node --experimental-strip-types scripts/pwa.test.ts"
   },
   "dependencies": {
     "@capacitor/android": "^8.5.1",
