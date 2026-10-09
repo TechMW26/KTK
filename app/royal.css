@@ -195,7 +195,7 @@
   padding: 10px var(--frame-gutter) 18px; min-width: 0;
   background: #111210;
 }
-.game-screen .match-tools .quit-button { position: static; margin: 0 !important; flex: 0 0 42px; width: 42px; height: 42px; border-radius: 8px; background: #1a1915; }
+.game-screen .match-tools .quit-button { position: static; margin: 0 !important; flex: 0 0 44px; width: 44px; height: 44px; }
 .game-screen .power-dock {
   position: static; left: auto; right: auto; bottom: auto; transform: none;
   display: flex; justify-content: flex-end; gap: 8px; padding: 0;
@@ -280,3 +280,24 @@
   .game-screen .round-verdict { padding: 5px 0; margin: 8px auto; }
 }
 @media (prefers-reduced-motion: reduce) { .selection-hand-img, .inspection-hand { animation: none; } }
+
+/* Bare utility icons retain a generous invisible touch target. */
+.game-shell :is(.topbar-button, .mini-settings, .settings-button, .quit-button, .back-button, .modal-close),
+.game-screen .power-dock button,
+.game-screen:has(.result-stage) .power-dock button:first-child {
+  min-width: 44px; min-height: 44px;
+  border: 0; border-radius: 0; background: transparent;
+  box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none;
+}
+.game-shell :is(.topbar-button, .mini-settings, .settings-button, .quit-button, .back-button, .modal-close):hover,
+.game-screen .power-dock button:hover {
+  background: transparent; box-shadow: none; color: var(--gold-bright);
+}
+.game-shell :is(.topbar-button, .mini-settings, .settings-button, .quit-button, .back-button, .modal-close):focus-visible,
+.game-screen .power-dock button:focus-visible { outline-offset: -2px; }
+.game-shell .topbar-button { justify-content: center; padding: 0 8px; }
+.game-shell .topbar-button span[aria-hidden] { display: inline-flex; }
+.game-shell .topbar-button span[aria-hidden] svg,
+.game-shell :is(.quit-button, .back-button, .modal-close) svg { width: 24px; height: 24px; }
+.game-shell .mini-settings svg { width: 32px; height: 32px; }
+.game-screen .power-dock button span { font-size: 25px; height: 28px; line-height: 28px; }
