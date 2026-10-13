@@ -11,6 +11,8 @@
  */
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { canPublishGuessInspection, visibleGuessInspection } from "../lib/multiplayer/inspection.ts";
+import type { GamePhase } from "../lib/multiplayer/types.ts";
 
 const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
 const royal = readFileSync(new URL("../app/royal.css", import.meta.url), "utf8");
@@ -63,8 +65,7 @@ check("publishInspecting exists and only the acting seat may write", () => {
     service.indexOf("export async function publishInspecting"),
     service.indexOf("// Dealer"),
   );
-  assert.match(fn, /cur\.actingSeat === args\.seat/);
-  assert.match(fn, /cur\.phase === "guess" \|\| cur\.phase === "dealer-hide"/);
+  assert.match(fn, /canPublishGuessInspection\(cur, args\.seat\)/);
 });
 
 check("publishInspecting does NOT advance the game sequence", () => {
@@ -98,17 +99,34 @@ check("the hook forgets the last index when round / turn changes", () => {
 
 // --- the wiring ------------------------------------------------------------
 
-check("both the guesser's aim and the dealer's choice publish inspection", () => {
-  const calls = game.match(/mp\.setInspecting\(/g) ?? [];
-  assert.ok(calls.length >= 4, `expected publish + clear call sites, found ${calls.length}`);
+check("only the guesser's aim publishes inspection; hiding stays local", () => {
   assert.match(game, /setInspecting\(done \? null : targetCard\)/);
-  assert.match(game, /setInspecting\(isBluff \? null : kingIndex\)/);
+  const hiding = game.slice(game.indexOf("function HideStage"), game.indexOf("function GuessStage"));
+  assert.ok(!hiding.includes("setInspecting"), "hiding selection must never reach shared state");
+  assert.match(hook, /canPublishGuessInspection\(game, mySeat\)/);
 });
 
 check("the observer renders the synced inspection, and never the actor", () => {
   assert.match(game, /function OpponentRow/);
-  assert.match(game, /const inspecting = g\.inspectingCardIndex \?\? null;/);
+  assert.match(game, /visibleGuessInspection\(g, cfg\.cards\)/);
   assert.match(game, /<InspectionVisual index=\{inspecting\}/);
+});
+
+check("all hiding selections and stale hiding inspections are rejected for both seats", () => {
+  for (const dealerSeat of [0,1] as const) {
+    for (const actingSeat of [0,1] as const) {
+      for (const phase of ["dealer-hide","shuffle","guess","reveal","level-end","match-end"] as GamePhase[]) {
+        const turn = { phase, dealerSeat, actingSeat, inspectingCardIndex: 3 };
+        for (const seat of [0,1] as const) {
+          assert.equal(canPublishGuessInspection(turn, seat), phase === "guess" && seat === actingSeat && seat !== dealerSeat);
+        }
+        assert.equal(visibleGuessInspection(turn,5), phase === "guess" && actingSeat !== dealerSeat ? 3 : null);
+      }
+    }
+  }
+  for (const index of [-1,5,1.5,NaN,Infinity]) {
+    assert.equal(visibleGuessInspection({phase:"guess",dealerSeat:0,actingSeat:1,inspectingCardIndex:index},5),null);
+  }
 });
 
 check("the opponent's hand is non-interactive", () => {

@@ -7,13 +7,15 @@ import { PlayingCard } from "@/components/ui/PlayingCard";
 import { dealTimings, SHUFFLE_MS } from "@/features/game/constants/pacing";
 import { ARC_DROP, CARD_PITCH, cardFanContact, cardFanSlot, indexToSlot } from "@/features/game/logic/cardFan";
 import { DEALER_ART, dealerSwipePlan } from "@/features/game/logic/dealerSwipe";
+import { CardRow } from "./CardRow";
+import { oppositePoint } from "../logic/tablePerspective";
 
 /** Shared local/online deal: screen-wide hand swipe above the actual fan.
- * Portalling to the board lets the long arm reach past its top edge, rather
+ * Portalling to the board lets the long arm reach past its entry edge, rather
  * than being visibly cut at the scrollable table's boundary.
  */
-export function DealerSwipe({ cards, mirrored = false, windowMs = SHUFFLE_MS, reducedMotion = false }: {
-  cards: number; mirrored?: boolean; windowMs?: number; reducedMotion?: boolean;
+export function DealerSwipe({ cards, mirrored = false, opposite = false, windowMs = SHUFFLE_MS, reducedMotion = false }: {
+  cards: number; mirrored?: boolean; opposite?: boolean; windowMs?: number; reducedMotion?: boolean;
 }) {
   const rowRef = useRef<HTMLDivElement>(null);
   const handRef = useRef<HTMLImageElement>(null);
@@ -34,9 +36,13 @@ export function DealerSwipe({ cards, mirrored = false, windowMs = SHUFFLE_MS, re
       const bounds = board.getBoundingClientRect();
       const contacts = Array.from(row.querySelectorAll<HTMLElement>(".dealer-contact"))
         .sort((a, b) => Number(a.dataset.slot) - Number(b.dataset.slot))
-        .map(marker => { const p = marker.getBoundingClientRect(); return { x: p.left - bounds.left, y: p.top - bounds.top }; });
+        .map(marker => { const p = marker.getBoundingClientRect(); const x = p.left - bounds.left, y = p.top - bounds.top;
+          return opposite ? oppositePoint({ x, y }, bounds.width, bounds.height) : { x, y }; });
       const card = row.querySelector<HTMLElement>(".playing-card");
       if (!contacts.length || !card) return;
+      // The bottom overlay is a 180-degree copy of the top choreography.
+      // Contacts are converted back first, so both the landing depth and the
+      // hidden forearm buffer are identical relative to the entry edge.
       const plan = dealerSwipePlan(contacts, card.offsetWidth);
       hand.style.width = `${plan.width}px`;
       hand.style.height = `${plan.height}px`;
@@ -46,13 +52,14 @@ export function DealerSwipe({ cards, mirrored = false, windowMs = SHUFFLE_MS, re
       animation.currentTime = Math.min(windowMs, performance.now() - started);
     };
     arrange();
+    row.addEventListener("card-row-aligned", arrange);
     const observer = new ResizeObserver(arrange);
     observer.observe(row); observer.observe(board);
-    return () => { observer.disconnect(); animation?.cancel(); };
-  }, [board, cards, mirrored, reducedMotion, windowMs]);
+    return () => { observer.disconnect(); row.removeEventListener("card-row-aligned", arrange); animation?.cancel(); };
+  }, [board, cards, mirrored, opposite, reducedMotion, windowMs]);
 
   return <>
-    <div ref={rowRef} className={`cards-row fanned dealing dealer-swipe${mirrored ? " mirrored" : ""}`}
+    <CardRow ref={rowRef} opposite={opposite} className={`dealing dealer-swipe${mirrored ? " mirrored" : ""}`}
       style={{ "--deal-flight": `${timing.flight}s` } as React.CSSProperties}>
       {Array.from({ length: cards }, (_, index) => {
         const slot = indexToSlot(index, cards, mirrored);
@@ -65,8 +72,8 @@ export function DealerSwipe({ cards, mirrored = false, windowMs = SHUFFLE_MS, re
           top: `calc(${y / ARC_DROP} * var(--fan-drop) + ${contact.y} * var(--fan-card-h))`,
         }} />;
       })}
-    </div>
-    {board && createPortal(<div className="dealer-swipe-overlay" aria-hidden="true">
+    </CardRow>
+    {board && createPortal(<div className={`dealer-swipe-overlay${opposite ? " from-bottom" : ""}`} aria-hidden="true">
       <Image ref={handRef} className="dealer-swipe-hand" src="/dealer-swipe-hand.png" alt=""
         width={DEALER_ART.width} height={DEALER_ART.height} priority unoptimized />
     </div>, board)}

@@ -23,8 +23,8 @@ import { RulesModal, SettingsModal } from "@/features/game/components/InfoDialog
 import { PowerDock } from "@/features/game/components/PowerDock";
 import { SelectionHand } from "@/features/game/components/SelectionHand";
 import { DealerSwipe } from "@/features/game/components/DealerSwipe";
+import { CardRow } from "@/features/game/components/CardRow";
 import { PwaRegistration } from "@/components/common/PwaRegistration";
-import { indexToSlot } from "@/features/game/logic/cardFan";
 import { StrategyModal } from "@/features/game/components/StrategyModal";
 import { AccountDialog } from "@/features/account/components/AccountDialog";
 import { AccountScreen } from "@/features/account/components/AccountScreen";
@@ -136,17 +136,6 @@ export default function Home() {
   const guesser = guesserForRound(round);
   const dealerIsBot = mode === "bot" && dealer === 1;
   const guesserIsBot = mode === "bot" && guesser === 1;
-  /**
-   * Whether the card row is painted from the other side of the table.
-   *
-   * Local play is always viewed from the acting seat — the device is handed to
-   * whoever must act, so that player is at the bottom of the screen and the row
-   * is never mirrored. Multiplayer is where two players genuinely sit opposite,
-   * so the row is mirrored whenever the PLAYER AT THE BOTTOM is dealer and the
-   * opponent is across the table (seat 1 looking at a seat 0 view). Identity is
-   * untouched either way; see features/game/logic/cardFan.ts.
-   */
-  const guesserViewMirrored = false;
   // Complete-turn blocks: which hide this is inside the current player's run.
   // Round resets to 1 each court, so the block restarts there too.
   // Even, window-fitted deal choreography for the current court's card count.
@@ -676,7 +665,7 @@ export default function Home() {
                   <p>{dealerIsBot ? "Hiding the King…" : "Tap a card to hide the King."}</p>
                 </div>
                 {dealerIsBot && (
-                  <div className="cards-row fanned dealer-choice opponent-choice">
+                  <CardRow opposite className="dealer-choice opponent-choice">
                     {Array.from({ length: config.cards }, (_, index) => (
                       <PlayingCard
                         key={index}
@@ -686,13 +675,7 @@ export default function Home() {
                         disabled
                       />
                     ))}
-                    <SelectionHand
-                      index={Math.floor((config.cards - 1) / 2)}
-                      cardCount={config.cards}
-                      faint
-                      roaming
-                    />
-                  </div>
+                  </CardRow>
                 )}
                 {!dealerIsBot && (
                   <>
@@ -769,7 +752,7 @@ export default function Home() {
                   <h2>{guesserIsBot ? "THE RIVAL IS GUESSING" : "FIND THE KING"}</h2>
                   <p>Arranging the cards…</p>
                 </div>
-                <DealerSwipe cards={config.cards} mirrored={guesserViewMirrored}
+                <DealerSwipe cards={config.cards} opposite
                   windowMs={motion ? SHUFFLE_MS : REDUCED.shuffle} reducedMotion={!motion} />
                 {!guesserIsBot && <div className="guess-actions dealer-swipe-actions" aria-hidden="true">
                   <button className="gold-button" disabled tabIndex={-1}>CHOOSE A CARD</button>
@@ -784,13 +767,13 @@ export default function Home() {
                   <h2>{guesserIsBot ? "THE RIVAL IS GUESSING" : "FIND THE KING"}</h2>
                   <p>{guesserIsBot ? "Choosing a card…" : "Tap a card, then confirm your pick."}</p>
                 </div>
-                <div className="cards-row fanned">
+                <CardRow opposite>
                   {Array.from({ length: config.cards }, (_, index) => (
                     <PlayingCard
                       key={index}
                       index={index}
                       fanCount={config.cards}
-                      fanSlot={indexToSlot(index, config.cards, guesserViewMirrored)}
+                      fanSlot={index}
                       chosen={index === (guesserIsBot ? opponentActiveCard : targetCard)}
                       disabled={guesserIsBot}
                       pulling={pullCard === index}
@@ -802,17 +785,18 @@ export default function Home() {
                     <SelectionHand
                       index={opponentActiveCard}
                       cardCount={config.cards}
-                      mirrored={guesserViewMirrored}
+                      opposite
+                      fromOpponent
                       faint
                     />
                   ) : (
                     <SelectionHand
                       index={targetCard ?? hoveredCard}
                       cardCount={config.cards}
-                      mirrored={guesserViewMirrored}
+                      opposite
                     />
                   )}
-                </div>
+                </CardRow>
                 {!guesserIsBot && <div className="guess-actions">
                   <button className="gold-button" disabled={targetCard === null} onClick={() => { if (targetCard !== null) handleCardTap(targetCard); }}>
                     {targetCard === null ? "CHOOSE A CARD" : `CONFIRM CARD ${targetCard + 1}`}
@@ -829,7 +813,7 @@ export default function Home() {
                   <Ornament />
                   <p>Every card turns over…</p>
                 </div>
-                <div className="cards-row fanned reveal-row">
+                <CardRow opposite className="reveal-row">
                   {Array.from({ length: config.cards }, (_, index) => (
                     <PlayingCard
                       key={index}
@@ -841,13 +825,13 @@ export default function Home() {
                       disabled
                       flipDelay={(index * 70) / 1000}
                       fanCount={config.cards}
-                      fanSlot={indexToSlot(index, config.cards, guesserViewMirrored)}
+                      fanSlot={index}
                     />
                   ))}
                   {revealPick !== null && (
-                    <SelectionHand index={revealPick} cardCount={config.cards} mirrored={guesserViewMirrored} settled faint={guesserIsBot} />
+                    <SelectionHand index={revealPick} cardCount={config.cards} opposite fromOpponent={guesserIsBot} settled faint={guesserIsBot} />
                   )}
-                </div>
+                </CardRow>
               </section>
             )}
 
@@ -860,7 +844,7 @@ export default function Home() {
                   <Ornament />
                   <p>{revealCopyFor(result.kind, perspectiveSeat, displayNames, guesser).subtitle}</p>
                 </div>
-                <div className="cards-row fanned reveal-row">
+                <CardRow opposite className="reveal-row">
                   {Array.from({ length: config.cards }, (_, index) => (
                     <PlayingCard
                       key={index}
@@ -873,13 +857,13 @@ export default function Home() {
                       disabled
                       flipDelay={(index * 70) / 1000}
                       fanCount={config.cards}
-                      fanSlot={indexToSlot(index, config.cards, guesserViewMirrored)}
+                      fanSlot={index}
                     />
                   ))}
                   {result.pick !== null && (
-                    <SelectionHand index={result.pick} cardCount={config.cards} mirrored={guesserViewMirrored} settled faint={guesserIsBot} />
+                    <SelectionHand index={result.pick} cardCount={config.cards} opposite fromOpponent={guesserIsBot} settled faint={guesserIsBot} />
                   )}
-                </div>
+                </CardRow>
                 <div className="round-verdict">
                   <b>{displayNames[result.winner]} WINS THE ROUND</b>
                   {mode === "local" && livesOn && result.kind === "king" ? (

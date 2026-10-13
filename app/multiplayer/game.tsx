@@ -7,9 +7,10 @@ import { dealTimings, PULL_MS, SHUFFLE_MS } from "@/features/game/constants/paci
 import { PowerDock } from "@/features/game/components/PowerDock";
 import { SelectionHand } from "@/features/game/components/SelectionHand";
 import { DealerSwipe } from "@/features/game/components/DealerSwipe";
+import { CardRow } from "@/features/game/components/CardRow";
+import { visibleGuessInspection } from "@/lib/multiplayer/inspection";
 import { InspectionVisual } from "@/features/game/components/InspectionVisual";
 import { StrategyModal } from "@/features/game/components/StrategyModal";
-import { indexToSlot } from "@/features/game/logic/cardFan";
 import { picksThisCourt, summarisePicks } from "@/features/game/logic/strategy";
 import type useMultiplayer from "@/hooks/useMultiplayer";
 import { useFriends } from "@/hooks/useFriends";
@@ -355,12 +356,12 @@ const opponentPick =
         />
       ) : null}
       {opponentPick !== null ? (
-        <div className="cards-row fanned">
+        <CardRow opposite>
           {Array.from({ length: cfg.cards }, (_, i) => (
             <PlayingCard key={i} index={i} fanCount={cfg.cards} fanSlot={i} chosen={i === opponentPick} disabled />
           ))}
-          <SelectionHand index={opponentPick} cardCount={cfg.cards} faint />
-        </div>
+          <SelectionHand index={opponentPick} cardCount={cfg.cards} opposite fromOpponent faint />
+        </CardRow>
       ) : null}
 
       {g.phase === "shuffle" || iAct ? null : (
@@ -370,42 +371,31 @@ const opponentPick =
   );
 }
 
-/**
- * The opponent's card row, seen while it is THEIR turn.
- *
- * It mirrors the row the acting player sees — same fan, same indices, painted in
- * reverse because we are looking from the far side of the table — and overlays
- * the SYNCHRONISED inspection: the card at `inspectingCardIndex` lifts and our
- * opponent's hand appears to hold it.
- *
- * Nothing here is interactive. The only value read from the network is a card
- * POSITION, which is exactly why the lift is safe to show: the card is still
- * face-down, so we learn "they are looking at slot 3", never what is in it.
+/** The opposite fan is idle during hiding. Only a guesser's public aim may
+ * lift a card and display the opponent's pointing hand. Stale hiding-phase
+ * inspection data from older clients is deliberately ignored.
  */
 function OpponentRow({ mp }: { mp: MP }) {
   const g = mp.game!;
   const cfg = levelConfig(g.level);
-  // Seat 1 always sees seat 0's row mirrored, and vice versa — the same rule the
-  // acting player's own GuessStage uses for its fan.
-  const mirrored = (mp.mySeat ?? 0) === 1;
-  const inspecting = g.inspectingCardIndex ?? null;
+  const inspecting = visibleGuessInspection(g, cfg.cards);
 
   return (
-    <div className={["cards-row fanned turn-idle", mirrored ? "mirrored" : ""].filter(Boolean).join(" ")}>
+    <CardRow opposite className="turn-idle">
       {Array.from({ length: cfg.cards }, (_, i) => (
         <PlayingCard
           key={i}
           index={i}
           fanCount={cfg.cards}
-          fanSlot={indexToSlot(i, cfg.cards, mirrored)}
+          fanSlot={i}
           disabled
           inspected={inspecting === i}
         />
       ))}
       {inspecting !== null ? (
-        <InspectionVisual index={inspecting} cardCount={cfg.cards} mirrored={mirrored} remote />
+        <InspectionVisual index={inspecting} cardCount={cfg.cards} opposite remote />
       ) : null}
-    </div>
+    </CardRow>
   );
 }
 
@@ -441,7 +431,7 @@ function ShuffleStage({ mp }: { mp: MP }) {
         <h2 className="mp-title">FIND THE KING</h2>
         <p>Arranging the cards…</p>
       </div>
-      <DealerSwipe cards={cfg.cards} mirrored={(mp.mySeat ?? 0) === 1} />
+      <DealerSwipe cards={cfg.cards} opposite />
     </section>
   );
 }
@@ -456,23 +446,9 @@ function HideStage({ mp }: { mp: MP }) {
   const [busy, setBusy] = useState(false);
   const canLock = isBluff || kingIndex !== null;
 
-  /**
-   * The dealer's chosen slot IS their inspection: while they consider card #4 the
-   * opponent watches them hold it, exactly as the guesser's aim is mirrored.
-   * Reuses the existing `kingIndex` state, and clears on a bluff (nothing is held).
-   */
-  useEffect(() => {
-    mp.setInspecting(isBluff ? null : kingIndex);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [kingIndex, isBluff]);
-
-  // Release the hold if this stage unmounts (turn changed, round resolved).
-  useEffect(() => () => mp.setInspecting(null), []); // eslint-disable-line react-hooks/exhaustive-deps
-
   const lock = async () => {
     if (!canLock || busy) return;
-    // Locking ends the inspection: the opponent should see the deal, not a hold.
-    mp.setInspecting(null);
+    // The selected hiding place remains local until the secret is locked.
     setBusy(true);
     await mp.hideCard(kingIndex, isBluff);
     setBusy(false);
@@ -552,11 +528,6 @@ function GuessStage({
    * card pulled the opposite way to seat 0.
    */
   const [pullCard, setPullCard] = useState<number | null>(null);
-  /**
-   * Seat 1 sits on the far side of the table, so it sees the row mirrored. The
-   * cards keep their indices; only the paint order flips.
-   */
-  const mirrored = (mp.mySeat ?? 0) === 1;
   const done = busy || picked !== null || bluffOpen;
 
   /**
@@ -628,13 +599,13 @@ function GuessStage({
         <h2 className="mp-title">FIND THE KING</h2>
         <p>{done ? "Revealing…" : "Tap a card, then confirm your pick."}</p>
       </div>
-      <div className={["cards-row fanned turn-active", mirrored ? "mirrored" : ""].filter(Boolean).join(" ")}>
+      <CardRow opposite className="turn-active">
         {Array.from({ length: cfg.cards }, (_, i) => (
           <PlayingCard
             key={i}
             index={i}
             fanCount={cfg.cards}
-            fanSlot={indexToSlot(i, cfg.cards, mirrored)}
+            fanSlot={i}
             chosen={picked === i || targetCard === i}
             disabled={done}
             pulling={pullCard === i}
@@ -643,9 +614,9 @@ function GuessStage({
           />
         ))}
         {picked === null && (
-          <SelectionHand index={targetCard} cardCount={cfg.cards} mirrored={mirrored} />
+          <SelectionHand index={targetCard} cardCount={cfg.cards} opposite />
         )}
-      </div>
+      </CardRow>
       <div className="guess-actions">
         <button className="gold-button" disabled={done || targetCard === null} onClick={() => { if (targetCard !== null) void pick(targetCard); }}>
           {targetCard === null ? "CHOOSE A CARD" : `CONFIRM CARD ${targetCard + 1}`}
@@ -712,7 +683,7 @@ function Reveal({ mp, onRequestExit, friendAction }: { mp: MP; onRequestExit: ()
           <p>{copy.subtitle}</p>
         </div>
         <div className="reveal-hand-wrap">
-          <div className="cards-row fanned reveal-row mp-reveal">
+          <CardRow opposite className="reveal-row mp-reveal">
             {Array.from({ length: cfg.cards }, (_, i) => (
               <PlayingCard
                 key={i}
@@ -733,7 +704,7 @@ function Reveal({ mp, onRequestExit, friendAction }: { mp: MP; onRequestExit: ()
               cards={cfg.cards}
               self={result.guesserSeat === mp.mySeat}
             />
-          </div>
+          </CardRow>
         </div>
         <div className="round-verdict">
           <b>{meWon ? "YOU WIN THE ROUND" : `${mp.opponent ?? "Opponent"} WINS THE ROUND`}</b>
@@ -767,7 +738,7 @@ function MpRevealHand({
   cards: number;
   self: boolean;
 }) {
-  return <SelectionHand index={pick} cardCount={cards} settled faint={!self} />;
+  return <SelectionHand index={pick} cardCount={cards} opposite fromOpponent={!self} settled faint={!self} />;
 }
 
 function LevelEnd({ mp, onRequestExit, friendAction }: { mp: MP; onRequestExit: () => void; friendAction?: ReactNode }) {

@@ -1,6 +1,7 @@
 import Image from "next/image";
 
 import { ARC_DROP, CARD_PITCH, cardFanContact, cardFanSlot } from "@/features/game/logic/cardFan";
+import { pointingHandPose } from "../logic/tablePerspective";
 
 /**
  * The physical "a hand picks up a card and inspects it" overlay.
@@ -17,8 +18,9 @@ import { ARC_DROP, CARD_PITCH, cardFanContact, cardFanSlot } from "@/features/ga
  * The same component serves both seats:
  *   - the local acting player sees their own hand (dir = toward them);
  *   - the opponent sees it as `remote`, a hair recessed.
- * `mirrored` reverses the slot and card lift. The gauntlet still reaches upward
- * from the bottom of the visible table, keeping the palm below the card.
+ * `mirrored` reverses the slot and card lift. The hand's owner determines its
+ * screen side: the local player points up from below; the rival points down
+ * from above, independently of the deck orientation.
  *
  * Purely visual: `pointer-events: none`, so it can never steal a tap.
  */
@@ -27,6 +29,7 @@ export function InspectionVisual({
   cardCount,
   mirrored = false,
   remote = false,
+  opposite = false,
 }: {
   /** Card index being inspected, or null to render nothing. */
   index: number | null;
@@ -35,6 +38,7 @@ export function InspectionVisual({
   remote?: boolean;
   /** The view is mirrored (this client is seat 1). */
   mirrored?: boolean;
+  opposite?: boolean;
 }) {
   if (index === null || cardCount <= 0) return null;
 
@@ -42,7 +46,8 @@ export function InspectionVisual({
   // before asking the fan where that slot sits (same rule the cards use).
   const slot = mirrored ? cardCount - 1 - index : index;
   const { x, y, rotate } = cardFanSlot(slot, cardCount);
-  const contact = cardFanContact(slot, cardCount);
+  const pose = pointingHandPose(opposite, remote);
+  const contact = cardFanContact(slot, cardCount, pose.contact);
 
   return (
     <Image
@@ -58,6 +63,7 @@ export function InspectionVisual({
           "--inspect-x": `calc(${x / CARD_PITCH} * var(--card-pitch, ${CARD_PITCH}px))`,
           "--inspect-y": `calc(${y / ARC_DROP} * var(--fan-drop, ${ARC_DROP}px))`,
           "--inspect-tilt": `${rotate}deg`,
+          "--gauntlet-facing": pose.facing,
           "--gauntlet-contact-x": `calc(${contact.x} * var(--fan-card-h, 112px))`,
           "--gauntlet-contact-y": `calc(${contact.y} * var(--fan-card-h, 112px))`,
           // +1 = the inspecting player is at the bottom of THIS screen; -1 = the

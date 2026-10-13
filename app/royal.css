@@ -163,12 +163,16 @@
   to { opacity: 1; transform: translateY(var(--fan-y, 0px)) rotate(var(--fan-rotate, 0deg)) scale(var(--fan-scale, 1)); }
 }
 /* Cards occupy their final fan throughout the deal; only their entrance moves. */
-.game-screen .shuffle-stage, .game-screen .guess-stage { animation: none; }
+.game-screen .play-stage:has(.cards-row), .online-board .mp-stage:has(.cards-row) { animation: none; }
 .game-screen .shuffle-stage > .cards-row { margin-block: auto; }
 .game-screen .shuffle-stage .stage-title, .game-screen .guess-stage .stage-title { min-height: 108px; }
 .dealer-swipe-actions { visibility: hidden; }
 .dealer-contact { position: absolute; width: 0; height: 0; pointer-events: none; }
 .dealer-swipe-overlay { position: absolute; inset: 0; z-index: 90; overflow: hidden; pointer-events: none; }
+.dealer-swipe-overlay.from-bottom { transform: rotate(180deg); }
+.game-screen .cards-row.opposite-view {
+  transform: translateY(var(--opposite-offset, 0px)) rotate(180deg);
+}
 .dealer-swipe-hand {
   position: absolute; top: 0; left: 0; max-width: none; opacity: 0;
   transform-origin: 50% 80%; pointer-events: none;
@@ -235,7 +239,7 @@
 .game-screen .cards-row .selection-hand-img, .game-screen .cards-row .inspection-hand {
   z-index: 80; width: calc(var(--fan-card-w) * 1.1); height: auto; pointer-events: none;
   /* The sprite's index fingertip is at x=33%, y=.7%, not its image centre. */
-  --gauntlet-tilt: var(--hand-tilt, var(--inspect-tilt, 0deg));
+  --gauntlet-tilt: calc(var(--hand-tilt, var(--inspect-tilt, 0deg)) + var(--gauntlet-facing, 0deg));
   transform-origin: 33% .7%;
   transform: translate(-33%, -.7%) rotate(var(--gauntlet-tilt));
   filter: drop-shadow(0 5px 4px #0009);

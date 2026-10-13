@@ -29,6 +29,7 @@ import {
 } from "@/lib/game/flow";
 import type { RoomData, GameState, PlayerEntry } from "@/lib/multiplayer/types";
 import { SHUFFLE_GRACE_MS } from "@/lib/multiplayer/types";
+import { canPublishGuessInspection } from "@/lib/multiplayer/inspection";
 
 /**
  * Multiplayer session hook.
@@ -330,8 +331,7 @@ export default function useMultiplayer() {
     (index: number | null) => {
       if (!session || mySeat == null || !game) return;
       if (inspectingRef.current === index) return;
-      const phaseOk = game.phase === "guess" || game.phase === "dealer-hide";
-      if (index !== null && (!phaseOk || game.actingSeat !== mySeat)) return;
+      if (!canPublishGuessInspection(game, mySeat)) return;
       inspectingRef.current = index;
       void publishInspecting(session.code, {
         seat: mySeat,

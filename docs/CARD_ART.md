@@ -28,9 +28,9 @@ both hand overlays use that same live card pitch.
 
 The gauntlet is 110% of the live card width. Its index fingertip (33% across
 the sprite, .7% down) contacts the card at 70% of its height, following the
-card's rotation and scale. The palm and cuff extend below the card in every
-view, including mirrored inspection. The row reserves that full reach before
-the action buttons; small screens retain scrolling rather than covering controls.
+card's rotation and scale. Your palm and cuff extend below the card; the
+opponent's extend above it. The row reserves that full reach before
+the action buttons; actions stay pinned and the playing board does not scroll.
 
 Disabled cards stay opaque during reveals and spectator states. The existing
 opponent brightness treatment still identifies the inactive seat. The five
@@ -47,7 +47,20 @@ no longer rendered. Original artwork and hand sprites remain intact.
 The table and utility footer occupy separate grid rows. Hide/bluff controls and
 the explicit guess confirmation stay pinned above the footer without scrolling
 the playing board. Every dealer, deal, guess, spectator and
-reveal row uses the same arc, including mirrored slot order.
+reveal row uses the same arc. Your hiding deck is upright. Opponent hiding and
+all guessing/deal/reveal decks use the opposite 180-degree table perspective,
+which reverses screen order while preserving every card's logical index. The
+pointing hand is counter-rotated around its fingertip so the palm stays below
+the inverted card for your turn; the rival's hand points down from the top on
+their turn. Hand ownership is independent of the deck orientation, including
+reveals. Hiding choices are never published as public inspection;
+the opponent's hand and card lift appear only during guessing.
+
+The opposite table reflects measured coordinates about the board centre, with
+clearance below instructions on short screens. The dealing overlay reflects
+the same top-entry animation by 180 degrees to enter and withdraw from the
+bottom. It targets the actual card contacts, keeping the same entry depth,
+aspect ratio, timing and hidden forearm buffer from either edge.
 
 The outer tilt is 18 degrees for five cards, 10 for three, and 6 for two.
 Smaller decks also use a shallower arc; the projected edge width drives pitch

@@ -168,7 +168,7 @@ export interface GameState {
    */
   kingPendingLife?: boolean;
   /**
-   * TEMPORARY presentation state: the card POSITION the acting player is
+   * TEMPORARY presentation state: the card POSITION the acting guesser is
    * currently inspecting (hovering / aiming at), or null for "nobody is
    * inspecting anything".
    *

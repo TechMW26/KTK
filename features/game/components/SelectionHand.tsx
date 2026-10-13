@@ -1,6 +1,7 @@
 import Image from "next/image";
 
 import { ARC_DROP, CARD_PITCH, cardFanContact, cardFanSlot } from "@/features/game/logic/cardFan";
+import { pointingHandPose } from "../logic/tablePerspective";
 
 /**
  * The hand that hovers over the card row.
@@ -21,6 +22,8 @@ export function SelectionHand({
   faint = false,
   roaming = false,
   mirrored = false,
+  opposite = false,
+  fromOpponent = false,
 }: {
   /** Card the hand points at, or null to hide the hand entirely. */
   index: number | null;
@@ -33,6 +36,9 @@ export function SelectionHand({
   roaming?: boolean;
   /** Point from the opposite side of the table, matching the mirrored row. */
   mirrored?: boolean;
+  /** Inverted deck. The pointer's owner still determines its screen side. */
+  opposite?: boolean;
+  fromOpponent?: boolean;
 }) {
   if (index === null) return null;
 
@@ -40,7 +46,8 @@ export function SelectionHand({
   // asking the fan where that slot sits.
   const slot = mirrored ? cardCount - 1 - index : index;
   const { x, y, rotate } = cardFanSlot(slot, cardCount);
-  const contact = cardFanContact(slot, cardCount);
+  const pose = pointingHandPose(opposite, fromOpponent);
+  const contact = cardFanContact(slot, cardCount, pose.contact);
 
   return (
     <Image
@@ -64,6 +71,7 @@ export function SelectionHand({
           "--hand-x": `calc(${x / CARD_PITCH} * var(--card-pitch, ${CARD_PITCH}px))`,
           "--hand-y": `calc(${y / ARC_DROP} * var(--fan-drop, ${ARC_DROP}px))`,
           "--hand-tilt": `${rotate}deg`,
+          "--gauntlet-facing": pose.facing,
           "--gauntlet-contact-x": `calc(${contact.x} * var(--fan-card-h, 112px))`,
           "--gauntlet-contact-y": `calc(${contact.y} * var(--fan-card-h, 112px))`,
           "--roam-span": `calc(${(cardCount - 1) / 2} * var(--card-pitch, ${CARD_PITCH}px))`,

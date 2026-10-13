@@ -9,6 +9,7 @@ import {
 } from "firebase/database";
 import { getRTDatabase } from "@/lib/firebase/database";
 import { gameRef, roomRef, secretChildRef } from "@/lib/multiplayer/paths";
+import { canPublishGuessInspection } from "@/lib/multiplayer/inspection";
 import {
   resolveGuess,
   levelConfig,
@@ -133,7 +134,7 @@ async function commit(
 // ---------------------------------------------------------------------------
 
 /**
- * Publish (or clear) the acting player's current inspection position.
+ * Publish (or clear) the acting guesser's current inspection position.
  *
  * This is the one "temporary UI state" the two clients synchronise so the
  * opponent can render the physical hand/card animation. It is intentionally
@@ -142,7 +143,8 @@ async function commit(
  *  - it writes a single field and does NOT touch the `seq` counter, so a client
  *    listening for "has the authoritative state moved on?" is not woken by a
  *    hover;
- *  - it refuses to write while it is not the caller's turn, which is what keeps
+ *  - hiding choices are never accepted here; it refuses to write outside the
+ *    guesser's turn, which is what keeps
  *    the invariant "only the acting player can generate an inspection";
  *  - it is guarded on the SAME level/round it was asked for, so a stale write
  *    that races a round change is dropped by the transaction rather than
@@ -161,10 +163,8 @@ export async function publishInspecting(
   return commit(
     code,
     (cur) =>
-      // Only the seat whose turn it is may speak, and only during the phases in
-      // which a card is actually on the table to inspect.
-      cur.actingSeat === args.seat &&
-      (cur.phase === "guess" || cur.phase === "dealer-hide") &&
+      // A hiding choice is secret, even if an old client tries to publish it.
+      canPublishGuessInspection(cur, args.seat) &&
       cur.level === args.level &&
       cur.round === args.round,
     (cur) => ({ ...cur, inspectingCardIndex: clamp }),
