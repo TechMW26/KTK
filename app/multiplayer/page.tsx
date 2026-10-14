@@ -467,6 +467,11 @@ function WaitingScreen({
   onLeave: () => void;
 }) {
   const others = (mp.room?.order?.filter(Boolean).length ?? 1) - 1;
+  // Never surface the room code while the match is (or has been) live — online
+  // multiplayer is played through the board, not by re-sharing a code. On the
+  // match-end screen both seats are still claimed, so only a genuinely waiting
+  // room (a lone host) may show it.
+  const canShareCode = (mp.room?.order?.filter(Boolean).length ?? 0) < 2;
   return (
     <div className="mp-frame mp-flow">
       <button className="mp-back home-link" onClick={onLeave}>
@@ -477,26 +482,28 @@ function WaitingScreen({
         <MpEyebrow>YOU ARE THE HOST</MpEyebrow>
         <h2 className="mp-title">WAITING FOR OPPONENT</h2>
         <MpOrnament />
-        <p>Share this room code with a friend.</p>
+        <p>{canShareCode ? "Share this room code with a friend." : "Third seat unavailable."}</p>
       </div>
 
-      <div className="mp-room-card">
-        <small>ROOM CODE</small>
-        <strong className="mp-room-code">{mp.code}</strong>
-        <button className="gold-button mp-wide" onClick={onCopy}>
-          {copied ? (
-            <span className="inline-with-icon">
-              <Check strokeWidth={2.75} />
-              COPIED
-            </span>
-          ) : (
-            "COPY CODE"
-          )}
-        </button>
-        <button className="outline-button mp-wide" onClick={() => void mp.shareInvite()}>
-          SHARE
-        </button>
-      </div>
+      {canShareCode ? (
+        <div className="mp-room-card">
+          <small>ROOM CODE</small>
+          <strong className="mp-room-code">{mp.code}</strong>
+          <button className="gold-button mp-wide" onClick={onCopy}>
+            {copied ? (
+              <span className="inline-with-icon">
+                <Check strokeWidth={2.75} />
+                COPIED
+              </span>
+            ) : (
+              "COPY CODE"
+            )}
+          </button>
+          <button className="outline-button mp-wide" onClick={() => void mp.shareInvite()}>
+            SHARE
+          </button>
+        </div>
+      ) : null}
 
       <div className="waiting-dots big">
         <span>•</span>

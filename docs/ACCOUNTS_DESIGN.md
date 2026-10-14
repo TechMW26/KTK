@@ -154,6 +154,80 @@ If sign-in ever regresses to "completes but lands signed out with no error",
 check this first: look for an aborted `/__/auth/iframe` request and an empty
 `firebaseLocalStorage` in the browser.
 
+### 3.4c The scheme of the auth helper must match the scheme of the page
+
+**This is the second failure mode of the same class, and it fails loudly with
+`ERR_SSL_PROTOCOL_ERROR`.** The proxy in §3.4b makes `/__/auth/*` *reachable* on
+our own origin, but it does not make that origin reachable over the right
+scheme.
+
+The helper script the SDK loads from `authDomain` — `/__/auth/handler` — picks
+its page transport from **its own** `window.location.protocol`. When the page is
+served over plain `http` (the development server), the helper runs over `http`
+and therefore redirects the browser back down the `http` path. It writes
+`postBody` plus `redirectUrl` into that URL and posts the response to
+`this.parent`, which for a top-level redirect is `window` itself.
+
+The problem is the *response* URL: it is `http://<authDomain>:<port>/__/auth/handler?...`.
+In development `authDomain` is `localhost` and the port is added, so the browser
+is sent to `http://localhost:3000/__/auth/handler?…` and then, on some
+navigations, to `https://localhost:3000/…`. The dev server only speaks HTTP, so
+the TLS handshake receives a plaintext `HTTP/1.1 200` response:
+
+```
+* Host localhost:3000 was resolved.
+*   Trying [::1]:3000...
+* schannel: next InitializeSecurityContext failed: SEC_E_INVALID_TOKEN
+curl: (35) ...
+```
+
+That is exactly what Chromium reports as `ERR_SSL_PROTOCOL_ERROR (-107)`. Both
+`localhost:3000` and `127.0.0.1:3000` behave identically: the HTTP listener
+answers a TLS `ClientHello`, so the connection dies before any request is routed.
+The `/__/auth/handler` proxy itself is healthy — over `http` it returns the
+helper page with a `200` (`x-served-by: cache-bom-…`, i.e. proxied through to
+Firebase). It is the **scheme**, not the path or the proxy, that is wrong.
+
+Consequences and rules:
+
+- **`vinext dev` must be served over TLS.** It has no TLS listener of its own, so
+  any flow that ends up at `https://localhost:3000` can never succeed. Provider
+  redirect sign-in (`linkWithRedirect` / `signInWithRedirect`) is therefore
+  broken against a plain-HTTP dev server. `vite.config.ts` adds
+  `@vitejs/plugin-basic-ssl` under `command === "serve"` only, so dev runs on
+  `https://localhost:3000` while the Nitro/Vercel build is untouched.
+- **The certificate is self-signed, and that is not a blocker — just a caveat.**
+  Because Chromium never consults the OS trust store for `https://localhost`,
+  there is no way to make it "trusted" here (so `mkcert` would not have helped
+  either). The first visit shows a certificate warning that must be accepted for
+  the browser to treat `https://localhost:3000` as a secure context. If that
+  interstitial is itself the problem, the alternative is a TLS reverse proxy in
+  front of the dev server with a certificate you control.
+- The page that starts the flow decides the scheme, so **do not try to rewrite
+  the redirect** — fix the scheme the page is served from.
+- The URL currently observed also shows the helper still on its
+  `firebaseapp.com` target (`appName=%5BDEFAULT%5D`, `v=9.23.0`). `authDomain`
+  may be left at the default `killtheking-94396.firebaseapp.com` while this is
+  diagnosed: returning to `/__/auth/handler` on firebaseapp.com is a *valid*
+  `https` origin and does not itself produce `ERR_SSL_PROTOCOL_ERROR`. It only
+  costs same-origin storage (§3.4b), so the flow must additionally work in a
+  first-party context — `http://localhost` does not qualify as a secure context
+  for some of these APIs, so an `https://localhost` origin is preferable.
+- Check `localhost` being present under Firebase console → Authentication →
+  Settings → **Authorized domains** — `http://localhost` is authorised by
+  default, **`http://localhost:3000` may not be**, which shows up as
+  `auth/unauthorized-domain`. This repo's default port is `3000`
+  (`vinext dev`, `-p/--port`, default `3000`).
+
+To confirm the diagnosis rather than guess it, compare the two spellings of
+`localhost` — this is the single most useful test because it separates "the
+proxy is broken" from "the scheme is unreachable":
+
+```powershell
+curl.exe -i  --max-time 15 "http://localhost:3000/__/auth/handler"   # 200, helper page
+curl.exe -i  --max-time 8  "https://localhost:3000/"                 # (35) TLS handshake fails
+```
+
 ### 3.5 All-platform sign-in: scope and cost
 
 Confirmed decision: Google and Apple are offered on **every** platform. This is

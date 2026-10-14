@@ -3,6 +3,7 @@ import {
   onValue,
   set,
   runTransaction,
+  serverTimestamp,
   type Database,
   type Unsubscribe,
   type DataSnapshot,
@@ -35,6 +36,7 @@ import {
 import {
   type Seat,
   type GameState,
+  type RoomData,
   type RoomPlayerSecret,
   type PlayerEntry,
 } from "@/lib/multiplayer/types";
@@ -324,7 +326,7 @@ export async function dealerReveals(
   const secret = secretSnap.val() as RoomPlayerSecret | null;
   if (!secret || !secret.placed) return false;
 
-  return commit(
+  const revealed = await commit(
     code,
     (cur) =>
       cur.phase === "reveal" &&
@@ -374,6 +376,13 @@ export async function dealerReveals(
       return next;
     },
   );
+
+  // A decider that just ended the match also retires the room's `playing`
+  // status, so a client landing on the completed room cannot be routed back to
+  // the room-code join screen while both players are still on the result screen
+  // (before either presses rematch).
+  if (revealed) await markMatchFinished(code).catch(() => {});
+  return revealed;
 }
 
 // ---------------------------------------------------------------------------
@@ -385,7 +394,7 @@ export async function dealerReveals(
  * means only the first accepted press wins and both clients converge.
  */
 export async function advanceNext(code: string): Promise<boolean> {
-  return commit(
+  const advanced = await commit(
     code,
     (cur) =>
       cur.status !== "finished" &&
@@ -396,6 +405,39 @@ export async function advanceNext(code: string): Promise<boolean> {
       if (isClassic(settings)) return advanceClassic(cur);
       return advanceOptional(cur, settings);
     },
+  );
+  // Mirror of the reveal path: the commit that produced match-end also retires
+  // the room status so a completed match never re-opens the room-code screen.
+  if (advanced) await markMatchFinished(code).catch(() => {});
+  return advanced;
+}
+
+/** Retire a room whose match has ended and can no longer accept a joiner.
+ *
+ * `joinRoom` refuses any room whose status is `finished`, so flipping the room
+ * to `finished` at the moment the match's decider commits keeps a completed
+ * room out of the joinable set. That is what stops a client from falling back to
+ * the room-code screen (what `JoinRoomScreen` is) while the humans are still on
+ * the match-end screen.
+ *
+ * Deliberately does NOT use `expired`: there is a window between a finished
+ * game and a rematch in which the seats are still occupied, so "expired" would
+ * misdescribe the room. Best-effort — the game node is authoritative.
+ */
+async function markMatchFinished(code: string): Promise<void> {
+  await runTransaction(
+    roomRef(db(), code),
+    (raw) => {
+      const current = raw as RoomData | null;
+      // Leave a room another path already retired (or an already-expired one).
+      if (!current || current.status !== "playing") return undefined;
+      return {
+        ...current,
+        status: "finished",
+        updatedAt: serverTimestamp() as never as number,
+      };
+    },
+    { applyLocally: false },
   );
 }
 
@@ -535,9 +577,32 @@ function advanceOptional(cur: GameState, settings: MatchSettings): GameState {
 /** Reset the game to a fresh match (used from the match-end rematch screen).
  * The rematch keeps the room's locked settings so rules are preserved. */
 export async function rematchGame(code: string): Promise<boolean> {
-  return commit(code, (cur) => cur.status === "finished", (cur) => {
+  const restarted = await commit(code, (cur) => cur.status === "finished", (cur) => {
     // Rebuild a fresh game that honours the locked config of the room.
     const settings = cur.settings ?? DEFAULT_SETTINGS;
     return emptyGame(settings);
   });
+  // Put the room back to `playing` in the same step: the rematch is a live game
+  // between the same two seats, not a room that is open to new joiners.
+  if (restarted) await reopenMatch(code).catch(() => {});
+  return restarted;
+}
+
+/** Return a room that `markMatchFinished` retired to `playing` for a rematch
+ * (mirror of markMatchFinished). Best-effort: the reset game node drives the
+ * match either way, this only keeps the room status truthful. */
+async function reopenMatch(code: string): Promise<void> {
+  await runTransaction(
+    roomRef(db(), code),
+    (raw) => {
+      const current = raw as RoomData | null;
+      if (!current || current.status !== "finished") return undefined;
+      return {
+        ...current,
+        status: "playing",
+        updatedAt: serverTimestamp() as never as number,
+      };
+    },
+    { applyLocally: false },
+  );
 }
