@@ -423,6 +423,10 @@ export async function advanceNext(code: string): Promise<boolean> {
  * Deliberately does NOT use `expired`: there is a window between a finished
  * game and a rematch in which the seats are still occupied, so "expired" would
  * misdescribe the room. Best-effort — the game node is authoritative.
+ *
+ * The multiplayer screen must NOT treat `status: "finished"` as "not my match":
+ * the match-over state belongs to `game.status` (see `inMatch` there). This only
+ * closes the room to NEW joiners.
  */
 async function markMatchFinished(code: string): Promise<void> {
   await runTransaction(

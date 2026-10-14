@@ -49,60 +49,29 @@ export function secretChildRef(db: Database, code: string, uid: string, key: str
 }
 
 // ---------------------------------------------------------------------------
-// Matchmaking ("Search Online Players")
+// Matchmaking ("Search Online Players") — simple pool
 // Layout:
-//   matchmaking/{uid}: { name, joinedAt, status, updatedAt, invitedBy? }
-//     - status: "searching" | "inviting" | "matched" | "cancelled"
-//     - invitedBy: uid of the player who invited this player into a room
-//   matchmakingHost/{uid}: { name, joinedAt, status, updatedAt, roomCode?, invitedUid? }
-//     The player who first pairs up becomes a "host" invitation: they create the
-//     room and leave the code under their own host node for the invitee to read.
+//   matchmakingPool/{uid}: { name, joinedAt, updatedAt, pair, roomCode }
+//     One record per waiting player. The whole pool is readable and writable by
+//     any authenticated player: the host stamps the pair's `roomCode` onto BOTH
+//     members' records, so each player learns its room by reading its OWN record.
+//     That cross-write is the point — it removes the cross-player discovery the
+//     previous per-uid design needed, which is what made pairing unreliable.
+//
+//     NOTE: this node requires the `matchmakingPool` rule in
+//     firebase/database.rules.json. The older self-only `matchmaking` /
+//     `matchmakingHost` nodes and the `matchmakingPairs` claim are retired and can
+//     be cleared.
 // ---------------------------------------------------------------------------
 
-/** Live "I am searching" entry (self-owned). */
-export function matchmakingRef(db: Database, uid: string): DatabaseReference {
-  return ref(db, `matchmaking/${uid}`);
+/** This player's own record in the search pool. */
+export function poolEntryRef(db: Database, uid: string): DatabaseReference {
+  return ref(db, `matchmakingPool/${uid}`);
 }
 
-/** Snapshot of every searching player's own node. */
-export function matchmakingAllRef(db: Database): DatabaseReference {
-  return ref(db, "matchmaking");
-}
-
-/** The host invitation node (also self-owned). */
-export function matchmakingHostRef(db: Database, uid: string): DatabaseReference {
-  return ref(db, `matchmakingHost/${uid}`);
-}
-
-/** Every host invitation in flight. */
-export function matchmakingHostAllRef(db: Database): DatabaseReference {
-  return ref(db, "matchmakingHost");
-}
-
-// ---------------------------------------------------------------------------
-// Atomic pair claims ("Search Online Players" race fix)
-// Layout:
-//   matchmakingPairs/{pairKey}: { hostUid, invitedUid, claimedAt, ... }
-//     pairKey = [uidA, uidB].sort().join("_"). A runTransaction on this SINGLE
-//     shared node is the one true "who is host" lock: only the transaction that
-//     commits first creates it; every later txn re-runs, sees it exists and yields
-//     the SAME hostUid. Guests never create a duplicate pair or duplicate room.
-// ---------------------------------------------------------------------------
-
-/** Reference to the whole pair-claim index. */
-export function matchmakingPairsAllRef(db: Database): DatabaseReference {
-  return ref(db, "matchmakingPairs");
-}
-
-/** Reference to the atomic claim for ONE pair (sorted pairKey). */
-export function pairClaimRef(db: Database, uidA: string, uidB: string): DatabaseReference {
-  const pairKey = [uidA, uidB].sort().join("_");
-  return ref(db, `matchmakingPairs/${pairKey}`);
-}
-
-/** Pair claim child reference from a precomputed sorted pairKey. */
-export function pairClaimByKeyRef(db: Database, pairKey: string): DatabaseReference {
-  return ref(db, `matchmakingPairs/${pairKey}`);
+/** The whole search pool. */
+export function poolAllRef(db: Database): DatabaseReference {
+  return ref(db, "matchmakingPool");
 }
 
 // ---------------------------------------------------------------------------

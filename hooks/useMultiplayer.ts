@@ -196,16 +196,14 @@ export default function useMultiplayer() {
     [uid, login],
   );
 
-  /** Leave the current match and clean up the matchmaking records tied to it. */
+  /** Leave the current match and clean up this player's matchmaking record. */
   const discardMatch = useCallback(async () => {
     if (!session) return;
     const isHost = room?.hostId === session.uid;
     await leaveRoom(session.code, session.uid, isHost).catch(() => {});
-    if (pairKeyRef.current) {
-      await cleanupMatchmaking(session.uid, pairKeyRef.current).catch(() => {});
-    } else {
-      await cleanupMatchmaking(session.uid).catch(() => {});
-    }
+    // One pool record per searcher, and it is self-owned: clearing it never
+    // touches another player's pairing state.
+    await cleanupMatchmaking(session.uid).catch(() => {});
     setSession(null);
     setRoom(null);
     setGame(null);

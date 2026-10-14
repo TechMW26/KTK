@@ -7,13 +7,7 @@ import {
   announceSearch,
   cancelSearch,
   pingSearch,
-  pruneStaleSearchers,
-  readInviteFor,
-  readMyReadyMatch,
-  claimPair,
-  hostCreatesInvite,
-  acceptInvite,
-  listSearchers,
+  stepMatchmaking,
 } from "@/services/matchmakingService";
 import { joinRoom } from "@/services/roomService";
 import { MATCHMAKING_TIMEOUT_MS } from "@/lib/multiplayer/types";
@@ -28,13 +22,14 @@ type SearchState =
   | { kind: "error"; message: string };
 
 /**
- * "Search Online Players" screen + matcher (race-fixed, disconnect-aware).
+ * "Search Online Players" screen + matcher.
  *
- * Host selection is decided ONCE, atomically, on the shared
- * `matchmakingPairs/{pairKey}` node (see matchmakingService.claimPair). Only one
- * side wins as host and creates one room; the other waits as guest for the host's
- * invitation and joins it. A `pollBusyRef` + started/entered guards keep multiple
- * peers from double-claiming, double-joining or spawning multiple timers.
+ * A searcher publishes ONE record to the pool (`matchmakingPool/{uid}`) and polls
+ * `stepMatchmaking`, which pairs it with the longest-waiting opponent using a
+ * host rule that is a pure function of the two uids (lower uid hosts). The host
+ * creates one room and stamps the agreed `roomCode` onto BOTH pool records, so
+ * each player joins by reading its own node — there is no cross-player discovery
+ * and therefore no ordering race that can leave both sides waiting.
  *
  * A fresh `key` from the parent resets this component (and the 30s timer) so an
  * opponent-disconnect auto re-search restarts cleanly.
@@ -73,9 +68,6 @@ export default function SearchOnline({
   const stoppedRef = useRef(false);
   const enteredRef = useRef(false);
   const pollBusyRef = useRef(false);
-  // Opponent uids we have already started a pair claim with (prevents re-claim /
-  // duplicate host calls while waiting for that same invite).
-  const engagedRef = useRef<Set<string>>(new Set());
 
   const enterRoom = useCallback(
     async (code: string, pairKey: string) => {
@@ -96,7 +88,7 @@ export default function SearchOnline({
     return () => window.clearInterval(id);
   }, []);
 
-  // The search driver: announce once, then evaluate candidates until done.
+  // The search driver: announce once, then step the pool until matched.
   useEffect(() => {
     let cancelled = false;
     let myUid: string | null = null;
@@ -104,82 +96,38 @@ export default function SearchOnline({
     let heartbeat: number | undefined;
     if (!configured) return undefined;
 
-    const actHost = async (target: { uid: string; name: string }) => {
-      if (enteredRef.current || stoppedRef.current || cancelled || !myUid) return;
-      if (engagedRef.current.has(target.uid)) return; // already tried this peer
-      engagedRef.current.add(target.uid);
-
-      // GUEST path first: they may already be inviting us this tick.
-      const invite = await readInviteFor(myUid).catch(() => null);
-      if (invite) {
-        await acceptInvite(myUid).catch(() => {});
-        const res = await joinRoom(invite.roomCode, myUid, name).catch(() => ({
-          ok: false as const,
-          reason: "ERROR" as const,
-        }));
-        if (res.ok) {
-          await enterRoom(invite.roomCode, [myUid, target.uid].sort().join("_"));
-          return;
-        }
-      }
-
-      // ATOMIC host selection: exactly one of us wins the shared pair claim.
-      const claim = await claimPair(myUid, target.uid).catch(() => null);
-      if (!claim || stoppedRef.current || cancelled) return;
-      if (!claim.host) {
-        // We are the guest: the host will publish an invite which readInviteFor
-        // will pick up on the next tick. Do NOT re-claim this peer.
-        return;
-      }
-      const code = await hostCreatesInvite(claim.myUid, name, claim.invitedUid, claim.pairKey, settings).catch(() => null);
-      if (code) {
-        await enterRoom(code, claim.pairKey);
+    const poll = async () => {
+      if (pollBusyRef.current) return; // single flight: never two concurrent polls
+      if (stoppedRef.current || cancelled || enteredRef.current || !myUid) return;
+      pollBusyRef.current = true;
+      const uid = myUid;
+      try {
+        // One step: pair if we can (the lower uid hosts and stamps BOTH pool
+        // records with the room), otherwise keep waiting. A stamped record on
+        // OUR own node is the signal that we are matched — no cross-player
+        // discovery, which is what made the previous pairing unreliable.
+        const matched = await stepMatchmaking(uid, name, settings).catch(() => null);
+        if (!matched || enteredRef.current || cancelled) return;
+        if (await joinIfReady(matched.roomCode, matched.peer)) return;
+      } finally {
+        pollBusyRef.current = false;
       }
     };
 
-    const joinIfReady = async (roomCode: string, pairKey: string): Promise<boolean> => {
+    /**
+     * Join the room the matchmaker produced for us. Both seats join by code, so
+     * the host also goes through this path (it is already logged in).
+     */
+    const joinIfReady = async (roomCode: string, peer: string): Promise<boolean> => {
       const res = await joinRoom(roomCode, myUid!, name).catch(() => ({
         ok: false as const,
         reason: "ERROR" as const,
       }));
       if (res.ok) {
-        await enterRoom(roomCode, pairKey);
+        await enterRoom(roomCode, peer);
         return true;
       }
       return false;
-    };
-
-    const poll = async () => {
-      if (pollBusyRef.current) return; // single flight: never two concurrent polls
-      if (stoppedRef.current || cancelled || enteredRef.current || !myUid) return;
-      pollBusyRef.current = true;
-      try {
-        // Clear our OWN abandoned advertisement if this account has an older one
-        // sitting in the pool (a previously killed tab). Left in place it would
-        // look like a live rival to everyone else, including our other tabs.
-        await pruneStaleSearchers(myUid);
-        // Guest path 1: a host has already invited us under their own host node.
-        const invite = await readInviteFor(myUid).catch(() => null);
-        if (invite) {
-          await acceptInvite(myUid).catch(() => {});
-          const pk = [myUid, invite.hostUid].sort().join("_");
-          if (await joinIfReady(invite.roomCode, pk)) return;
-        }
-        // Guest path 2: the shared pair claim for me already has a room (robust
-        // discovery that covers invite-scan ordering races).
-        const ready = !enteredRef.current ? await readMyReadyMatch(myUid).catch(() => null) : null;
-        if (ready) {
-          if (await joinIfReady(ready.roomCode, [myUid, ready.peer].sort().join("_"))) return;
-        }
-        // Host path: claim an un-engaged searcher; if we win, create the room.
-        const others = await listSearchers(myUid).catch(() => []);
-        const target = others.find((o) => !engagedRef.current.has(o.uid));
-        if (target && !enteredRef.current) {
-          await actHost(target);
-        }
-      } finally {
-        pollBusyRef.current = false;
-      }
     };
 
     (async () => {

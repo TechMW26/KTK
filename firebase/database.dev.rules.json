@@ -23,23 +23,9 @@
         ".write": "auth != null"
       }
     },
-    "matchmaking": {
+    "matchmakingPool": {
       ".read": "auth != null",
       "$uid": {
-        ".read": "auth != null",
-        ".write": "auth != null"
-      }
-    },
-    "matchmakingHost": {
-      ".read": "auth != null",
-      "$uid": {
-        ".read": "auth != null",
-        ".write": "auth != null"
-      }
-    },
-    "matchmakingPairs": {
-      ".read": "auth != null",
-      "$pair": {
         ".read": "auth != null",
         ".write": "auth != null"
       }

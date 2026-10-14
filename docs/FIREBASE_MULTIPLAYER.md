@@ -302,22 +302,29 @@ firebase deploy --only database
 
 `firebase.json` (rules → `firebase/database.rules.json`) and `.firebaserc`
 (project `killtheking-94396`) are already configured, so no flags are needed.
-The rules now open `/matchmaking` + `/matchmakingHost` (self‑only writes) used by
-the "Search Online Players" feature.
+The rules open `/matchmakingPool` (any authenticated player may read every record
+and write any record — that shared write is what lets the host stamp the agreed
+room code onto BOTH players' records) used by the "Search Online Players" feature.
 
-**Matchmaking records are ownership-scoped, so abandoned ones must expire by
-age.** Only a record's own uid can delete it, so a client that crashes mid-pair
-leaves its `matchmakingHost/{uid}` invite and `matchmakingPairs/{key}` claim
-behind permanently. Discovery therefore filters every read through
-`MATCHMAKING_STALE_MS` (`lib/multiplayer/types.ts`): `listSearchers`,
-`readInviteFor` and `findMyPair` all ignore anything older than that window.
+**Pairing is one pool with a deterministic host.** Every searcher writes ONE
+record to `matchmakingPool/{uid}` and heartbeats it. The longest-waiting opponent
+is picked, the pair key is `[me, them].sort().join("_")`, and the LOWER uid is the
+host — a pure function of the two uids, so both clients always agree on exactly
+one host without racing. The host creates one room and writes `{pair, roomCode}`
+onto both records; each player then joins by reading **its own** record.
 
-Without the guard on the invite/pair reads, a single abandoned invite is
-returned forever, and the uid it names is dragged back into a dead room on every
-future search instead of being paired with the live players waiting — which
-looks exactly like "matchmaking stopped finding anyone". If you ever need to
-clear such records by hand, do it from the owning account's own client (the
-rules forbid an outside delete); scripts/probe helpers cannot remove them.
+This replaced a three-node design (`matchmaking` + `matchmakingHost` +
+`matchmakingPairs`) in which each side had to discover the *other* player's private
+nodes and race a shared claim. The host's proof of pairing lived on a record the
+guest never read, and the claim's tie-break was non-deterministic, so both sides
+could end up waiting — which surfaced as "NO PLAYER FOUND" on every search.
+
+**Stale records are filtered by age.** A crashed client leaves its pool record
+behind, and only its own uid could delete it. Discovery therefore filters every
+read through `MATCHMAKING_STALE_MS` (`lib/multiplayer/types.ts`), and `onDisconnect`
+removes the record when a socket drops. Without the age guard an abandoned record
+makes a long-dead peer look like the only available opponent — which looks exactly
+like "matchmaking stopped finding anyone".
 
 **Vercel (one time):** add these env vars (Production / Preview), same values as
 `.env.local`:

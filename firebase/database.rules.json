@@ -85,23 +85,9 @@
         "$other": { ".validate": false }
       }
     },
-    "matchmaking": {
+    "matchmakingPool": {
       ".read": "auth != null",
       "$uid": {
-        ".read": "auth != null",
-        ".write": "auth.uid === $uid"
-      }
-    },
-    "matchmakingHost": {
-      ".read": "auth != null",
-      "$uid": {
-        ".read": "auth != null",
-        ".write": "auth.uid === $uid"
-      }
-    },
-    "matchmakingPairs": {
-      ".read": "auth != null",
-      "$pair": {
         ".read": "auth != null",
         ".write": "auth != null"
       }

@@ -274,39 +274,34 @@ export const SHUFFLE_GRACE_MS = 2200;
 /** A player's live entry under `matchmaking/{uid}` while they search. */
 export interface MatchmakingEntry {
   name: string;
-  status: "searching" | "matched" | "cancelled";
+  status: "searching" | "matched";
+  /** Display name of the opponent once a pair is formed. */
+  opponentName?: string;
   joinedAt: number;
   updatedAt: number;
-  /** Sorted pairKey of the pair once matched (populated by the claim winner). */
-  pairKey?: string;
-  /** The other uid in the matched pair (populated by the claim winner). */
-  opponentUid?: string;
-}
-
-/** Atomic pair-claim record under `matchmakingPairs/{pairKey}`. */
-export interface MatchmakingPairEntry {
-  /** The SINGLE host who wins the claim and creates the room. */
-  hostUid: string;
-  /** The invitee (guest). */
-  invitedUid: string;
-  /** When the claim was made. */
-  claimedAt: number;
-  /** Room code created by the host after claiming. */
+  /** Shared pair key once matched: the two uids sorted and joined with "_". */
+  pair?: string;
+  /** The room the pair plays in. Present as soon as either side has decided. */
   roomCode?: string;
-  /** UIDs of both members (kept for safe cleanup ownership checks). */
-  members: string[];
 }
 
-/** Host's pairing invitation under `matchmakingHost/{uid}`. */
-export interface MatchmakingHostEntry {
+/**
+ * Search pool record under `matchmakingPool/{uid}`.
+ *
+ * ONE node per searcher, and — unlike the per-uid nodes it replaces — EVERY
+ * authenticated player may write it. That is the whole point: the host stamps the
+ * agreed `roomCode` onto BOTH members' records, so each player reads their own
+ * record and joins. Neither side has to discover the other's private node, which
+ * is what the previous design did and why pairing silently failed.
+ */
+export interface MatchmakingPoolEntry {
   name: string;
-  status: "inviting" | "matched" | "cancelled";
   joinedAt: number;
   updatedAt: number;
-  /** The room code the host created once a pairing is confirmed. */
-  roomCode?: string;
-  /** The uid this host has chosen to invite. */
-  invitedUid?: string;
+  /** Sorted pair key of the match this searcher was drawn into. */
+  pair: string;
+  /** The room to join. Written by whichever side is host for that pair. */
+  roomCode: string;
 }
 
 /** Client-local representation of the matchmaker's lifecycle. */
