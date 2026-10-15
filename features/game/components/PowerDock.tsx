@@ -10,14 +10,21 @@ export function PowerDock({
   bluffActive,
   onStrategy,
   onBluff,
+  onStickers,
 }: {
   /** True only while the human is the guesser and may call a bluff. */
   bluffActive: boolean;
   onStrategy: () => void;
   onBluff: () => void;
+  /** Opens the sticker tray. Omitted where stickers are off (Pass & Play). */
+  onStickers?: () => void;
 }) {
   return (
     <nav className="power-dock" aria-label="Powers">
+      {onStickers && <button onClick={onStickers} aria-label="Send a sticker">
+        <span>☺</span>
+        <b>STICKERS</b>
+      </button>}
       <button onClick={onStrategy}>
         <span>▱</span>
         <b>STRATEGY</b>

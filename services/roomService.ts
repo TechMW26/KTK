@@ -1,4 +1,5 @@
 import {
+  child,
   ref,
   get,
   set,
@@ -319,4 +320,12 @@ export async function leaveRoom(code: string, uid: string, isHost: boolean): Pro
     // ignore — presence cleanup underneath is best-effort anyway
   }
   await set(playerRef(database, code, uid), null).catch(() => {});
+}
+
+/**
+ * Send a sticker to the room: overwrites this player's last sticker, so the
+ * node never grows. Best-effort — a lost sticker is not worth an error.
+ */
+export async function sendRoomSticker(code: string, uid: string, stickerId: string): Promise<void> {
+  await set(child(roomRef(db(), code), `stickers/${uid}`), { id: stickerId, at: Date.now() }).catch(() => {});
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { LEVELS, levelConfig, LEVEL_COUNT, roundsPerLevel, TOTAL_ROUNDS } from "@/lib/game/rules";
 import { roundVerdictCopy } from "@/features/game/constants/copy";
 import { RULESET_ROUNDS, roundInCourt } from "@/lib/game/flow";
@@ -21,6 +21,8 @@ import { RoundMedallion } from "@/features/game/components/RoundMedallion";
 import { Crown, LogOut, Menu } from "lucide-react";
 import { MpEyebrow, MpFrame, MpLogo, MpModal, MpOrnament } from "./ui";
 import { UNKNOWN_PLAYER } from "@/lib/multiplayer/displayName";
+import { StickerBubble, StickerTray } from "@/features/game/components/Stickers";
+import { STICKER_COOLDOWN_MS, STICKER_SHOW_MS } from "@/features/game/constants/stickers";
 
 /** How long the "YOUR OPPONENT" intro shows before the first hide (LET'S PLAY skips it). */
 const MATCH_INTRO_MS = 3500;
@@ -74,7 +76,43 @@ export default function GameView({ mp, onLeave }: { mp: MP; onLeave: () => void 
   const [introSeen, setIntroSeen] = useState(false);
   const atMatchStart =
     !!g && g.phase === "dealer-hide" && g.level === 0 && g.round === 1 && !(g.history?.length);
-  const showIntro = atMatchStart && !introSeen && !!mp.opponent;
+    const showIntro = atMatchStart && !introSeen && !!mp.opponent;
+
+  // ---- Stickers ----------------------------------------------------------
+  const [stickerTrayOpen, setStickerTrayOpen] = useState(false);
+  const [myStickerShown, setMyStickerShown] = useState<{ id: string; key: number } | null>(null);
+  const [theirStickerShown, setTheirStickerShown] = useState<{ id: string; key: number } | null>(null);
+  const [stickerCooldown, setStickerCooldown] = useState(false);
+  const theirSticker = mp.opponentUid ? mp.room?.stickers?.[mp.opponentUid] : undefined;
+  /** The opponent's sticker `at` we have already handled; null until first render. */
+  const seenTheirStickerAt = useRef<number | null>(null);
+  useEffect(() => {
+    const at = theirSticker?.at ?? 0;
+    // First look: remember what's there but don't replay an OLD sticker on (re)connect.
+    if (seenTheirStickerAt.current === null) {
+      seenTheirStickerAt.current = at;
+      return;
+    }
+    if (!theirSticker || at === seenTheirStickerAt.current) return;
+    seenTheirStickerAt.current = at;
+    setTheirStickerShown({ id: theirSticker.id, key: at });
+    const timer = window.setTimeout(
+      () => setTheirStickerShown((shown) => (shown?.key === at ? null : shown)),
+      STICKER_SHOW_MS,
+    );
+    return () => window.clearTimeout(timer);
+  }, [theirSticker]);
+
+  const sendSticker = (id: string) => {
+    if (stickerCooldown) return;
+    setStickerTrayOpen(false);
+    const key = Date.now();
+    setMyStickerShown({ id, key });
+    void mp.sendSticker(id);
+    setStickerCooldown(true);
+    window.setTimeout(() => setStickerCooldown(false), STICKER_COOLDOWN_MS);
+    window.setTimeout(() => setMyStickerShown((shown) => (shown?.key === key ? null : shown)), STICKER_SHOW_MS);
+  };
   useEffect(() => {
     if (!showIntro) return;
     const id = window.setTimeout(() => setIntroSeen(true), MATCH_INTRO_MS);
@@ -106,6 +144,7 @@ export default function GameView({ mp, onLeave }: { mp: MP; onLeave: () => void 
     g.phase === "match-end" ? null : (
       <PowerDock
         bluffActive={canCallBluff}
+        onStickers={() => setStickerTrayOpen(true)}
         onStrategy={() => {
           setStrategyTab(me as 0 | 1);
           setStrategyOpen(true);
@@ -117,8 +156,15 @@ export default function GameView({ mp, onLeave }: { mp: MP; onLeave: () => void 
   /** Unobtrusive "add the stranger you're playing" affordance, in the header. */
   const addFriend = <AddFriendButton mp={mp} />;
 
-  const panel = (
+    const panel = (
     <>
+      {theirStickerShown ? (
+        <StickerBubble key={theirStickerShown.key} id={theirStickerShown.id} from="them" name={mp.opponent ?? UNKNOWN_PLAYER} />
+      ) : null}
+      {myStickerShown ? <StickerBubble key={myStickerShown.key} id={myStickerShown.id} from="me" name="You" /> : null}
+      {stickerTrayOpen ? (
+        <StickerTray onPick={sendSticker} onClose={() => setStickerTrayOpen(false)} coolingDown={stickerCooldown} />
+      ) : null}
       {strategyOpen ? (
         <StrategyModal
           names={["You", mp.opponent ?? "Opponent"]}

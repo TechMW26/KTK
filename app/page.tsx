@@ -22,6 +22,9 @@ import { Modal as DialogShell } from "@/components/ui/Modal";
 import { PlayingCard } from "@/components/ui/PlayingCard";
 import { PlayerAvatar } from "@/components/ui/PlayerAvatar";
 import { botPlayerById, type BotPlayer } from "@/features/game/constants/botPlayers";
+import { StickerBubble, StickerTray } from "@/features/game/components/Stickers";
+import { STICKER_COOLDOWN_MS, STICKER_SHOW_MS, stickerById, type Sticker, type StickerMood } from "@/features/game/constants/stickers";
+import { botStickerDelay, botStickerFor, type BotStickerMoment } from "@/features/game/logic/stickerBot";
 import { GameHeader } from "@/features/game/components/GameHeader";
 import { RulesModal, SettingsModal } from "@/features/game/components/InfoDialogs";
 import { PowerDock } from "@/features/game/components/PowerDock";
@@ -89,6 +92,15 @@ import {
 function humanPace(on: boolean): number {
   return on ? 1 + Math.random() * 1.2 : 1;
 }
+
+/** Roll the bot's sticker for a moment (random rolls kept out of the component body). */
+function rollBotSticker(moment: BotStickerMoment, msSinceLast: number, yourMood?: StickerMood): { sticker: Sticker; delay: number } | null {
+  const sticker = botStickerFor({ moment, chanceRoll: Math.random(), pickRoll: Math.random(), msSinceLast, yourMood });
+  return sticker ? { sticker, delay: botStickerDelay(Math.random()) } : null;
+}
+
+/** A sticker currently on the board; `key` restarts the pop animation. */
+type ShownSticker = { id: string; key: number };
 
 export default function Home() {
   const [phase, setPhase] = useState<MatchPhase>("home");
@@ -180,8 +192,16 @@ export default function Home() {
   const [turnTransition, setTurnTransition] = useState<TurnAnnouncement | null>(null);
   const prevTurnKey = useRef<string | null>(null);
   const transitionTimer = useRef<number | undefined>(undefined);
-  /** Guards the stats write so one match is counted exactly once. */
+    /** Guards the stats write so one match is counted exactly once. */
   const recordedMatch = useRef<MatchPhase | null>(null);
+  /** Stickers (VS Bot): the tray, what's on the board, and the anti-spam clocks. */
+  const [stickerTrayOpen, setStickerTrayOpen] = useState(false);
+  const [shownStickers, setShownStickers] = useState<{ me: ShownSticker | null; them: ShownSticker | null }>({ me: null, them: null });
+  const [stickerCooldown, setStickerCooldown] = useState(false);
+  const lastBotStickerAt = useRef(0);
+  const stickerTimers = useRef<number[]>([]);
+  /** The bot greets once per match; reset when a match starts. */
+  const botGreeted = useRef(false);
 
   const config = COURTS[level];
   const dealer = dealerForRound(round);
@@ -269,6 +289,7 @@ export default function Home() {
     // "Player 1"/"Player 2"/"The Rival", and writing "The Rival" into the state
     // used to pre-fill the Pass & Play "Opponent name" box with "The Rival".
     recordedMatch.current = null; // a new match must be recorded again
+    botGreeted.current = false;
     prevTurnKey.current = "start"; // so the very first turn also gets its banner
     setScores([0, 0]);
     setLevel(0);
@@ -293,6 +314,10 @@ export default function Home() {
     setOverlay(null);
     setBotPlayer(null);
     setBotIntro(false);
+    stickerTimers.current.forEach((id) => window.clearTimeout(id));
+    stickerTimers.current = [];
+    setShownStickers({ me: null, them: null });
+    setStickerTrayOpen(false);
     setTurnTransition(null);
     prevTurnKey.current = null;
     setScores([0, 0]);
@@ -629,7 +654,50 @@ export default function Home() {
     const timedTurn = (phase === "guess" && !guesserIsBot) || (phase === "dealer" && !dealerIsBot);
     if (sound && timedTurn && timeLeft > 0 && timeLeft <= COUNTDOWN_WARNING_SECONDS) playSoundCue("countdown", timeLeft);
   }, [sound, phase, dealerIsBot, guesserIsBot, timeLeft]);
+      /** Put a sticker on the board for STICKER_SHOW_MS. */
+  const showSticker = (side: "me" | "them", id: string) => {
+    const key = Date.now() + Math.round(performance.now());
+    setShownStickers((prev) => ({ ...prev, [side]: { id, key } }));
+    const timer = window.setTimeout(() => {
+      setShownStickers((prev) => (prev[side]?.key === key ? { ...prev, [side]: null } : prev));
+    }, STICKER_SHOW_MS);
+    stickerTimers.current.push(timer);
+  };
 
+  /** The bot may answer a moment with a sticker, after a human-ish delay. VS Bot only. */
+  const botReact = (moment: BotStickerMoment, yourMood?: StickerMood) => {
+    if (mode !== "bot") return;
+    const pick = rollBotSticker(moment, Date.now() - lastBotStickerAt.current, yourMood);
+    if (!pick) return;
+    lastBotStickerAt.current = Date.now() + pick.delay; // reserve the slot now
+    const timer = window.setTimeout(() => showSticker("them", pick.sticker.id), pick.delay);
+    stickerTimers.current.push(timer);
+  };
+
+  /** You tapped a sticker in the tray. */
+  const sendMySticker = (id: string) => {
+    if (stickerCooldown) return;
+    setStickerTrayOpen(false);
+    showSticker("me", id);
+    setStickerCooldown(true);
+    stickerTimers.current.push(window.setTimeout(() => setStickerCooldown(false), STICKER_COOLDOWN_MS));
+    botReact("reply", stickerById(id)?.mood);
+  };
+
+  // The bot reacts to how each round, and the match, went — like a person would.
+  useEffect(() => {
+    if (mode !== "bot") return;
+    if (phase === "result" && result) botReact(result.winner === 1 ? "bot-won-round" : "bot-lost-round");
+    if (phase === "match-end") botReact(matchWinner === 1 ? "bot-won-match" : "bot-lost-match");
+    if (phase === "dealer" && round === 1 && level === 0 && !botGreeted.current) {
+      botGreeted.current = true;
+      botReact("match-start");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- react once per phase change
+  }, [phase]);
+
+  // Never leave a sticker timer running after the board unmounts.
+  useEffect(() => () => stickerTimers.current.forEach((id) => window.clearTimeout(id)), []);
     /** Leave the "YOUR OPPONENT" card: LET'S PLAY, or by itself after a few seconds. */
   const beginBotMatch = () => {
     if (!botIntro) return;
@@ -1306,6 +1374,7 @@ export default function Home() {
                 // CALL BLUFF now sits next to CONFIRM in the guess bar, so the dock
                 // keeps only STRATEGY (two Bluff buttons confused players).
                 bluffActive={false}
+                onStickers={mode === "bot" ? () => setStickerTrayOpen(true) : undefined}
                 onStrategy={() => { setStrategyTab(0); setOverlay("strategy"); }}
                 onBluff={() => {
                   if (sound) playSoundCue("bluff-open");
@@ -1315,6 +1384,16 @@ export default function Home() {
             )}
             </footer>
           </>
+        )}
+
+                {gameplay && shownStickers.them && (
+          <StickerBubble key={shownStickers.them.key} id={shownStickers.them.id} from="them" name={displayNames[1]} />
+        )}
+        {gameplay && shownStickers.me && (
+          <StickerBubble key={shownStickers.me.key} id={shownStickers.me.id} from="me" name="You" />
+        )}
+        {gameplay && stickerTrayOpen && (
+          <StickerTray onPick={sendMySticker} onClose={() => setStickerTrayOpen(false)} coolingDown={stickerCooldown} />
         )}
 
         {overlay === "rules" && <RulesModal onClose={() => setOverlay(null)} />}

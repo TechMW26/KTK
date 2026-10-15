@@ -20,6 +20,7 @@ import {
   publishInspecting,
 } from "@/services/multiplayerService";
 import { normalizeRoomCode } from "@/lib/multiplayer/roomCode";
+import { sendRoomSticker } from "@/services/roomService";
 import { cleanupMatchmaking } from "@/services/matchmakingService";
 import { levelConfig } from "@/lib/game/rules";
 import {
@@ -439,6 +440,15 @@ export default function useMultiplayer() {
     return game.lives[mySeat === 0 ? 1 : 0] ?? null;
   }, [livesMode, game, mySeat]);
 
+   /** Send a sticker to the opponent (online). */
+  const sendSticker = useCallback(
+    async (stickerId: string) => {
+      if (!session) return;
+      await sendRoomSticker(session.code, session.uid, stickerId);
+    },
+    [session],
+  );
+
   const copyCode = useCallback(async () => {
     if (!code) return;
     try {
@@ -507,8 +517,9 @@ export default function useMultiplayer() {
     setInspecting,
     advance,
     rematch,
-    copyCode,
+       copyCode,
     shareInvite,
+    sendSticker,
     // --- disconnection / auto re-search ---
     searchOrigin,
   };
