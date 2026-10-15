@@ -7,7 +7,9 @@ import {
   ChessRook,
   CircleDot,
   Crown,
+  DoorClosed,
   Heart,
+  Lock,
   LogOut,
   Menu,
   Settings,
@@ -18,6 +20,8 @@ import { Ornament } from "@/components/common/Brand";
 import { SplashScreen } from "@/components/common/SplashScreen";
 import { Modal as DialogShell } from "@/components/ui/Modal";
 import { PlayingCard } from "@/components/ui/PlayingCard";
+import { PlayerAvatar } from "@/components/ui/PlayerAvatar";
+import { botPlayerById, type BotPlayer } from "@/features/game/constants/botPlayers";
 import { GameHeader } from "@/features/game/components/GameHeader";
 import { RulesModal, SettingsModal } from "@/features/game/components/InfoDialogs";
 import { PowerDock } from "@/features/game/components/PowerDock";
@@ -78,6 +82,13 @@ import {
   startAmbientMusic,
   stopAmbientMusic,
 } from "@/services/audio/gameAudio";
+/**
+ * Delay multiplier for a stand-in online player: 1x–2.2x, so its moves take an
+ * uneven, human-ish time. The plain Rival (`on` = false) keeps its exact pace.
+ */
+function humanPace(on: boolean): number {
+  return on ? 1 + Math.random() * 1.2 : 1;
+}
 
 export default function Home() {
   const [phase, setPhase] = useState<MatchPhase>("home");
@@ -85,7 +96,14 @@ export default function Home() {
   const [splashOpen, setSplashOpen] = useState(true);
   const homeLogoRef = useRef<HTMLImageElement>(null);
   const [mode, setMode] = useState<OpponentKind>("bot");
-  const [names, setNames] = useState<[string, string]>(["", ""]);
+  /**
+   * Set when PLAY ONLINE found nobody and seated a stand-in player (?opp=<id>):
+   * the bot then plays under that player's name and avatar. Null = "The Rival".
+   */
+  const [botPlayer, setBotPlayer] = useState<BotPlayer | null>(null);
+  /** The "YOUR OPPONENT" card is showing, before the stand-in match starts. */
+  const [botIntro, setBotIntro] = useState(false);
+    const [names, setNames] = useState<[string, string]>(["", ""]);
   const [scores, setScores] = useState<[number, number]>([0, 0]);
   const [level, setLevel] = useState(0);
   const [round, setRound] = useState(1);
@@ -179,8 +197,7 @@ export default function Home() {
   );
   // Against the computer the human is simply "You" — "Player 1" made players
   // wonder who that was. Pass & Play keeps the typed names.
-  const displayNames: [string, string] = [mode === "bot" ? "You" : names[0].trim() || "Player 1", mode === "bot" ? "The Rival" : names[1].trim() || "Player 2"];
-  /**
+  const displayNames: [string, string] = [mode === "bot" ? "You" : names[0].trim() || "Player 1", mode === "bot" ? (botPlayer?.name ?? "The Rival") : names[1].trim() || "Player 2"];  /**
    * The seat that won the whole match, or null for a draw. Derived once here so
    * the match-end heading, the scoreboard and the recorded account statistic can
    * never disagree about who actually won.
@@ -233,8 +250,9 @@ export default function Home() {
    * route with a query flag the destination reads. No gameplay is reimplemented
    * here — this only chooses which existing flow to enter.
    */
-  const startMode = (next: OpponentKind) => {
+   const startMode = (next: OpponentKind) => {
     setMode(next);
+    setBotPlayer(null); // started from the menu: plain "The Rival", never a stand-in
     // `mode` is read inside startMatch from the closure; set it on the next tick
     // so the freshly chosen mode is the one that starts. Using a ref-free microtask
     // keeps this a single render commit for the user.
@@ -270,9 +288,11 @@ export default function Home() {
     if (typeof window !== "undefined") window.location.assign(path);
   };
 
-  const quitMatch = () => {
+   const quitMatch = () => {
     stopAmbientMusic();
     setOverlay(null);
+    setBotPlayer(null);
+    setBotIntro(false);
     setTurnTransition(null);
     prevTurnKey.current = null;
     setScores([0, 0]);
@@ -440,21 +460,23 @@ export default function Home() {
       bluffRoll: Math.random(),
       positionRoll: Math.random(),
     });
-    const useBluff = hiding.isBluff;
+       const useBluff = hiding.isBluff;
+    // A stand-in "player" takes a human-ish, uneven time; The Rival keeps its pace.
+    const pace = humanPace(Boolean(botPlayer) && motion);
     const chooseTimer = window.setTimeout(() => {
       setIsBluff(useBluff);
       setKingPosition(hiding.kingIndex);
-    }, motion ? BOT_HIDE_PICK_MS : REDUCED.hidePick);
+    }, (motion ? BOT_HIDE_PICK_MS : REDUCED.hidePick) * pace);
     const finishTimer = window.setTimeout(() => {
       if (useBluff) setBluffsAvailable((previous) => [previous[0], false]);
       setOpponentActiveCard(null);
       setPhase("shuffle");
-    }, motion ? BOT_HIDE_LOCK_MS : REDUCED.hideLock);
-    return () => {
+    }, (motion ? BOT_HIDE_LOCK_MS : REDUCED.hideLock) * pace);
+        return () => {
       window.clearTimeout(chooseTimer);
       window.clearTimeout(finishTimer);
     };
-  }, [phase, dealerIsBot, bluffsAvailable, dealer, config.cards, motion]);
+   }, [phase, dealerIsBot, bluffsAvailable, dealer, config.cards, motion, botPlayer]);
 
   // Keep the ref in step with the Dealer's taps (read by the timer below).
   useEffect(() => {
@@ -550,7 +572,9 @@ export default function Home() {
     let resolveTimer: number | undefined;
     // Wait for the cinematic "OPPONENT'S TURN" overlay to finish, then give the
     // player a beat before the opponent reveals its choice.
-    const thinkDelay = (motion ? TURN_VEIL_MS : REDUCED.veil) + (motion ? BOT_THINK_AFTER_VEIL_MS : REDUCED.afterVeil);
+       // Stand-in "player": uneven, human-ish thinking time (still well inside the clock).
+    const pace = humanPace(Boolean(botPlayer) && motion);
+    const thinkDelay = (motion ? TURN_VEIL_MS : REDUCED.veil) + (motion ? BOT_THINK_AFTER_VEIL_MS : REDUCED.afterVeil) * pace;
     const thinkTimer = window.setTimeout(() => {
       const decision = decideGuessTurn({
         cards: config.cards,
@@ -568,7 +592,7 @@ export default function Home() {
         // highlight is applied in the same tick it is never painted: the aim
         // has to hold independently of the commit.
         setOpponentActiveCard(choice);
-        const aimBeat = motion ? BOT_GUESS_REACH_MS : REDUCED.guessReach;
+        const aimBeat = (motion ? BOT_GUESS_REACH_MS : REDUCED.guessReach) * pace;
         resolveTimer = window.setTimeout(() => {
           chooseCard(choice);
           // Cleared only once the reveal owns the board, so the beat is visible
@@ -606,13 +630,37 @@ export default function Home() {
     if (sound && timedTurn && timeLeft > 0 && timeLeft <= COUNTDOWN_WARNING_SECONDS) playSoundCue("countdown", timeLeft);
   }, [sound, phase, dealerIsBot, guesserIsBot, timeLeft]);
 
+    /** Leave the "YOUR OPPONENT" card: LET'S PLAY, or by itself after a few seconds. */
+  const beginBotMatch = () => {
+    if (!botIntro) return;
+    setBotIntro(false);
+    startMatchForMode("bot");
+  };
+  useEffect(() => {
+    if (!botIntro) return;
+    const id = window.setTimeout(beginBotMatch, 3500);
+    return () => window.clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [botIntro]);
+
   // Direct "VS Bot" start (used by the multiplayer matchmaking fallback and by
   // ?play=bot). Runs once on mount; bot mode only, untouching normal menu flow.
   const autoStartRef = useRef(false);
   useEffect(() => {
     if (autoStartRef.current || typeof window === "undefined") return;
     autoStartRef.current = true;
-    if (new URLSearchParams(window.location.search).get("play") === "bot") {
+       const params = new URLSearchParams(window.location.search);
+    if (params.get("play") === "bot") {
+      const standIn = botPlayerById(params.get("opp"));
+      // Drop the query so a refresh lands on Home instead of restarting a match.
+      window.history.replaceState(null, "", window.location.pathname);
+      if (standIn) {
+        // Seated from PLAY ONLINE: show who "they" are first, then start.
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- mount-time read of the URL
+        setBotPlayer(standIn);
+        setBotIntro(true);
+        return;
+      }
       // Default mode is already "bot"; just launch the match directly.
       startMatch();
     }
@@ -793,8 +841,17 @@ export default function Home() {
       <section inert={splashOpen || undefined} className={["game-screen", phase === "result" && verdict ? verdict.tone : ""].filter(Boolean).join(" ")}>
 
         <TurnTransition turn={turnTransition} />
-
-        {phase === "home" ? (
+        {phase === "home" && botIntro && botPlayer ? (
+          <section className="center-stage match-intro" role="status" aria-live="polite">
+            <p className="eyebrow">MATCH FOUND</p>
+            <PlayerAvatar name={botPlayer.name} hue={botPlayer.hue} image={botPlayer.image} size="lg" />
+            <h2>{botPlayer.name.toUpperCase()}</h2>
+            <p className="match-intro-city">{botPlayer.city}</p>
+            <Ornament />
+            <p>You hide the King first.</p>
+            <button className="gold-button wide" onClick={beginBotMatch}>LET&apos;S PLAY</button>
+          </section>
+        ) : phase === "home" ? (
           <HomeScreen
             logoRef={homeLogoRef}
             names={names}
@@ -825,7 +882,8 @@ export default function Home() {
               activePlayer={activePlayer}
               activeAction={activeAction}
               onSettings={() => setOverlay("settings")}
-              hearts={mode === "local" && livesOn ? lives : null}
+                            hearts={mode === "local" && livesOn ? lives : null}
+              opponentAvatar={botPlayer ? <PlayerAvatar name={botPlayer.name} hue={botPlayer.hue} image={botPlayer.image} size="sm" /> : null}
             />
 
             {phase === "dealer" && (
@@ -848,8 +906,8 @@ export default function Home() {
                     <p className="eyebrow">{`HIDE ${blockProgress}`}</p>
                     <h2>{dealerIsBot ? `${displayNames[1].toUpperCase()} IS HIDING` : "HIDE YOUR KING"}</h2>
                     {dealerIsBot ? (
-                      <p>{`Hiding its King in the ${ownerColour} cards…`}</p>
-                    ) : hideUrgent ? (
+                      <p>{`Hiding the King in the ${ownerColour} cards…`}</p>
+                                        ) : hideUrgent ? (
                       <p className="stage-hint-urgent">{hideNeedsPick ? HIDE_HINT.urgentPick : HIDE_HINT.urgentLock}</p>
                     ) : (
                       <p>{`Tap a ${ownerColour} card, then press LOCK.`}</p>
@@ -1005,8 +1063,8 @@ export default function Home() {
                   {passPlayTurnLine}
                   <h2>{findHeading}</h2>
                   <p>{guesserIsBot
-                    ? `It's looking for your King in your ${ownerColour} cards…`
-                    : dealerBluffSpent
+                    ? `${displayNames[1]} is looking for your King in your ${ownerColour} cards…`
+                                        : dealerBluffSpent
                       ? `${displayNames[dealer]} already used their Bluff — the King IS here. Tap a card, then confirm.`
                       : "Tap a card, then confirm. Think there's no King? Call Bluff."}</p>
                 </div>
@@ -1365,6 +1423,13 @@ function HomeScreen({
 }) {
   const [showPassSetup, setShowPassSetup] = useState(false);
   const passSetupRef = useRef<HTMLDivElement>(null);
+  /** Tapping the locked Tournament card shows a short "coming soon" note. */
+  const [tournamentNote, setTournamentNote] = useState(false);
+  useEffect(() => {
+    if (!tournamentNote) return;
+    const id = window.setTimeout(() => setTournamentNote(false), 2600);
+    return () => window.clearTimeout(id);
+  }, [tournamentNote]);
 
   useEffect(() => {
     if (showPassSetup) passSetupRef.current?.scrollIntoView({ block: "center" });
@@ -1415,10 +1480,34 @@ function HomeScreen({
           </button>
         </div>
 
-        <button className="outline-button" onClick={onPracticeBot} aria-label="Play against the computer">
+               <button className="outline-button" onClick={onPracticeBot} aria-label="Play against the computer">
           PLAY VS COMPUTER
         </button>
 
+        {/* Tournament: visible so players know it's on the way, but locked.
+            aria-disabled (not disabled) so a tap still explains WHY it's locked. */}
+        <button
+          type="button"
+          className="tournament-locked"
+          aria-disabled="true"
+          aria-describedby="tournament-note"
+          onClick={() => setTournamentNote(true)}
+        >
+          <span className="tournament-door" aria-hidden="true">
+            <DoorClosed strokeWidth={1.6} />
+          </span>
+          <span className="tournament-text">
+            <b>TOURNAMENT</b>
+            <small>Compete for the crown</small>
+          </span>
+          <span className="tournament-badge">
+            <Lock strokeWidth={2.2} aria-hidden="true" />
+            COMING SOON
+          </span>
+        </button>
+        <p id="tournament-note" className={tournamentNote ? "tournament-note show" : "tournament-note"} role="status" aria-live="polite">
+          {tournamentNote ? "Tournaments are coming soon — the doors open in a future update." : ""}
+        </p>
         {showPassSetup && (
           <div className="pass-setup" ref={passSetupRef}>
             <label htmlFor="player-one">YOUR NAME</label>

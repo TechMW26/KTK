@@ -1,6 +1,7 @@
 import { Logo } from "@/components/common/Brand";
 import { roundsInCourt, STARTING_LIVES } from "@/features/game/constants/courts";
 import type { Seat } from "@/features/game/types/game";
+import type { ReactNode } from "react";
 import { Heart, Settings } from "lucide-react";
 import { RoundMedallion } from "./RoundMedallion";
 
@@ -42,8 +43,9 @@ export function GameHeader({
   time,
   activePlayer,
   activeAction,
-  onSettings,
+   onSettings,
   hearts,
+  opponentAvatar,
 }: {
   level: number;
   round: number;
@@ -60,7 +62,9 @@ export function GameHeader({
   activeAction: string | null;
   onSettings: () => void;
   /** When provided, the rail shows lives instead of score for both seats. */
-  hearts?: [number, number] | null;
+   hearts?: [number, number] | null;
+  /** Small avatar shown beside the opponent's name (stand-in online players). */
+  opponentAvatar?: ReactNode;
 }) {
   const showHearts = Boolean(hearts);
   const valueFor = (seat: Seat) => (showHearts ? hearts![seat] : scores[seat]);
@@ -95,7 +99,8 @@ export function GameHeader({
           VS
         </i>
         <span className={activePlayer === 1 ? "active-turn" : ""}>
-          <b>{valueFor(1)}</b>
+                    <b>{valueFor(1)}</b>
+          {opponentAvatar}
           <strong>{names[1]}</strong>
           {activePlayer === 1 && activeAction && <small>{activeAction}</small>}
         </span>

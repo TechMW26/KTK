@@ -338,3 +338,127 @@
 .reduced-motion .gold-button.lock-urgent,
 .reduced-motion .auto-hide-card,
 .reduced-motion .cards-row.auto-hidden-row .playing-card.chosen .card-inner { animation: none; }
+/* ── Home: locked "Tournament" option (Coming Soon) ──
+   Same size as the other menu rows, but dimmed with a dashed border so it
+   reads as "not yet" at a glance. A tap shows .tournament-note instead of
+   doing nothing. */
+.home-menu .tournament-locked {
+  position: relative;
+  display: grid;
+  grid-template-columns: 34px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 52px;
+  padding: 7px 10px 7px 12px;
+  border: 1px dashed rgba(185, 142, 68, .42);
+  border-radius: 10px;
+  background:
+    repeating-linear-gradient(135deg, rgba(185, 142, 68, .05) 0 8px, transparent 8px 16px),
+    linear-gradient(180deg, rgba(30, 24, 14, .5), rgba(8, 8, 6, .7));
+  color: #a88d5c;
+  text-align: left;
+  cursor: not-allowed;
+  font: inherit;
+}
+.home-menu .tournament-locked:focus-visible { outline: 2px solid var(--gold-bright); outline-offset: 2px; }
+.tournament-door {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  border: 1px solid rgba(185, 142, 68, .3);
+  background: rgba(0, 0, 0, .35);
+  color: #c9a463;
+  opacity: .85;
+}
+.tournament-door svg { width: 20px; height: 20px; }
+.tournament-text { display: grid; gap: 2px; min-width: 0; }
+.tournament-text b { font-size: 12px; letter-spacing: .16em; font-weight: 600; color: #cdb07a; }
+.tournament-text small { font-size: 10px; letter-spacing: .04em; color: #8a7550; }
+.tournament-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(232, 180, 62, .45);
+  background: rgba(232, 180, 62, .1);
+  color: var(--gold-bright);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: .12em;
+  white-space: nowrap;
+}
+.tournament-badge svg { width: 11px; height: 11px; }
+.tournament-note {
+  min-height: 0;
+  margin: -12px 0 0;
+  font-size: 11px;
+  line-height: 1.35;
+  text-align: center;
+  color: #d8bd85;
+  opacity: 0;
+  transition: opacity .2s ease;
+}
+.tournament-note.show { opacity: 1; }
+.home-menu .tournament-locked:active .tournament-door { animation: tournament-rattle .35s ease-in-out; }
+@keyframes tournament-rattle {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-2px); }
+  75% { transform: translateX(2px); }
+}
+.reduced-motion .home-menu .tournament-locked:active .tournament-door { animation: none; }
+@media (max-height: 700px) {
+  .home-menu .tournament-locked { min-height: 46px; padding-block: 5px; }
+  .tournament-text small { display: none; }
+}
+
+/* ── Player avatar (stand-in online opponents) ── */
+.player-avatar {
+  --avatar-size: 40px;
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: var(--avatar-size);
+  height: var(--avatar-size);
+  border-radius: 50%;
+  overflow: hidden;
+  background: radial-gradient(circle at 35% 30%, hsl(var(--avatar-hue) 55% 48%), hsl(var(--avatar-hue) 50% 22%));
+  box-shadow: 0 0 0 2px #d9b46a, 0 0 0 4px rgba(0, 0, 0, .55), 0 6px 14px rgba(0, 0, 0, .55);
+}
+.player-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.player-avatar-initials {
+  line-height: 1;
+  color: #fff4dc;
+  font-size: calc(var(--avatar-size) * .38);
+  font-weight: 600;
+  letter-spacing: .04em;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .6);
+}
+.player-avatar-sm { --avatar-size: 18px; box-shadow: 0 0 0 1px #d9b46a; }
+.player-avatar-sm .player-avatar-initials { font-size: 8px; }
+.player-avatar-lg { --avatar-size: 84px; }
+.score-strip .player-avatar-sm { margin-inline: 2px 4px; vertical-align: middle; }
+
+/* "Opponent found" card on the search screen, and the match intro */
+.found-opponent { display: grid; justify-items: center; gap: 6px; margin: 14px 0 6px; }
+.found-opponent b { color: var(--gold-bright); font-size: 20px; letter-spacing: .08em; font-weight: 500; }
+.found-opponent small { color: #a98f61; font-size: 11px; letter-spacing: .12em; text-transform: uppercase; }
+.match-intro { gap: 10px; }
+.match-intro .player-avatar { margin: 6px 0 2px; }
+.match-intro-city { margin: -4px 0 0; color: #a98f61; font-size: 11px; letter-spacing: .14em; text-transform: uppercase; }
+/* The score strip styles every <span> as a pill; undo that for the avatar so it stays round. */
+.game-header .score-strip span.player-avatar {
+  display: inline-grid;
+  width: 18px;
+  height: 18px;
+  min-width: 18px;
+  padding: 0;
+  gap: 0;
+  border-radius: 50%;
+}
+.game-header .score-strip span.player-avatar .player-avatar-initials { padding: 0; font-size: 8px; }
+/* The stand-in intro fills the board and sits in the middle, like other centre screens. */
+.game-screen > .center-stage.match-intro { flex: 1; min-height: 100%; }
