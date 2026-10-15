@@ -13,14 +13,27 @@ import { oppositePoint } from "../logic/tablePerspective";
 /** Shared local/online deal: screen-wide hand swipe above the actual fan.
  * Portalling to the board lets the long arm reach past its entry edge, rather
  * than being visibly cut at the scrollable table's boundary.
+ *
+ * `fromBottom` picks the edge the hand serves from — the bottom of THIS screen
+ * (the default, and the online board's original choreography) or the top. The
+ * deck lands from the same edge, whichever it is, so the cards are never served
+ * from one end while they settle on the other.
  */
-export function DealerSwipe({ cards, mirrored = false, opposite = false, windowMs = SHUFFLE_MS, reducedMotion = false }: {
-  cards: number; mirrored?: boolean; opposite?: boolean; windowMs?: number; reducedMotion?: boolean;
+export function DealerSwipe({ cards, mirrored = false, opposite = false, fromBottom = true, windowMs = SHUFFLE_MS, reducedMotion = false, oppFromTop = false }: {
+  cards: number; mirrored?: boolean; opposite?: boolean; fromBottom?: boolean; windowMs?: number; reducedMotion?: boolean;
+  /** The Rival will guess next: keep the same top gap as the guess row so the deck never jumps. */
+  oppFromTop?: boolean;
 }) {
   const rowRef = useRef<HTMLDivElement>(null);
   const handRef = useRef<HTMLImageElement>(null);
   const [board, setBoard] = useState<HTMLElement | null>(null);
   const timing = dealTimings(cards, windowMs);
+  // The cards arrive from the hand's edge. In the row's OWN frame that edge is
+  // the LOW one whenever the hand and the row disagree about which way is down:
+  // an upright row served from the bottom, or a flipped row served from the top.
+  // A mirrored board that passes `opposite` alone keeps the shipped
+  // serve-from-the-bottom beat, because there both flags agree.
+  const deckFromOwner = fromBottom !== opposite;
 
   useLayoutEffect(() => {
     // The portal host is a measured DOM ancestor, resolved before first paint.
@@ -37,10 +50,10 @@ export function DealerSwipe({ cards, mirrored = false, opposite = false, windowM
       const contacts = Array.from(row.querySelectorAll<HTMLElement>(".dealer-contact"))
         .sort((a, b) => Number(a.dataset.slot) - Number(b.dataset.slot))
         .map(marker => { const p = marker.getBoundingClientRect(); const x = p.left - bounds.left, y = p.top - bounds.top;
-          return opposite ? oppositePoint({ x, y }, bounds.width, bounds.height) : { x, y }; });
+          return fromBottom ? oppositePoint({ x, y }, bounds.width, bounds.height) : { x, y }; });
       const card = row.querySelector<HTMLElement>(".playing-card");
       if (!contacts.length || !card) return;
-      // The bottom overlay is a 180-degree copy of the top choreography.
+      // A bottom-served overlay is a 180-degree copy of the top choreography.
       // Contacts are converted back first, so both the landing depth and the
       // hidden forearm buffer are identical relative to the entry edge.
       const plan = dealerSwipePlan(contacts, card.offsetWidth);
@@ -56,10 +69,10 @@ export function DealerSwipe({ cards, mirrored = false, opposite = false, windowM
     const observer = new ResizeObserver(arrange);
     observer.observe(row); observer.observe(board);
     return () => { observer.disconnect(); row.removeEventListener("card-row-aligned", arrange); animation?.cancel(); };
-  }, [board, cards, mirrored, opposite, reducedMotion, windowMs]);
+  }, [board, cards, mirrored, opposite, fromBottom, reducedMotion, windowMs]);
 
   return <>
-    <CardRow ref={rowRef} opposite={opposite} className={`dealing dealer-swipe${mirrored ? " mirrored" : ""}`}
+    <CardRow ref={rowRef} opposite={opposite} className={`dealing dealer-swipe${mirrored ? " mirrored" : ""}${deckFromOwner ? " dealt-from-owner" : ""}${oppFromTop ? " opp-room" : ""}`}
       style={{ "--deal-flight": `${timing.flight}s` } as React.CSSProperties}>
       {Array.from({ length: cards }, (_, index) => {
         const slot = indexToSlot(index, cards, mirrored);
@@ -73,7 +86,7 @@ export function DealerSwipe({ cards, mirrored = false, opposite = false, windowM
         }} />;
       })}
     </CardRow>
-    {board && createPortal(<div className={`dealer-swipe-overlay${opposite ? " from-bottom" : ""}`} aria-hidden="true">
+    {board && createPortal(<div className={`dealer-swipe-overlay${fromBottom ? " from-bottom" : ""}`} aria-hidden="true">
       <Image ref={handRef} className="dealer-swipe-hand" src="/dealer-swipe-hand.png" alt=""
         width={DEALER_ART.width} height={DEALER_ART.height} priority unoptimized />
     </div>, board)}

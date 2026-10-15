@@ -1,5 +1,5 @@
 import { Logo } from "@/components/common/Brand";
-import { STARTING_LIVES } from "@/features/game/constants/courts";
+import { roundsInCourt, STARTING_LIVES } from "@/features/game/constants/courts";
 import type { Seat } from "@/features/game/types/game";
 import { Heart, Settings } from "lucide-react";
 import { RoundMedallion } from "./RoundMedallion";
@@ -70,7 +70,7 @@ export function GameHeader({
     <header className="game-header" aria-label={`Level ${level + 1}, round ${round}, ${cardCount} cards, ${points} point stakes${activeAction ? `, ${activeAction}` : ""}`}>
       <Logo compact />
 
-      <RoundMedallion level={level + 1} round={round} />
+      <RoundMedallion level={level + 1} round={round} total={roundsInCourt(level)} />
 
       <div className="header-controls">
         {time === null ? (

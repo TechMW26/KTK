@@ -31,14 +31,17 @@ import { AccountScreen } from "@/features/account/components/AccountScreen";
 import { useAccount } from "@/hooks/useAccount";
 import { recordMatchResult } from "@/lib/firebase/profile";
 import { TurnTransition } from "@/features/game/components/TurnIndicator";
-import { COURTS, roundsInCourt, setCurrentCourtIndex, STARTING_LIVES } from "@/features/game/constants/courts";
+import { COURTS, roundsInCourt, setCurrentCourtIndex, STARTING_LIVES, TOTAL_ROUNDS } from "@/features/game/constants/courts";
 import {
-  RESULT_COPY,
-  revealCopyFor,
+  autoHideCopy,
+  HIDE_HINT,
+  roundVerdictCopy,
   turnAnnouncement,
   turnKey as buildTurnKey,
+  type AutoHideKind,
 } from "@/features/game/constants/copy";
 import {
+  AUTO_HIDE_NOTICE_MS,
   BOT_ACCUSE_MS,
   BOT_GUESS_REACH_MS,
   BOT_HIDE_LOCK_MS,
@@ -57,7 +60,7 @@ import { decideGuessTurn, decideHidingSpot } from "@/features/game/logic/bot";
 import { afterCourt, afterRound } from "@/features/game/logic/progression";
 import { resolveLocalRound, resolveTimedOutDealerChoice } from "@/features/game/logic/round";
 import { applyLifeLoss, applyRoundWin, lifeWinner as winnerFromLives } from "@/features/game/logic/scoring";
-import { dealerForRound, guesserForRound } from "@/features/game/logic/seats";
+import { dealerForRound, guesserForRound, hidesIntoBlock } from "@/features/game/logic/seats";
 import { picksThisCourt, summarisePicks } from "@/features/game/logic/strategy";
 import type {
   MatchPhase,
@@ -82,7 +85,7 @@ export default function Home() {
   const [splashOpen, setSplashOpen] = useState(true);
   const homeLogoRef = useRef<HTMLImageElement>(null);
   const [mode, setMode] = useState<OpponentKind>("bot");
-  const [names, setNames] = useState<[string, string]>(["", "The Rival"]);
+  const [names, setNames] = useState<[string, string]>(["", ""]);
   const [scores, setScores] = useState<[number, number]>([0, 0]);
   const [level, setLevel] = useState(0);
   const [round, setRound] = useState(1);
@@ -98,6 +101,20 @@ export default function Home() {
   const [history, setHistory] = useState<RoundHistoryEntry[]>([]);
   const [timeLeft, setTimeLeft] = useState<number>(COURTS[0].seconds);
   const [overlay, setOverlay] = useState<OpenDialog>(null);
+  /**
+   * Set when the Dealer's hide clock ran out and the game locked a choice for
+   * them. While set, the "time's up" message shows and the hide controls are
+   * frozen; it clears itself when the round moves on.
+   */
+  const [autoHide, setAutoHide] = useState<{ kind: AutoHideKind; card: number | null } | null>(null);
+  /**
+   * The Dealer's latest unlocked choice, mirrored into a ref so the 1-second
+   * hide timer (which does not restart on every tap) can read it when it
+   * reaches zero.
+   */
+  const dealerChoiceRef = useRef<{ kingPosition: number | null; isBluff: boolean }>({ kingPosition: null, isBluff: false });
+  /** Auto-continue timer for the "time's up" screen; GOT IT cancels it early. */
+  const autoHideTimerRef = useRef<number | undefined>(undefined);
   const account = useAccount();
   const [hoveredCard, setHoveredCard] = useState<number | null>(null);
   /**
@@ -125,6 +142,23 @@ export default function Home() {
   const [strategyTab, setStrategyTab] = useState<0 | 1>(0);
   const [sound, setSound] = useState(true);
   const [motion, setMotion] = useState(true);
+  // Remember Sound / Card animations between visits ("SAVE SETTINGS" used to
+  // forget them on every reload). Wrapped in try: private mode can block storage.
+  useEffect(() => {
+    try {
+      const savedSound = localStorage.getItem("ktk:sound");
+      const savedMotion = localStorage.getItem("ktk:motion");
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time restore on mount
+      if (savedSound !== null) setSound(savedSound === "1");
+      if (savedMotion !== null) setMotion(savedMotion === "1");
+    } catch { /* storage unavailable: keep defaults */ }
+  }, []);
+  useEffect(() => {
+    try {
+      localStorage.setItem("ktk:sound", sound ? "1" : "0");
+      localStorage.setItem("ktk:motion", motion ? "1" : "0");
+    } catch { /* storage unavailable */ }
+  }, [sound, motion]);
   const [turnTransition, setTurnTransition] = useState<TurnAnnouncement | null>(null);
   const prevTurnKey = useRef<string | null>(null);
   const transitionTimer = useRef<number | undefined>(undefined);
@@ -143,14 +177,9 @@ export default function Home() {
     () => dealTimings(config.cards, motion ? SHUFFLE_MS : REDUCED.shuffle),
     [config.cards, motion],
   );
-  const displayNames: [string, string] = [names[0].trim() || "Player 1", mode === "bot" ? "The Rival" : names[1].trim() || "Player 2"];
-  /**
-   * The seat this board is speaking TO, i.e. whose perspective the reveal copy
-   * addresses. The human always holds seat 0 in bot mode; in Pass & Play the
-   * device is handed to whoever acts, so the ACTING seat is the perspective for
-   * that round — which is why this is derived per phase rather than fixed.
-   */
-  const perspectiveSeat: Seat = mode === "bot" ? 0 : (phase === "guess" ? guesser : dealer);
+  // Against the computer the human is simply "You" — "Player 1" made players
+  // wonder who that was. Pass & Play keeps the typed names.
+  const displayNames: [string, string] = [mode === "bot" ? "You" : names[0].trim() || "Player 1", mode === "bot" ? "The Rival" : names[1].trim() || "Player 2"];
   /**
    * The seat that won the whole match, or null for a draw. Derived once here so
    * the match-end heading, the scoreboard and the recorded account statistic can
@@ -158,11 +187,27 @@ export default function Home() {
    */
   const matchWinner: Seat | null = useMemo(() => {
     if (mode === "local" && livesOn && lifeWinner !== null) return lifeWinner;
+    // Lives on but nobody hit 0: more hearts left wins (same rule as online).
+    if (mode === "local" && livesOn && lives[0] !== lives[1]) return (lives[0] > lives[1] ? 0 : 1) as Seat;
     if (scores[0] === scores[1]) return null;
     return (scores[0] > scores[1] ? 0 : 1) as Seat;
-  }, [scores, mode, livesOn, lifeWinner]);
-  const currentTurn = turnAnnouncement({ phase, dealerIsBot, guesserIsBot });
+  }, [scores, mode, livesOn, lifeWinner, lives]);
+  const currentTurn = turnAnnouncement({
+    phase,
+    dealerIsBot,
+    guesserIsBot,
+    actorName: mode === "local" ? displayNames[phase === "guess" ? guesser : dealer] : null,
+    opponentName: displayNames[1],
+  });
   const turnKey = buildTurnKey(currentTurn, phase);
+  /** True while the "YOUR TURN / OPPONENT'S TURN" veil covers the board. Clocks wait for it. */
+  const veilUp = turnTransition !== null;
+  /**
+   * Has this round's dealer ALREADY spent their bluff in an EARLIER round of this
+   * court? Read from history (finished rounds only), so it never leaks whether the
+   * CURRENT round is a bluff. When true, a bluff is impossible right now.
+   */
+  const dealerBluffSpent = history.some((h) => h.level === level && h.dealer === dealer && h.wasBluff);
 
   const resetRoundState = (nextLevel = level) => {
     setKingPosition(null);
@@ -174,27 +219,11 @@ export default function Home() {
     setTargetCard(null);
     setRevealPick(null);
     setOpponentActiveCard(null);
+    setAutoHide(null);
   };
 
-  const startMatch = () => {
-    if (sound) {
-      preloadGameAudio();
-      startAmbientMusic();
-      playSoundCue("start");
-    }
-    setNames(([first, second]) => [first.trim() || "Player 1", mode === "bot" ? "The Rival" : second.trim() || "Player 2"]);
-    setScores([0, 0]);
-    setLevel(0);
-    setRound(1);
-    setBluffsAvailable([true, true]);
-    setHistory([]);
-    if (mode === "local") {
-      setLives([STARTING_LIVES, STARTING_LIVES]);
-      setLifeWinner(null);
-    }
-    resetRoundState(0);
-    setPhase("dealer");
-  };
+  // PLAY AGAIN and ?play=bot reuse the one start path, so the two can never drift.
+  const startMatch = () => startMatchForMode(mode);
 
   /**
    * Home-screen entry points.
@@ -218,7 +247,11 @@ export default function Home() {
       startAmbientMusic();
       playSoundCue("start");
     }
-    setNames(([first, second]) => [first.trim() || "Player 1", next === "bot" ? "The Rival" : second.trim() || "Player 2"]);
+    // Names are NOT rewritten here: displayNames already falls back to
+    // "Player 1"/"Player 2"/"The Rival", and writing "The Rival" into the state
+    // used to pre-fill the Pass & Play "Opponent name" box with "The Rival".
+    recordedMatch.current = null; // a new match must be recorded again
+    prevTurnKey.current = "start"; // so the very first turn also gets its banner
     setScores([0, 0]);
     setLevel(0);
     setRound(1);
@@ -240,6 +273,8 @@ export default function Home() {
   const quitMatch = () => {
     stopAmbientMusic();
     setOverlay(null);
+    setTurnTransition(null);
+    prevTurnKey.current = null;
     setScores([0, 0]);
     setLevel(0);
     setRound(1);
@@ -275,7 +310,11 @@ export default function Home() {
       won: winner === guesser,
     }]);
     if (sound) {
-      if (kind === "king") playSoundCue("king");
+      if (mode === "bot") {
+        // VS Bot: the sound follows YOUR result, not the outcome name. Before,
+        // The Rival finding your King played the happy "king" fanfare.
+        playSoundCue(winner === 0 ? "king" : "wrong");
+      } else if (kind === "king") playSoundCue("king");
       else if (kind === "bluff-caught") playSoundCue("bluff-caught");
       else if (kind === "bluff-missed") playSoundCue("bluff-missed");
       else playSoundCue("wrong");
@@ -324,6 +363,7 @@ export default function Home() {
   };
 
   const callBluff = () => {
+    if (phase !== "guess" || result) return; // double-tap must not score twice
     const outcome = resolveLocalRound({ isBluff, kingIndex: kingPosition, pick: null, calledBluff: true, dealer });
     finishRound(outcome.kind, outcome.winner, outcome.pick, outcome.calledBluff);
   };
@@ -343,10 +383,22 @@ export default function Home() {
   };
 
   const confirmDealerChoice = () => {
+    if (autoHide) return; // the clock already locked a choice
     if (!isBluff && kingPosition === null) return;
     if (isBluff) {
       setBluffsAvailable((previous) => previous.map((available, index) => index === dealer ? false : available) as [boolean, boolean]);
     }
+    setPhase(mode === "local" ? "pass" : "shuffle");
+  };
+
+  /**
+   * Leave the "time's up" screen: from the GOT IT button, or by itself after
+   * AUTO_HIDE_NOTICE_MS. Only then does the opponent start guessing.
+   */
+  const continueAfterAutoHide = () => {
+    if (autoHideTimerRef.current !== undefined) window.clearTimeout(autoHideTimerRef.current);
+    autoHideTimerRef.current = undefined;
+    setAutoHide(null);
     setPhase(mode === "local" ? "pass" : "shuffle");
   };
 
@@ -362,7 +414,9 @@ export default function Home() {
     }
     setRound(step.round);
     resetRoundState();
-    setPhase("dealer");
+    // Pass & Play: the guesser is holding the phone now. Hand it back to the
+    // hider BEFORE the hide screen (and its clock) appears.
+    setPhase(mode === "local" ? "handover" : "dealer");
   };
 
   const nextLevel = () => {
@@ -375,7 +429,7 @@ export default function Home() {
     setRound(step.round);
     setBluffsAvailable([true, true]);
     resetRoundState(step.level);
-    setPhase("dealer");
+    setPhase(mode === "local" ? "handover" : "dealer");
   };
 
   useEffect(() => {
@@ -402,22 +456,68 @@ export default function Home() {
     };
   }, [phase, dealerIsBot, bluffsAvailable, dealer, config.cards, motion]);
 
+  // Keep the ref in step with the Dealer's taps (read by the timer below).
   useEffect(() => {
-    if (phase !== "dealer" || dealerIsBot) return;
+    dealerChoiceRef.current = { kingPosition, isBluff };
+  }, [kingPosition, isBluff]);
+
+  /**
+   * The human Dealer's hide clock.
+   *
+   * When it reaches zero the game never discards what the player already chose:
+   *   - a tapped card (LOCK not pressed yet) is locked as-is,
+   *   - a chosen Bluff is locked and uses up this court's bluff,
+   *   - only when NOTHING was chosen is a random card picked.
+   * Either way a "time's up" message names what happened, holds for
+   * AUTO_HIDE_NOTICE_MS, then the round continues.
+   */
+  useEffect(() => {
+    if (phase !== "dealer" || dealerIsBot || veilUp) return;
+    // Set by cleanup: if the player pressed LOCK in the same instant the clock
+    // hit zero, the phase has already moved on and nothing here may run.
+    let cancelled = false;
+
+    const lockOnTimeout = () => {
+      if (cancelled) return;
+      const choice = dealerChoiceRef.current;
+      if (choice.isBluff) {
+        setBluffsAvailable((previous) => previous.map((available, index) => index === dealer ? false : available) as [boolean, boolean]);
+        setAutoHide({ kind: "bluff", card: null });
+      } else if (choice.kingPosition !== null) {
+        setAutoHide({ kind: "kept", card: choice.kingPosition });
+      } else {
+        const spot = resolveTimedOutDealerChoice(config.cards, Math.random());
+        setKingPosition(spot);
+        setIsBluff(false);
+        setAutoHide({ kind: "random", card: spot });
+      }
+      if (sound) playSoundCue("wrong");
+      // A short buzz on phones that support it, so the player FEELS the timeout.
+      try { navigator.vibrate?.([120, 80, 120]); } catch { /* not supported */ }
+      // Move on by itself if the player does not press GOT IT.
+      autoHideTimerRef.current = window.setTimeout(continueAfterAutoHide, AUTO_HIDE_NOTICE_MS);
+    };
+
     const timer = window.setInterval(() => {
       setTimeLeft((previous) => {
         if (previous <= 1) {
           window.clearInterval(timer);
-          setKingPosition(resolveTimedOutDealerChoice(config.cards, Math.random()));
-          setIsBluff(false);
-          window.setTimeout(() => setPhase(mode === "local" ? "pass" : "shuffle"), 0);
+          window.setTimeout(lockOnTimeout, 0);
           return 0;
         }
         return previous - 1;
       });
     }, 1000);
-    return () => window.clearInterval(timer);
-  }, [phase, dealerIsBot, round, level, config.cards, mode]);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+      if (autoHideTimerRef.current !== undefined) window.clearTimeout(autoHideTimerRef.current);
+      autoHideTimerRef.current = undefined;
+    };
+    // `sound` is read once at timeout; restarting the clock when it toggles
+    // would be wrong, so it is deliberately left out.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, dealerIsBot, round, level, config.cards, mode, dealer, veilUp]);
 
   useEffect(() => {
     if (phase !== "shuffle") return;
@@ -429,7 +529,7 @@ export default function Home() {
   }, [phase, config.seconds, motion]);
 
   useEffect(() => {
-    if (phase !== "guess") return;
+    if (phase !== "guess" || veilUp) return; // the clock starts when the board is visible
     const timer = window.setInterval(() => {
       setTimeLeft((previous) => {
         if (previous <= 1) {
@@ -443,7 +543,7 @@ export default function Home() {
     return () => window.clearInterval(timer);
     // Round identity intentionally restarts the countdown.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase, round, level]);
+  }, [phase, round, level, veilUp]);
 
   useEffect(() => {
     if (phase !== "guess" || !guesserIsBot) return;
@@ -455,7 +555,8 @@ export default function Home() {
       const decision = decideGuessTurn({
         cards: config.cards,
         dealerBluffed: isBluff,
-        accuseRoll: Math.random(),
+        // The human already used their bluff this court: accusing can only lose.
+        accuseRoll: dealerBluffSpent ? 1 : Math.random(),
         pickRoll: Math.random(),
       });
       if (decision.accused) {
@@ -501,9 +602,9 @@ export default function Home() {
   }, [sound, gameplay]);
 
   useEffect(() => {
-    const timedTurn = phase === "guess" || (phase === "dealer" && !dealerIsBot);
+    const timedTurn = (phase === "guess" && !guesserIsBot) || (phase === "dealer" && !dealerIsBot);
     if (sound && timedTurn && timeLeft > 0 && timeLeft <= COUNTDOWN_WARNING_SECONDS) playSoundCue("countdown", timeLeft);
-  }, [sound, phase, dealerIsBot, timeLeft]);
+  }, [sound, phase, dealerIsBot, guesserIsBot, timeLeft]);
 
   // Direct "VS Bot" start (used by the multiplayer matchmaking fallback and by
   // ?play=bot). Runs once on mount; bot mode only, untouching normal menu flow.
@@ -513,7 +614,6 @@ export default function Home() {
     autoStartRef.current = true;
     if (new URLSearchParams(window.location.search).get("play") === "bot") {
       // Default mode is already "bot"; just launch the match directly.
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- mount-time auto-start from URL
       startMatch();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -615,11 +715,82 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase]);
 
+  /**
+   * Whose cards are on the table. They always belong to the player who HID the
+   * King this round (the dealer). The stage gets a class that shades the cards
+   * in that player's colour, and a small chip names the owner.
+   */
+  const tableOwnerClass = `table-owner-${dealer}`;
+  // Plain words for the screen. Player 1 / You = GOLD, Player 2 / The Rival = PURPLE.
+  const ownerColour = dealer === 0 ? "gold" : "purple";
+  /** "YOUR" / "THE RIVAL'S" / "ASHA'S" — whose cards these are. */
+  const ownerWhose = mode === "bot"
+    ? (dealer === 0 ? "YOUR" : `${displayNames[1].toUpperCase()}'S`)
+    : `${displayNames[dealer].toUpperCase()}'S`;
+  const tableOwnerChip = (
+    <span className={`table-owner-chip owner-${dealer}`}>{`${ownerWhose} ${ownerColour.toUpperCase()} CARDS`}</span>
+  );
+  /**
+   * Which side of the board the deck on the table is drawn from, and which edge
+   * it is served from.
+   *
+   * The cards belong to whoever hid the King, so they are drawn the way their
+   * owner holds them. VS Bot keeps you at the bottom for the whole match: your
+   * own deck stays upright with the curve facing you and is served from your
+   * end, while The Rival's deck flips to the top and is served from there. Pass
+   * & Play hands the device over instead, so its dealer deck keeps reading as
+   * the neighbouring seat's.
+   */
+  const tableOpposite = mode === "local" || dealer === 1;
+  const dealFromBottom = mode === "local" || dealer === 0;
+  /**
+   * The card the guesser picked travels back toward the guesser.
+   *
+   * `--pull-dir` is a multiplier inside the row's OWN frame, and the deck is
+   * drawn for the far side exactly while its owner is not at the bottom. In VS
+   * Bot the guesser therefore always sits on the row's own "up" side — when you
+   * deal The Rival guesses from the top, and when The Rival deals you guess from
+   * the bottom of a flipped row — so the same sign serves both. Pass & Play
+   * keeps its shipped sign.
+   */
+  const pullDir = mode === "bot" ? -1 : 1;
+  /** Pass & Play only: whose turn it is, by name, so the right person takes the phone. */
+  const actingName = phase === "guess" || phase === "shuffle" ? displayNames[guesser] : displayNames[dealer];
+  const passPlayTurnLine = mode === "local" ? <p className="eyebrow">{`${actingName.toUpperCase()}'S TURN`}</p> : null;
+  /** Heading while someone is finding the King. */
+  const findHeading = guesserIsBot
+    ? `${displayNames[1].toUpperCase()} IS GUESSING`
+    : mode === "bot"
+      ? `FIND ${displayNames[1].toUpperCase()}'S KING`
+      : `FIND ${displayNames[dealer].toUpperCase()}'S KING`;
+
+  // Last seconds of the human Dealer's hide clock, with nothing locked yet.
+  const hideUrgent = phase === "dealer" && !dealerIsBot && !autoHide && timeLeft <= COUNTDOWN_WARNING_SECONDS;
+  // What is still missing: a card (nothing tapped) or the LOCK press.
+  const hideNeedsPick = !isBluff && kingPosition === null;
+  /** The round verdict, told from the viewer's side (title, line and colour). */
+  const verdict = result
+    ? roundVerdictCopy({
+        kind: result.kind,
+        guesserName: displayNames[guesser],
+        dealerName: displayNames[dealer],
+        viewerWon: mode === "bot" ? result.winner === 0 : null,
+      })
+    : null;
+  /**
+   * The number a player SEES for a card. A turned-around row (tableOpposite)
+   * shows index 0 on the far right, so "CARD 1" must be counted left-to-right
+   * on screen, not by internal index.
+   */
+  const shownCard = (index: number) => (tableOpposite ? config.cards - index : index + 1);
+  /** "HIDE 3 OF 7" — how far into their run of hides the dealer is. */
+  const blockProgress = `${hidesIntoBlock(round)} OF ${config.hidesPerPlayer}`;
+
   return (
     <main className={["game-shell", motion ? "" : "reduced-motion"].filter(Boolean).join(" ")}>
       <PwaRegistration />
       {splashOpen && <SplashScreen logoRef={homeLogoRef} sound={sound} onDone={() => setSplashOpen(false)} />}
-      <section inert={splashOpen || undefined} className={["game-screen", phase === "result" && result ? RESULT_COPY[result.kind].tone : ""].filter(Boolean).join(" ")}>
+      <section inert={splashOpen || undefined} className={["game-screen", phase === "result" && verdict ? verdict.tone : ""].filter(Boolean).join(" ")}>
 
         <TurnTransition turn={turnTransition} />
 
@@ -658,14 +829,35 @@ export default function Home() {
             />
 
             {phase === "dealer" && (
-              <section className={["play-stage", dealerIsBot ? "opponent-turn" : "player-turn"].join(" ")}>
-                <div className="stage-title">
-                  <p className="eyebrow">{dealerIsBot ? "OPPONENT’S TURN" : `${displayNames[dealer]} · YOUR TURN`}</p>
-                  <h2>{dealerIsBot ? "OPPONENT'S TURN" : "HIDE THE KING"}</h2>
-                  <p>{dealerIsBot ? "Hiding the King…" : "Tap a card to hide the King."}</p>
-                </div>
+              <section className={["play-stage", tableOwnerClass, dealerIsBot ? "opponent-turn" : "player-turn"].join(" ")}>
+                {autoHide ? (
+                  <div className="stage-title auto-hide-notice" role="status" aria-live="assertive">
+                    <p className="eyebrow">TIME&apos;S UP</p>
+                    <h2>{autoHideCopy(autoHide.kind).title}</h2>
+                    {autoHide.card !== null && (
+                      <div className="auto-hide-card">
+                        YOUR KING IS ON <b>CARD {autoHide.card + 1}</b>
+                      </div>
+                    )}
+                    <p>{autoHideCopy(autoHide.kind).subtitle}</p>
+                  </div>
+                ) : (
+                  <div className="stage-title">
+                    {tableOwnerChip}
+                    {passPlayTurnLine}
+                    <p className="eyebrow">{`HIDE ${blockProgress}`}</p>
+                    <h2>{dealerIsBot ? `${displayNames[1].toUpperCase()} IS HIDING` : "HIDE YOUR KING"}</h2>
+                    {dealerIsBot ? (
+                      <p>{`Hiding its King in the ${ownerColour} cards…`}</p>
+                    ) : hideUrgent ? (
+                      <p className="stage-hint-urgent">{hideNeedsPick ? HIDE_HINT.urgentPick : HIDE_HINT.urgentLock}</p>
+                    ) : (
+                      <p>{`Tap a ${ownerColour} card, then press LOCK.`}</p>
+                    )}
+                  </div>
+                )}
                 {dealerIsBot && (
-                  <CardRow opposite className="dealer-choice opponent-choice">
+                  <CardRow opposite={tableOpposite} className="dealer-choice opponent-choice">
                     {Array.from({ length: config.cards }, (_, index) => (
                       <PlayingCard
                         key={index}
@@ -679,7 +871,17 @@ export default function Home() {
                 )}
                 {!dealerIsBot && (
                   <>
-                    <div className="cards-row fanned dealer-choice">
+                    <div
+                      className={[
+                        "cards-row fanned dealer-choice",
+                        // The Rival guesses next: reserve the same top gap its arm needs
+                        // later, so the deck sits at ONE height for the whole round.
+                        guesserIsBot ? "opp-room" : "",                        // Nothing tapped in the last seconds: every card wiggles "pick me".
+                        hideUrgent && hideNeedsPick ? "hide-urgent" : "",
+                        // Clock ran out: the King's card shakes and glows.
+                        autoHide && autoHide.card !== null ? "auto-hidden-row" : "",
+                      ].filter(Boolean).join(" ")}
+                    >
                       {Array.from({ length: config.cards }, (_, index) => (
                         <PlayingCard
                           key={index}
@@ -689,6 +891,7 @@ export default function Home() {
                           chosen={!isBluff && kingPosition === index}
                           kingPlacing={placingKing === index}
                           onClick={() => {
+                            if (autoHide) return; // clock already locked a choice
                             setIsBluff(false);
                             setKingPosition(index);
                             // The existing placement action, given a visual beat:
@@ -708,6 +911,13 @@ export default function Home() {
                         cardCount={config.cards}
                       />
                     </div>
+                    {autoHide ? (
+                      <div className="dealer-actions auto-hide-actions">
+                        <button className="gold-button wide" onClick={continueAfterAutoHide}>
+                          GOT IT
+                        </button>
+                      </div>
+                    ) : (
                     <div className="dealer-actions">
                       <button
                         className={["bluff-choice", isBluff ? "active" : ""].join(" ")}
@@ -720,10 +930,15 @@ export default function Home() {
                         <b>{bluffsAvailable[dealer] ? "BLUFF" : "BLUFF USED"}</b>
                         <small>No King · once per court</small>
                       </button>
-                      <button className="gold-button" disabled={!isBluff && kingPosition === null} onClick={confirmDealerChoice}>
+                      <button
+                        className={["gold-button", hideUrgent && !hideNeedsPick ? "lock-urgent" : ""].filter(Boolean).join(" ")}
+                        disabled={hideNeedsPick}
+                        onClick={confirmDealerChoice}
+                      >
                         {isBluff ? "LOCK BLUFF" : "LOCK HIDING PLACE"}
                       </button>
                     </div>
+                    )}
                   </>
                 )}
               </section>
@@ -742,18 +957,41 @@ export default function Home() {
               </section>
             )}
 
+            {phase === "handover" && (
+              <section className="center-stage">
+                <span className="pass-icon">
+                  <ChessRook strokeWidth={1.5} />
+                </span>
+                <p className="eyebrow">{`HIDE ${blockProgress}`}</p>
+                <h2>PASS THE DEVICE</h2>
+                <Ornament />
+                <p>Give the device to <strong>{displayNames[dealer]}</strong> to hide the King.</p>
+                <p><strong>{displayNames[guesser]}</strong>, don&apos;t look!</p>
+                <button className="gold-button wide" onClick={() => setPhase("dealer")}>
+                  {`I'M ${displayNames[dealer].toUpperCase()} — READY`}
+                </button>
+              </section>
+            )}
+
             {phase === "shuffle" && (
               <section
-                className="play-stage shuffle-stage"
+                className={`play-stage shuffle-stage ${tableOwnerClass}`}
                 style={{ "--shuffle-ms": `${deal.windowSec}s` } as React.CSSProperties}
               >
                 <div className="stage-title">
-                  <p className="eyebrow">DEALING</p>
-                  <h2>{guesserIsBot ? "THE RIVAL IS GUESSING" : "FIND THE KING"}</h2>
-                  <p>Arranging the cards…</p>
+                  {tableOwnerChip}
+                  {passPlayTurnLine}
+                  <h2>{findHeading}</h2>
+                  <p>Shuffling the cards…</p>
                 </div>
-                <DealerSwipe cards={config.cards} opposite
-                  windowMs={motion ? SHUFFLE_MS : REDUCED.shuffle} reducedMotion={!motion} />
+                <DealerSwipe
+                  cards={config.cards}
+                  opposite={tableOpposite}
+                  fromBottom={dealFromBottom}
+                  windowMs={motion ? SHUFFLE_MS : REDUCED.shuffle}
+                  reducedMotion={!motion}
+                  oppFromTop={guesserIsBot}
+                />
                 {!guesserIsBot && <div className="guess-actions dealer-swipe-actions" aria-hidden="true">
                   <button className="gold-button" disabled tabIndex={-1}>CHOOSE A CARD</button>
                 </div>}
@@ -761,13 +999,23 @@ export default function Home() {
             )}
 
             {phase === "guess" && (
-              <section className={["play-stage guess-stage", guesserIsBot ? "opponent-turn" : "player-turn"].join(" ")}>
+              <section className={["play-stage guess-stage", tableOwnerClass, guesserIsBot ? "opponent-turn" : "player-turn"].join(" ")}>
                 <div className="stage-title">
-                  <p className="eyebrow">{guesserIsBot ? "OPPONENT’S TURN" : `${displayNames[guesser]} · YOUR TURN`}</p>
-                  <h2>{guesserIsBot ? "THE RIVAL IS GUESSING" : "FIND THE KING"}</h2>
-                  <p>{guesserIsBot ? "Choosing a card…" : "Tap a card, then confirm your pick."}</p>
+                  {tableOwnerChip}
+                  {passPlayTurnLine}
+                  <h2>{findHeading}</h2>
+                  <p>{guesserIsBot
+                    ? `It's looking for your King in your ${ownerColour} cards…`
+                    : dealerBluffSpent
+                      ? `${displayNames[dealer]} already used their Bluff — the King IS here. Tap a card, then confirm.`
+                      : "Tap a card, then confirm. Think there's no King? Call Bluff."}</p>
                 </div>
-                <CardRow opposite>
+                <CardRow
+                  opposite={tableOpposite}
+                  // The Rival's arm comes in over the top: an upright row has no
+                  // reserve up there, so the arm is faded as it rises instead.
+                  className={guesserIsBot ? "opp-from-top" : ""}
+                >
                   {Array.from({ length: config.cards }, (_, index) => (
                     <PlayingCard
                       key={index}
@@ -783,37 +1031,52 @@ export default function Home() {
                   ))}
                   {guesserIsBot ? (
                     <SelectionHand
-                      index={opponentActiveCard}
+                      // Roving over the row while it deliberates, then landing on
+                      // the card it settled on.
+                      index={opponentActiveCard ?? Math.floor((config.cards - 1) / 2)}
                       cardCount={config.cards}
-                      opposite
+                      opposite={tableOpposite}
                       fromOpponent
+                      roaming={opponentActiveCard === null}
                       faint
                     />
                   ) : (
                     <SelectionHand
                       index={targetCard ?? hoveredCard}
                       cardCount={config.cards}
-                      opposite
+                      opposite={tableOpposite}
                     />
                   )}
                 </CardRow>
                 {!guesserIsBot && <div className="guess-actions">
+                  {!dealerBluffSpent && (
+                    <button
+                      className="outline-button"
+                      onClick={() => { if (sound) playSoundCue("bluff-open"); setOverlay("bluff"); }}
+                    >
+                      CALL BLUFF
+                    </button>
+                  )}
                   <button className="gold-button" disabled={targetCard === null} onClick={() => { if (targetCard !== null) handleCardTap(targetCard); }}>
-                    {targetCard === null ? "CHOOSE A CARD" : `CONFIRM CARD ${targetCard + 1}`}
+                    {targetCard === null ? "TAP A CARD" : `CONFIRM CARD ${shownCard(targetCard)}`}
                   </button>
                 </div>}
               </section>
             )}
 
             {phase === "reveal" && result && (
-              <section className="play-stage reveal-stage">
+              <section className={`play-stage reveal-stage ${tableOwnerClass}`}>
                 <div className="stage-title">
-                  <p className="eyebrow">{displayNames[guesser]} · LOCKED IN</p>
+                  <p className="eyebrow">{`${displayNames[guesser].toUpperCase()} · ${result.calledBluff ? "CALLED BLUFF" : "LOCKED IN"}`}</p>
                   <h2>REVEALING THE CARDS</h2>
                   <Ornament />
                   <p>Every card turns over…</p>
                 </div>
-                <CardRow opposite className="reveal-row">
+                <CardRow
+                  opposite={tableOpposite}
+                  className={["reveal-row", guesserIsBot ? "opp-from-top" : ""].filter(Boolean).join(" ")}
+                  style={{ "--pull-dir": pullDir } as React.CSSProperties}
+                >
                   {Array.from({ length: config.cards }, (_, index) => (
                     <PlayingCard
                       key={index}
@@ -826,25 +1089,36 @@ export default function Home() {
                       flipDelay={(index * 70) / 1000}
                       fanCount={config.cards}
                       fanSlot={index}
+                      number={shownCard(index)}
                     />
                   ))}
                   {revealPick !== null && (
-                    <SelectionHand index={revealPick} cardCount={config.cards} opposite fromOpponent={guesserIsBot} settled faint={guesserIsBot} />
+                    <SelectionHand
+                      index={revealPick}
+                      cardCount={config.cards}
+                      opposite={tableOpposite}
+                      fromOpponent={guesserIsBot}
+                      settled
+                      faint={guesserIsBot}
+                    />
                   )}
                 </CardRow>
               </section>
             )}
 
             {phase === "result" && result && (
-              <section className="play-stage result-stage">
+              <section className={`play-stage result-stage ${tableOwnerClass}`}>
                 <div className="impact-vignette" />
                 <div className="stage-title">
                   <p className="eyebrow">ROUND {round} RESULT</p>
-                  <h2>{RESULT_COPY[result.kind].title}</h2>
+                  <h2>{verdict?.title}</h2>
                   <Ornament />
-                  <p>{revealCopyFor(result.kind, perspectiveSeat, displayNames, guesser).subtitle}</p>
+                  <p>{verdict?.subtitle}</p>
                 </div>
-                <CardRow opposite className="reveal-row">
+                <CardRow
+                  opposite={tableOpposite}
+                  className={["reveal-row", guesserIsBot ? "opp-from-top" : ""].filter(Boolean).join(" ")}
+                >
                   {Array.from({ length: config.cards }, (_, index) => (
                     <PlayingCard
                       key={index}
@@ -858,14 +1132,22 @@ export default function Home() {
                       flipDelay={(index * 70) / 1000}
                       fanCount={config.cards}
                       fanSlot={index}
+                      number={shownCard(index)}
                     />
                   ))}
                   {result.pick !== null && (
-                    <SelectionHand index={result.pick} cardCount={config.cards} opposite fromOpponent={guesserIsBot} settled faint={guesserIsBot} />
+                    <SelectionHand
+                      index={result.pick}
+                      cardCount={config.cards}
+                      opposite={tableOpposite}
+                      fromOpponent={guesserIsBot}
+                      settled
+                      faint={guesserIsBot}
+                    />
                   )}
                 </CardRow>
                 <div className="round-verdict">
-                  <b>{displayNames[result.winner]} WINS THE ROUND</b>
+                  <b>{mode === "bot" && result.winner === 0 ? "YOU WIN THE ROUND" : `${displayNames[result.winner].toUpperCase()} WINS THE ROUND`}</b>
                   {mode === "local" && livesOn && result.kind === "king" ? (
                     <span>KING FOUND — {displayNames[dealer]} LOST A LIFE</span>
                   ) : (
@@ -895,7 +1177,7 @@ export default function Home() {
                 <span className="level-crown">
                   <Crown strokeWidth={1.75} />
                 </span>
-                <p className="eyebrow">TEN ROUNDS COMPLETE</p>
+                <p className="eyebrow">{`${roundsInCourt(level)} ROUNDS COMPLETE`}</p>
                 <h2>{config.name} CLEARED</h2>
                 <Ornament />
                 <div className="score-board large">
@@ -905,7 +1187,7 @@ export default function Home() {
                 </div>
                 {level < COURTS.length - 1 ? (
                   <>
-                    <p>Next: <strong>{COURTS[level + 1].cards} cards</strong>, {COURTS[level + 1].seconds} seconds, {COURTS[level + 1].points}× stakes.</p>
+                    <p>Next: <strong>{COURTS[level + 1].cards} cards</strong>, {COURTS[level + 1].seconds} seconds per turn, each round worth <strong>{COURTS[level + 1].points} points</strong>. Bluffs are refreshed.</p>
                     <button className="gold-button wide" onClick={nextLevel}>ENTER {COURTS[level + 1].name}</button>
                   </>
                 ) : (
@@ -939,9 +1221,10 @@ export default function Home() {
                           : `${displayNames[matchWinner]} WINS!`}
                     </h2>
                     <Ornament />
-                    <p>{mode === "bot" && matchWinner === 1 ? `You lost all three courts to ${displayNames[1]}.` : "Twenty rounds. Three courts. One ruler."}</p>
+                    <p>{mode === "bot" && matchWinner === 1 ? `${displayNames[1]} scored more points over the three courts.` : `${TOTAL_ROUNDS} rounds. Three courts. One ruler.`}</p>
                   </>
                 )}
+                {mode === "local" && livesOn && <p className="eyebrow">LIVES LEFT</p>}
                 <div className="score-board large final">
                   <div>
                     <span>{displayNames[0]}</span>
@@ -954,7 +1237,7 @@ export default function Home() {
                   </div>
                 </div>
                 <button className="gold-button wide" onClick={startMatch}>PLAY AGAIN</button>
-                <button className="text-button" onClick={() => setPhase("home")}>BACK TO HOME</button>
+                <button className="text-button" onClick={quitMatch}>BACK TO HOME</button>
               </section>
             )}
 
@@ -962,7 +1245,9 @@ export default function Home() {
               <button className="quit-button" onClick={() => setOverlay("quit")} aria-label="Quit match" title="Quit match"><LogOut size={18} strokeWidth={2} /></button>
             {gameplay && phase !== "match-end" && (
               <PowerDock
-                bluffActive={phase === "guess" && !guesserIsBot}
+                // CALL BLUFF now sits next to CONFIRM in the guess bar, so the dock
+                // keeps only STRATEGY (two Bluff buttons confused players).
+                bluffActive={false}
                 onStrategy={() => { setStrategyTab(0); setOverlay("strategy"); }}
                 onBluff={() => {
                   if (sound) playSoundCue("bluff-open");
@@ -1130,8 +1415,8 @@ function HomeScreen({
           </button>
         </div>
 
-        <button className="outline-button" onClick={onPracticeBot} aria-label="Practice with bot">
-          PRACTICE
+        <button className="outline-button" onClick={onPracticeBot} aria-label="Play against the computer">
+          PLAY VS COMPUTER
         </button>
 
         {showPassSetup && (

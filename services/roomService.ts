@@ -13,6 +13,7 @@ import {
   type DataSnapshot,
 } from "firebase/database";
 import { getRTDatabase } from "@/lib/firebase/database";
+import { nameOrUnknown } from "@/lib/multiplayer/displayName";
 import { roomRef, playersRef, playerRef, gameRef } from "@/lib/multiplayer/paths";
 import { generateRoomCode, normalizeRoomCode } from "@/lib/multiplayer/roomCode";
 import { emptyGame } from "@/services/multiplayerService";
@@ -68,7 +69,7 @@ export async function createRoom(
     const code = generateRoomCode();
     const now = Date.now();
     const host: PlayerEntry = {
-      name: name.trim() || "Player 1",
+      name: nameOrUnknown(name),
       joinedAt: now,
       connected: true,
       seat: 0,
@@ -177,8 +178,7 @@ export async function joinRoom(codeRaw: string, uid: string, name: string): Prom
     const hostPresent = Boolean(current!.hostId) && Boolean(current!.order?.[0]);
     const seat: Seat = hostPresent ? 1 : 0;
     const entry: PlayerEntry = {
-      name: name.trim() || (seat === 0 ? "Player 1" : "Player 2"),
-      joinedAt: Date.now(),
+      name: nameOrUnknown(name),      joinedAt: Date.now(),
       connected: true,
       seat,
       isHost: false,

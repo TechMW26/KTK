@@ -85,6 +85,13 @@ export const REDUCED = {
   revealLock: 40,
 } as const;
 
+/**
+ * How long the "time's up — King auto-hidden" screen waits for the player to
+ * press GOT IT before the round moves on by itself. NOT shortened by the
+ * motion setting: it is a message the player has to read, not an animation.
+ */
+export const AUTO_HIDE_NOTICE_MS = 4000;
+
 /** Seconds left on the clock when the countdown cue starts playing. */
 export const COUNTDOWN_WARNING_SECONDS = 5;
 

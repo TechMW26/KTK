@@ -28,8 +28,11 @@ export const CARD_PITCH = 43;
 /** Vertical drop of the outermost card below the centre card, in px. */
 export const ARC_DROP = 48;
 
-/** Rotation of the outermost card, in degrees; halved and negated on the way out. */
-export const ARC_TILT = 18;
+/**
+ * Rotation of the outermost card, in degrees; negated on the left edge.
+ * Kept small on purpose: the director wants a GENTLE curve, not a strong fan.
+ */
+export const ARC_TILT = 9;
 
 export interface CardFanSlot {
   /** Horizontal offset from the row centre, in px. */
@@ -81,7 +84,8 @@ export function cardFanSlot(slot: number, count: number): CardFanSlot {
   const centre = (count - 1) / 2;
   // -1 at the left edge, 0 dead centre, +1 at the right edge.
   const t = (slot - centre) / centre;
-  const tilt = count <= 2 ? 6 : count <= 3 ? 10 : ARC_TILT;
+  // Gentle tilt: 3° for the 2-card duel, 6° for 3 cards, 9° for 5 cards.
+  const tilt = count <= 2 ? 3 : count <= 3 ? 6 : ARC_TILT;
   const depth = count <= 2 ? .3 : count <= 3 ? .55 : 1;
 
   return {

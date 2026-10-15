@@ -2,8 +2,11 @@
 
 Local and online dealing share `DealerSwipe`. A fresh transparent rustic gold
 gauntlet (`public/dealer-swipe-hand.png`, 728 × 2161) enters from above the board,
-places cards in screen order, then withdraws. Card identities remain unchanged
-when the online fan is mirrored.
+places cards in screen order, then withdraws. `fromBottom` asks for the same beat
+mirrored, so it enters from the near edge instead; the local game asks for that
+whenever the deck is drawn for the bottom seat, keeping the serve and the cards on
+the same edge of the table. Card identities remain unchanged when the online fan
+is mirrored.
 
 The 1.7-second beat includes entrance, staggered placement, settling, and exit.
 Cards settle by 84% of the beat; guessing starts only after its full duration.

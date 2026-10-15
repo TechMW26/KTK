@@ -709,8 +709,10 @@ button:disabled { cursor: not-allowed; opacity: .42; }
    agreement. Negative margins pull the overlapping cards back together, giving
    the fan its ~43px pitch while each card still paints its own exposed strip. */
 .cards-row.fanned {
-  /* +1 pulls toward the bottom of the screen. A mirrored row (the player sitting
-     opposite) flips this so the card still travels toward ITS player. */
+  /* Read in the ROW's own frame, so +1 only means "down" while the row is drawn
+     upright: a flipped row (the deck drawn for the far seat) or a row mirrored
+     for the player sitting opposite reverses it. Callers that flip a row set the
+     sign that still sends the card to its picker — see `pullDir` in app/page.tsx. */
   --pull-dir: 1;
   /* The pitch is CARD_PITCH (43px) in features/game/logic/cardFan.ts. The cards
      are 61px wide, so each is pulled back by 18px to overlap its neighbour. */
@@ -795,7 +797,9 @@ button:disabled { cursor: not-allowed; opacity: .42; }
    On commit, the picked card lifts off the table and travels toward the player
    who chose it. `--pull-dir` is +1 when that player is at the bottom of the
    screen (the default view) and -1 when the view is mirrored for the player
-   sitting opposite, so the same animation serves both seats. */
+   sitting opposite, so the same animation serves both seats. The sign is read
+   inside the row, so a deck drawn for the far seat inverts it too; the table sets
+   it per round so the card always reaches the seat that picked it. */
 .cards-row.fanned .playing-card.card-pulling {
   z-index: 60;
   animation: card-pull .46s cubic-bezier(.3,.85,.3,1) both;

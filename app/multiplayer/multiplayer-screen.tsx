@@ -7,6 +7,7 @@ import useMultiplayer from "@/hooks/useMultiplayer";
 import { normalizeRoomCode } from "@/lib/multiplayer/roomCode";
 import { RESULT_COPY } from "@/lib/game/rules";
 import { OPPONENT_GRACE_MS } from "@/lib/multiplayer/types";
+import { cleanName, loadSavedName, NAME_MAX, saveName, UNKNOWN_PLAYER } from "@/lib/multiplayer/displayName";
 import GameView from "./game";
 import SearchOnline from "./search";
 import { FriendsScreen } from "./friends";
@@ -76,8 +77,14 @@ export default function MultiplayerScreen() {
   });
   const isDeepLink = deepLinkMode !== "";
 
-  const [name, setName] = useState("");
-  const [joinDraft, setJoinDraft] = useState("");
+  // Pre-filled with the name this device used last time (optional — may be "").
+  const [name, setName] = useState(() => (typeof window === "undefined" ? "" : loadSavedName()));
+  /**
+   * The "who's playing?" screen has been answered (CONTINUE or SKIP). Until then,
+   * PLAY ONLINE and WITH FRIENDS show it first, so the opponent sees a real name.
+   * Join Room has its own name box, so it never needs this screen.
+   */
+  const [nameReady, setNameReady] = useState(false);  const [joinDraft, setJoinDraft] = useState("");
   const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState("");
   const [searching, setSearching] = useState(deepLinkMode === "challenge");
@@ -161,7 +168,8 @@ export default function MultiplayerScreen() {
     window.setTimeout(() => setCopied(false), 1600);
   };
 
-  const create = async () => {
+    const create = async () => {
+    saveName(name);
     setBusy("create");
     await mp.create(name);
     setBusy("");
@@ -170,6 +178,7 @@ export default function MultiplayerScreen() {
   const join = async () => {
     const code = normalizeRoomCode(joinDraft);
     if (code.length === 0) return;
+    saveName(name);
     setBusy("join");
     await mp.join(code, name);
     setBusy("");
@@ -343,6 +352,19 @@ export default function MultiplayerScreen() {
     [],
   );
 
+    /** Name screen answered: remember a typed name, or play as Unknown Player. */
+  const confirmName = (typed: string) => {
+    const clean = cleanName(typed);
+    saveName(clean);
+    setName(clean);
+    setNameReady(true);
+  };
+  const skipName = () => {
+    setName("");
+    setNameReady(true);
+  };
+  const needsName = !nameReady && (searching || friendsOpen) && !inMatch && !waiting && !mp.searchOrigin;
+
   // Single-player parity: tint the whole screen with the round result tone while
   // a reveal is on screen (danger/victory), exactly like the solo/2P reveal.
   const revealTone =
@@ -403,6 +425,13 @@ export default function MultiplayerScreen() {
             copied={copied}
             onCopy={doCopy}
             onLeave={leaveToMenu}
+          />
+                ) : needsName ? (
+          <NameScreen
+            initialName={name}
+            onContinue={confirmName}
+            onSkip={skipName}
+            onBack={searching ? cancelSearch : closeFriends}
           />
         ) : searching ? (
           <SearchOnline
@@ -506,15 +535,15 @@ function JoinRoomScreen({
       <div className="entry-panel mp-panel">
         <p className="panel-title">JOIN A ROOM</p>
 
-        <label htmlFor="mp-name">YOUR NAME</label>
+                <label htmlFor="mp-name">YOUR NAME (OPTIONAL)</label>
         <input
           id="mp-name"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          placeholder="Enter your name"
-          autoComplete="name"
+          placeholder="Your opponent will see this"
+          autoComplete="nickname"
+          maxLength={NAME_MAX}
         />
-
         {!configured && (
           <p className="mp-error">Multiplayer is not configured. See docs/FIREBASE_MULTIPLAYER.md.</p>
         )}
@@ -547,7 +576,65 @@ function JoinRoomScreen({
     </div>
   );
 }
+// ===========================================================================
+// "Who's playing?" — optional name before PLAY ONLINE / WITH FRIENDS
+// ===========================================================================
+/**
+ * Asks for the name the opponent will see. Never mandatory: SKIP (or CONTINUE
+ * with an empty box) plays on, and the opponent sees "Unknown Player".
+ */
+function NameScreen({
+  initialName,
+  onContinue,
+  onSkip,
+  onBack,
+}: {
+  initialName: string;
+  onContinue: (name: string) => void;
+  onSkip: () => void;
+  onBack: () => void;
+}) {
+  const [draft, setDraft] = useState(initialName);
+  const typed = cleanName(draft);
+  return (
+    <div className="mp-frame mp-flow">
+      <button className="mp-back home-link" onClick={onBack}>
+        <ArrowLeft size={16} strokeWidth={2.25} />
+        Back
+      </button>
+      <div className="mp-menu-brand">
+        <MpLogo />
+        <p className="tagline">Who&apos;s playing?</p>
+      </div>
 
+      <form
+        className="entry-panel mp-panel"
+        onSubmit={(e) => {
+          e.preventDefault();
+          onContinue(draft);
+        }}
+      >
+        <p className="panel-title">YOUR NAME</p>
+        <label htmlFor="mp-gate-name">YOUR OPPONENT WILL SEE THIS NAME</label>
+        <input
+          id="mp-gate-name"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder="Enter your name (optional)"
+          autoComplete="nickname"
+          maxLength={NAME_MAX}
+        />
+        <button className="gold-button" type="submit">
+          {typed ? `CONTINUE AS ${typed.toUpperCase()}` : "CONTINUE"}
+        </button>
+      </form>
+
+      <button className="text-button" onClick={onSkip}>
+        SKIP — PLAY AS {UNKNOWN_PLAYER.toUpperCase()}
+      </button>
+    </div>
+  );
+}
 // ===========================================================================
 // Waiting for player (after create)
 // ===========================================================================
@@ -607,8 +694,7 @@ function WaitingScreen({
         <span>•</span>
       </div>
       <p className="mp-muted">
-        {others > 0 ? `${others} player waiting to join` : "Waiting for a second player…"}
-        · {mp.opponentConnected ? "opponent online" : "no one here yet"}
+        {others > 0 ? `${others} ${others === 1 ? "player" : "players"} waiting to join` : "Waiting for a second player…"}        · {mp.opponentConnected ? "opponent online" : "no one here yet"}
       </p>
 
       <button className="text-button" onClick={onLeave}>

@@ -173,6 +173,11 @@
 .game-screen .cards-row.opposite-view {
   transform: translateY(var(--opposite-offset, 0px)) rotate(180deg);
 }
+/* The row is turned 180deg; turn the printed numbers back so they read upright. */
+.game-screen .cards-row.opposite-view .card-front .corner-rank,
+.game-screen .cards-row.opposite-view .card-front .card-face-label {
+  rotate: 180deg;
+}
 .dealer-swipe-hand {
   position: absolute; top: 0; left: 0; max-width: none; opacity: 0;
   transform-origin: 50% 80%; pointer-events: none;
@@ -199,6 +204,7 @@
   margin: 0 auto; padding-top: 12px;
 }
 .game-screen .dealer-actions { display: grid; grid-template-columns: 1fr 1.7fr; gap: 8px; }
+.game-screen .dealer-actions .gold-button { font-size: 12px; min-height: 52px; padding-inline: 8px; }
 .game-screen .dealer-actions .gold-button { font-size: 12px; min-height: 52px; padding-inline: 8px; }
 .game-screen .bluff-choice { min-height: 52px; display: flex; flex-direction: column; justify-content: center; padding: 6px; gap: 3px; }
 .game-screen .bluff-choice > span { display: none; }

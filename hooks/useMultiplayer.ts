@@ -32,6 +32,13 @@ import { SHUFFLE_GRACE_MS } from "@/lib/multiplayer/types";
 import { canPublishGuessInspection } from "@/lib/multiplayer/inspection";
 
 /**
+ * How long a finger must rest on a card before the opponent is told about it.
+ * Fast repeated taps used to send one Firebase write PER TAP (and redraw both
+ * phones each time), which could blank the screen on slow phones.
+ */
+const INSPECT_SETTLE_MS = 220;
+
+/**
  * Multiplayer session hook.
  * Owns one online session: anonymous auth, room membership, presence +
  * reconnection, and the authoritative room/game subscriptions from Firebase.
@@ -325,18 +332,26 @@ export default function useMultiplayer() {
    * a stream of animation frames (Part 10).
    */
   const inspectingRef = useRef<number | null>(null);
+  /** Pending "tell the opponent" timer: a newer tap cancels the older one. */
+  const inspectTimerRef = useRef<number | undefined>(undefined);
   const setInspecting = useCallback(
     (index: number | null) => {
       if (!session || mySeat == null || !game) return;
       if (inspectingRef.current === index) return;
       if (!canPublishGuessInspection(game, mySeat)) return;
       inspectingRef.current = index;
-      void publishInspecting(session.code, {
-        seat: mySeat,
-        level: game.level,
-        round: game.round,
-        index,
-      });
+      window.clearTimeout(inspectTimerRef.current);
+      const send = () =>
+        void publishInspecting(session.code, {
+          seat: mySeat,
+          level: game.level,
+          round: game.round,
+          index,
+        });
+      // Clearing (null, e.g. on confirm) goes out at once; a card waits until
+      // the finger has settled on it.
+      if (index === null) send();
+      else inspectTimerRef.current = window.setTimeout(send, INSPECT_SETTLE_MS);
     },
     [session, mySeat, game],
   );
@@ -363,6 +378,7 @@ export default function useMultiplayer() {
    */
   useEffect(() => {
     inspectingRef.current = null;
+    window.clearTimeout(inspectTimerRef.current); // never publish into the next turn
   }, [game?.level, game?.round, game?.actingSeat, game?.phase]);
 
   const advance = useCallback(async () => {

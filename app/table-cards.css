@@ -1,0 +1,387 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   TABLE CARDS — gentle curve, NO overlap, and a colour per player.
+
+   Loaded LAST (see app/layout.tsx) so it wins over the older fan sizing in
+   royal.css / pwa.css. The selectors below deliberately repeat the ones in
+   royal.css so they match its specificity and override by load order.
+
+   1. Side by side with a GENTLE curve: the centre card sits a little higher
+      and the edge cards tilt slightly (9° / 6° / 3° — geometry from
+      cardFanSlot() in features/game/logic/cardFan.ts). Each card is sized so
+      the whole row fits with a small gap between neighbours. No card hides
+      behind another, so a tap always hits the card you see.
+
+      royal.css spreads the row with
+        --card-pitch = (96cqw - card width × edge-projection) / (cards - 1)
+      Cards stop overlapping once pitch ≥ card width + gap, which gives
+        card width = (96cqw - (cards - 1) × gap) / (cards - 1 + edge-projection)
+      We set the card width from that, and cap the spacing at one card width
+      plus a small gap, so the cards stay close together on every level.
+
+   2. Whose cards: the cards on the table always belong to the player who HID
+      the King this round. page.tsx puts `table-owner-0` or `table-owner-1` on
+      the stage, and a small chip names the owner.
+        Player 1 / You       → warm GOLD
+        Player 2 / The Rival → ROYAL PURPLE
+      The same two colours mark the names in the score bar, so the link is
+      obvious at a glance.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* ── 1. Gentle curve, no overlap ── */
+
+.game-screen .cards-row,
+.game-screen .cards-row.fanned,
+.game-screen .result-stage .cards-row.fanned,
+.game-screen .cards-row:has(> .playing-card:nth-of-type(3)):not(:has(> .playing-card:nth-of-type(4))),
+.game-screen .cards-row:has(> .playing-card:nth-of-type(2)):not(:has(> .playing-card:nth-of-type(3))) {
+  /* How far the edge cards sit below the centre card. Small = gentle curve. */
+  --fan-drop: 10cqw;
+  /* How much wider a tilted edge card looks than a flat one (9° tilt). */
+  --edge-projection: 1.224;
+  --card-gap: 2.5cqw;
+  --fan-card-w: min(
+    var(--card-height-limit),
+    calc((96cqw - (var(--card-count) - 1) * var(--card-gap)) / (var(--card-count) - 1 + var(--edge-projection)))
+  );
+  --fan-card-h: calc(var(--fan-card-w) * 1624 / 884);
+  /* Keep the cards CLOSE together: one card width + a small gap apart, never
+     spread out across the whole screen (that left big empty gaps on the 3- and
+     2-card levels). The first value is royal.css's full-width spread, kept as
+     an upper limit so 5 cards still fit. */
+  --card-pitch: min(
+    calc((96cqw - var(--fan-card-w) * var(--edge-projection)) / (var(--card-count) - 1)),
+    calc(var(--fan-card-w) * (1 + (var(--edge-projection) - 1) / 2) + var(--card-gap))
+  );
+  --fan-overlap: calc(var(--card-pitch) - var(--fan-card-w));
+}
+/* 3 cards tilt 6°, 2 cards tilt 3°, so their edge cards look a little narrower. */
+.game-screen .cards-row:has(> .playing-card:nth-of-type(3)):not(:has(> .playing-card:nth-of-type(4))) { --edge-projection: 1.139; }
+.game-screen .cards-row:has(> .playing-card:nth-of-type(2)):not(:has(> .playing-card:nth-of-type(3))) { --edge-projection: 1.051; }
+
+/* ── 2. Whose cards are these? ── */
+
+:root {
+  --owner-0: #e9bf6a;          /* gold */
+  --owner-0-glow: rgba(233, 191, 106, .35);
+  --owner-1: #c39bf0;          /* royal purple */
+  --owner-1-glow: rgba(150, 90, 220, .45);
+}
+
+/* Small chip at the top of the heading: "YOUR CARDS" / "THE RIVAL'S CARDS". */
+.table-owner-chip {
+  display: flex;
+  width: fit-content;
+  align-items: center;
+  gap: 6px;
+  margin: 0 auto 8px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .12em;
+  border: 1px solid currentColor;
+  background: rgba(0, 0, 0, .35);
+}
+.table-owner-chip::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.table-owner-chip.owner-0 { color: var(--owner-0); }
+.table-owner-chip.owner-1 { color: var(--owner-1); }
+
+/* Face-down cards: Player 1 keeps the natural gold art with a gold rim. */
+.table-owner-0 .cards-row .playing-card .card-back {
+  box-shadow: 0 0 0 2px var(--owner-0), 0 0 12px var(--owner-0-glow), 0 8px 16px rgba(0, 0, 0, .55);
+}
+
+/* Player 2 / The Rival: the same art shifted from gold to ROYAL PURPLE.
+   The colour filter would also tint a rim drawn on .card-back (turning it
+   green), so for these cards the rim is drawn on the outer .card-inner layer,
+   which the filter does not touch. */
+.table-owner-1 .cards-row .card-back {
+  filter: hue-rotate(235deg) saturate(1.15) brightness(1.08);
+  box-shadow: none;
+}
+.table-owner-1 .cards-row .playing-card:not(.face-up) .card-inner {
+  box-shadow: 0 0 0 2px var(--owner-1), 0 0 12px var(--owner-1-glow), 0 8px 16px rgba(0, 0, 0, .55);
+}
+
+/* Face-up cards at the reveal keep their artwork; the rim shows the owner —
+   including the King card and the card that was picked. */
+.table-owner-0 .cards-row .playing-card .card-front {
+  box-shadow: 0 0 0 2px var(--owner-0), 0 8px 16px rgba(0, 0, 0, .55);
+}
+.table-owner-1 .cards-row .playing-card .card-front {
+  box-shadow: 0 0 0 2px var(--owner-1), 0 8px 16px rgba(0, 0, 0, .55);
+}
+
+/* The SELECTED card (and the found King) keeps its owner's colour, just
+   brighter and thicker, so the colour never disappears when you pick it. */
+.table-owner-0 .cards-row .playing-card.chosen .card-back,
+.table-owner-0 .cards-row .playing-card.chosen .card-front,
+.table-owner-0 .cards-row .playing-card.is-king.face-up .card-front {
+  box-shadow: 0 0 0 3px var(--owner-0), 0 0 20px 3px var(--owner-0-glow), 0 8px 18px rgba(0, 0, 0, .7);
+}
+.table-owner-1 .cards-row .playing-card.chosen:not(.face-up) .card-inner,
+.table-owner-1 .cards-row .playing-card.chosen .card-front,
+.table-owner-1 .cards-row .playing-card.is-king.face-up .card-front {
+  box-shadow: 0 0 0 3px var(--owner-1), 0 0 20px 3px var(--owner-1-glow), 0 8px 18px rgba(0, 0, 0, .7);
+}
+
+/* A wrong pick stays RED (the shatter effect), whoever owns the cards. */
+.table-owner-0 .cards-row .playing-card.chosen.shattered .card-front,
+.table-owner-1 .cards-row .playing-card.chosen.shattered .card-front {
+  box-shadow: 0 0 0 3px #c56a56, inset 0 0 12px rgba(135, 29, 21, .35), 0 8px 18px rgba(0, 0, 0, .65);
+}
+
+/* The crown over the found King takes the owner's colour too. */
+.table-owner-0 .cards-row .card-crown { color: var(--owner-0); }
+.table-owner-1 .cards-row .card-crown { color: var(--owner-1); }
+
+/* Score bar: each name in its player's colour, with a matching dot. */
+.game-screen .score-strip > span:first-child strong { color: var(--owner-0); }
+.game-screen .score-strip > span:last-child strong { color: var(--owner-1); }
+.game-screen .score-strip > span:first-child strong::before,
+.game-screen .score-strip > span:last-child strong::after {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin: 0 5px 1px;
+  border-radius: 50%;
+  vertical-align: middle;
+}
+.game-screen .score-strip > span:first-child strong::before { background: var(--owner-0); }
+.game-screen .score-strip > span:last-child strong::after { background: var(--owner-1); }
+
+/* ── 3. The Rival's hand reaches from the TOP (the opposite side) ── */
+
+/* Rows The Rival's arm reaches down into. A flipped row reserves the hand's
+   reach BELOW its cards, which is above them once the row is turned — so an
+   upright row, the deck drawn for you while The Rival hunts it, has to reserve
+   that room itself. The gauntlet is 1.1 cards wide at a 929:1694 ratio and its
+   fingertip contacts 30% down the card, so its forearm hangs about 1.46 card
+   widths past the card top: pad by that and move the hand down with the cards.
+   The dealing row takes the very same padding (DealerSwipe's `oppFromTop`), so
+   the deck never moves when the serve hands the table over to the search. */
+.game-screen .cards-row.opp-from-top,
+.game-screen .cards-row.opp-room {
+  --opp-pad: calc(var(--fan-card-w) * 0.8);
+  padding-top: var(--opp-pad);
+}
+/* Everything the hand is placed against is absolutely positioned, so it is
+   measured from the row's padding BOX and has to be moved down with the cards by
+   hand — the selection gauntlet and the deal hand's contact markers alike. */
+.game-screen .cards-row.opp-from-top .selection-hand-img,
+.game-screen .cards-row.opp-from-top .inspection-hand,
+.game-screen .cards-row.opp-from-top .dealer-contact,
+.game-screen .cards-row.opp-room .selection-hand-img,
+.game-screen .cards-row.opp-room .dealer-contact { margin-top: var(--opp-pad); }
+/* The hand hangs DOWN from the top. Its sprite points up with the fingertip at
+   (33%, .7%), so it is turned 180° around that fingertip, which then sits
+   exactly on the touch point of the card. */
+.game-screen .cards-row .opponent-hand {
+  position: absolute;
+  z-index: 85;
+  /* A little smaller than your own hand, so it never covers the heading. */
+  width: calc(var(--fan-card-w) * .8);
+  height: auto;
+  pointer-events: none;
+  left: calc(50% + var(--opp-x, 0px) + var(--opp-cx, 0px));
+  top: calc(var(--opp-pad, 0px) + var(--opp-y, 0px) + var(--opp-cy, 0px));
+  transform-origin: 33% .7%;
+  transform: translate(-33%, -.7%) rotate(calc(180deg + var(--opp-tilt, 0deg)));
+  filter: drop-shadow(0 -5px 6px rgba(0, 0, 0, .7));
+  /* Glide from card to card instead of jumping. */
+  transition: left .34s cubic-bezier(.3, .8, .3, 1), top .34s cubic-bezier(.3, .8, .3, 1);
+}
+
+/* WAIT — while you hide: hovering above the row, breathing slowly. */
+.game-screen .cards-row .opponent-hand.wait {
+  opacity: .92;
+  animation: opp-wait 1.8s ease-in-out infinite;
+}
+@keyframes opp-wait {
+  0%, 100% { translate: 0 calc(var(--fan-card-h) * -.14); }
+  50% { translate: 0 calc(var(--fan-card-h) * -.2); }
+}
+
+/* ROAM — while The Rival hides its King: sweeping across the row. */
+.game-screen .cards-row .opponent-hand.roam {
+  animation: opp-roam 1.6s cubic-bezier(.45, 0, .55, 1) infinite alternate;
+}
+@keyframes opp-roam {
+  from { translate: calc(-1 * var(--roam-span)) calc(var(--fan-card-h) * -.08); }
+  to { translate: var(--roam-span) calc(var(--fan-card-h) * -.08); }
+}
+
+/* TOUCH — taps down onto a card. Two identical animations alternate so every
+   new touch replays the tap. */
+.game-screen .cards-row .opponent-hand.touch.tap-0 { animation: opp-tap-a .5s ease-out both; }
+.game-screen .cards-row .opponent-hand.touch.tap-1 { animation: opp-tap-b .5s ease-out both; }
+@keyframes opp-tap-a { 0% { translate: 0 -22px; } 60% { translate: 0 4px; } 100% { translate: 0 0; } }
+@keyframes opp-tap-b { 0% { translate: 0 -22px; } 60% { translate: 0 4px; } 100% { translate: 0 0; } }
+
+/* LOCK — presses down firmly on its choice and stays there. */
+.game-screen .cards-row .opponent-hand.lock { animation: opp-press .45s cubic-bezier(.2, .9, .3, 1.2) both; }
+@keyframes opp-press {
+  0% { translate: 0 -14px; scale: 1.06; }
+  100% { translate: 0 6px; scale: .97; }
+}
+
+/* YOUR card being touched: it flashes and a ring ripples out, so you can feel
+   The Rival "testing" it. (The card also lifts slightly toward the top.) */
+.game-screen .cards-row.opp-from-top .playing-card.card-inspected .card-inner {
+  animation: opp-touch-flash .7s ease-out;
+}
+@keyframes opp-touch-flash {
+  0% { filter: brightness(1.7); box-shadow: 0 0 0 0 rgba(255, 236, 190, .9); }
+  100% { filter: brightness(1); box-shadow: 0 0 0 14px rgba(255, 236, 190, 0); }
+}
+
+/* The card The Rival LOCKED: a strong pulse and a white-gold halo, held until
+   the reveal. */
+.game-screen .cards-row.opp-from-top:not(.reveal-row) .playing-card.chosen .card-inner {
+  animation: opp-lock-pulse .9s ease-out both;
+  box-shadow: 0 0 0 3px #fff1c9, 0 0 26px 6px rgba(255, 220, 140, .65);
+}
+@keyframes opp-lock-pulse {
+  0% { scale: 1; filter: brightness(1.8); }
+  35% { scale: 1.08; }
+  100% { scale: 1.03; filter: brightness(1.1); }
+}
+
+/* Card animations off: keep positions and colours, drop the movement. */
+.reduced-motion .cards-row .opponent-hand,
+.reduced-motion .cards-row.opp-from-top .playing-card .card-inner { animation: none; transition: none; }
+
+/* ── 4. The curve faces whoever hid the King ──
+   The cards always belong to the dealer, so page.tsx turns every table row into
+   the far seat's view (`opposite-view`, royal.css) exactly while the dealer is
+   that far seat. That one 180-degree turn IS the curve flip: the middle card
+   drops and the edges rise, as if the deck's owner were holding it from the
+   top. The deal, the pointing hands and the picked card's travel all read the
+   same flag, so the curve can never disagree with the rest of the table about
+   whose cards are lying there. */
+
+/* The deck arrives from its owner's edge, the edge the dealing hand serves
+   from. In the row's OWN frame that edge is always the LOW one — an upright row
+   has its owner below it, a flipped row (the far seat) has its owner above — so
+   one local entrance covers both orientations, and the cards are never served
+   from one end while they land on the other. DealerSwipe sets the class. */
+.game-screen .cards-row.dealer-swipe.dealing.dealt-from-owner .playing-card {
+  animation-name: dealer-card-arrange-up;
+}
+
+/* Riding the deck's flip: NOT done here, deliberately.
+   The sign that moves the searched card has to be right in the two cases the
+   online board actually reaches — the opponent inspecting a deck drawn for you
+   (an upright row, their hand reaching down from the top) and you inspecting a
+   deck drawn for them (a flipped row, your hand reaching up from the bottom). The
+   one shipped value, `--inspect-dir: 1` from globals.css, is correct for both,
+   because a flipped row is rotated and therefore reverses it on its own. Flipping
+   it per row as well would send the card AWAY from your own hand in the second
+   case. What the deck must not do is switch orientation MID-round, which is what
+   `tableOpposite` / `deckPerspective` in the two boards now guarantee. */
+@keyframes dealer-card-arrange-up {
+  0% { opacity: 0; transform: translate(calc(var(--fan-card-w) * -.35), calc(var(--fan-y) + var(--fan-card-h) * .18)) rotate(calc(var(--fan-rotate) + 8deg)) scale(.94); }
+  18% { opacity: 1; }
+  100% { opacity: 1; transform: translateY(var(--fan-y)) rotate(var(--fan-rotate)) scale(var(--fan-scale)); }
+}
+
+/* ── 5. The Rival's BIG arm: used only when it is hunting for your King ──
+   The small gauntlet means "just watching"; the big armoured arm means
+   "choosing a card". The sprite already points DOWN, fingertip at (52%, 96%),
+   so that fingertip is pinned to the touch point and the arm runs up off the
+   top of the row, fading out so it never hides the heading. */
+.game-screen .cards-row .opponent-hand.big {
+  width: calc(var(--fan-card-w) * 1.05);
+  transform-origin: 52% 96%;
+  transform: translate(-52%, -96%) rotate(var(--opp-tilt, 0deg));
+  filter: drop-shadow(0 8px 8px rgba(0, 0, 0, .75));
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 42%);
+  mask-image: linear-gradient(to bottom, transparent 0%, #000 42%);
+}
+/* First reach: the arm slides down from The Rival's side. */
+.game-screen .cards-row .opponent-hand.big.touch.tap-0 { animation: opp-reach-a .5s cubic-bezier(.2, .8, .3, 1) both; }
+.game-screen .cards-row .opponent-hand.big.touch.tap-1 { animation: opp-reach-b .5s cubic-bezier(.2, .8, .3, 1) both; }
+@keyframes opp-reach-a { 0% { translate: 0 -34px; } 65% { translate: 0 5px; } 100% { translate: 0 0; } }
+@keyframes opp-reach-b { 0% { translate: 0 -34px; } 65% { translate: 0 5px; } 100% { translate: 0 0; } }
+.reduced-motion .cards-row .opponent-hand.big { animation: none; }
+
+/* ── 6. No blank screen on low-end phones ── */
+
+/* The board sits on a solid black page, so this blur showed nothing,
+   but it re-painted the whole screen every frame. Removed for everyone. */
+.game-screen { backdrop-filter: none; -webkit-backdrop-filter: none; }
+.game-screen .cards-row .selection-hand-img,
+.game-screen .cards-row .inspection-hand { will-change: transform; }
+
+/* LITE GRAPHICS: switched on automatically on weak phones
+   (components/common/LiteGraphics.tsx). No blur, no soft shadows. */
+.lite-gfx *,
+.lite-gfx *::before,
+.lite-gfx *::after { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
+.lite-gfx .selection-hand-img,
+.lite-gfx .inspection-hand,
+.lite-gfx .opponent-hand,
+.lite-gfx .dealer-swipe-hand,
+.lite-gfx .home-app-logo,
+.lite-gfx .playing-card.chosen,
+.lite-gfx .cards-row .playing-card.card-inspected { filter: none !important; }
+.lite-gfx .modal-backdrop { background-color: rgba(4, 4, 3, .86) !important; }
+.lite-gfx .cards-row.turn-idle .playing-card { filter: none !important; opacity: .85; }
+.lite-gfx .cards-row.turn-idle .playing-card.card-inspected { opacity: 1; }
+
+/* ── 7. The deck holds its place ──
+   The stage is a three-row grid (pwa.css): the heading, the deck, the controls.
+   Two of those rows change height from stage to stage — the heading's copy wraps
+   differently, and the controls are a different size in each state — and either
+   one shifts the DECK: the deck's cell starts where the heading ends, and a deck
+   drawn for the far seat is measured to sit just below the heading. So hold both
+   rows still: every table heading gets one fixed height, tall enough for the
+   longest copy a stage can show, and the control row is reserved at one height
+   whether or not it holds any controls. Hiding the King, serving the cards,
+   searching them and turning them over then leave the deck in exactly the same
+   place, and so does the verdict.
+
+   The numbers are the tallest copy a stage can render — the chip, a one-line
+   heading and a hint wrapped to two lines — and the dealer's LOCK row (52px of
+   button plus its 8px of breathing room) for the controls. They are shared by the
+   local board and the online one, so both tables hold still the same way. Stages
+   without a heading of that shape are out of scope: the online board's court and
+   match-end screens, and its reveal, which keeps its own four-row verdict
+   layout. */
+.game-screen {
+  --stage-head: 128px;
+  --stage-controls: calc(52px + 8px);
+}
+@media (max-height: 700px) {
+  .game-screen { --stage-head: 116px; }
+}
+@media (max-height: 520px) {
+  .game-screen { --stage-head: 96px; }
+}
+.game-screen .play-stage .stage-title,
+.online-board .mp-stage:has(.cards-row) .stage-title {
+  height: var(--stage-head);
+  min-height: var(--stage-head);
+}
+.game-screen .play-stage:not(.result-stage),
+.online-board .mp-stage:has(.cards-row):not(:has(.round-verdict)) {
+  grid-template-rows: auto minmax(0, 1fr) var(--stage-controls);
+}
+/* The verdict screen leaves 32px above the deck; match the rest of the table so
+   the cards do not step down again when the round resolves. */
+.game-screen .result-stage .stage-title {
+  margin-bottom: 12px;
+}
+/* The online reveal wraps its row instead of hanging it straight off the stage,
+   so the stock `margin-top: 24px` on a row inside `.mp-frame` used to survive
+   there and drop the revealed deck below where the search left it. */
+.online-board .reveal-hand-wrap .cards-row {
+  margin-top: 0;
+}

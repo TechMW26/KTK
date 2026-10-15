@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { LiteGraphics } from "../components/common/liteGraphics";
 import "./globals.css";
 // Liquid Glass visual system. Imported after globals.css on purpose: it refines
 // the base styles (tokens, surface hierarchy, materials) without globals.css
@@ -8,6 +9,9 @@ import "./glass.css";
 import "./cards.css";
 import "./royal.css";
 import "./pwa.css";
+// Side-by-side card row and per-player card colours. Must stay LAST so it
+// overrides the older curved-fan sizing above.
+import "./table-cards.css";
 
 export const metadata: Metadata = {
   title: "Kill the King",
@@ -60,6 +64,8 @@ export default function RootLayout({
         <link rel="preload" as="image" href="/dealer-swipe-hand.png" />
       </head>
       <body className="antialiased">
+        {/* Low-end phones: switch off costly blur/shadows (prevents blank screens). */}
+        <LiteGraphics />
         {children}
       </body>
     </html>

@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { LEVELS, levelConfig, RESULT_COPY, LEVEL_COUNT, roundsPerLevel } from "@/lib/game/rules";
+import { LEVELS, levelConfig, LEVEL_COUNT, roundsPerLevel, TOTAL_ROUNDS } from "@/lib/game/rules";
+import { roundVerdictCopy } from "@/features/game/constants/copy";
 import { RULESET_ROUNDS, roundInCourt } from "@/lib/game/flow";
 import { dealTimings, PULL_MS, SHUFFLE_MS } from "@/features/game/constants/pacing";
 import { PowerDock } from "@/features/game/components/PowerDock";
@@ -19,8 +20,35 @@ import { LifePips } from "@/features/game/components/GameHeader";
 import { RoundMedallion } from "@/features/game/components/RoundMedallion";
 import { Crown, LogOut, Menu } from "lucide-react";
 import { MpEyebrow, MpFrame, MpLogo, MpModal, MpOrnament } from "./ui";
+import { UNKNOWN_PLAYER } from "@/lib/multiplayer/displayName";
 
+/** How long the "YOUR OPPONENT" intro shows before the first hide (LET'S PLAY skips it). */
+const MATCH_INTRO_MS = 3500;
 type MP = ReturnType<typeof useMultiplayer>;
+
+/**
+ * The perspective the deck on the table is drawn in for this round.
+ *
+ * The cards always belong to whoever hid the King, so the deck is shown the way
+ * its OWNER holds it: upright with the curve facing the dealer, served in over
+ * the dealer's own edge. A round therefore never changes the deck's shape —
+ * hiding the King, serving the cards, the guess and the reveal all keep the same
+ * fan — and only a new dealer turns it over. The local board uses the same rule
+ * (see `tableOpposite` in app/page.tsx).
+ */
+function deckPerspective(g: { dealerSeat: number }, me: number) {
+  const iDealt = g.dealerSeat === me;
+  return {
+    opposite: !iDealt,
+    fromBottom: iDealt,
+    /**
+     * The picked card travels back toward the GUESSER, who is by definition the
+     * seat that did not deal — i.e. the far side of a deck drawn for its owner.
+     * `--pull-dir` is read inside the row, so one sign serves both orientations.
+     */
+    pullDir: -1,
+  } as const;
+}
 
 /**
  * In-match renderer. Everything is derived from the authoritative Firebase
@@ -36,8 +64,22 @@ export default function GameView({ mp, onLeave }: { mp: MP; onLeave: () => void 
   const [strategyTab, setStrategyTab] = useState<0 | 1>(0);
   const [bluffOpen, setBluffOpen] = useState(false);
   /** Active-game exit confirmation. Leaving mid-match loses the game. */
-  const [exitOpen, setExitOpen] = useState(false);
+    const [exitOpen, setExitOpen] = useState(false);
   const requestExit = () => setExitOpen(true);
+  /**
+   * "YOUR OPPONENT: <name>" intro before the very first hide, so a player always
+   * knows who they were matched with. Only at the real start of a match (not on
+   * a reconnect mid-game), once per visit, and only after the name has synced.
+   */
+  const [introSeen, setIntroSeen] = useState(false);
+  const atMatchStart =
+    !!g && g.phase === "dealer-hide" && g.level === 0 && g.round === 1 && !(g.history?.length);
+  const showIntro = atMatchStart && !introSeen && !!mp.opponent;
+  useEffect(() => {
+    if (!showIntro) return;
+    const id = window.setTimeout(() => setIntroSeen(true), MATCH_INTRO_MS);
+    return () => window.clearTimeout(id);
+  }, [showIntro]);
 
   if (!g) {
     return (
@@ -139,6 +181,35 @@ export default function GameView({ mp, onLeave }: { mp: MP; onLeave: () => void 
     </>
   );
 
+   // Who you are playing — shown before anything else, so the hide clock has not started.
+  if (showIntro) {
+    const opponentName = mp.opponent ?? UNKNOWN_PLAYER;
+    const myName = mp.myName ?? UNKNOWN_PLAYER;
+    return (
+      <div className="online-board">
+        <MpFrame>
+          <section className="mp-stage match-intro" role="status" aria-live="polite">
+            <span className="level-crown">
+              <Crown strokeWidth={1.75} />
+            </span>
+            <MpEyebrow>YOUR OPPONENT</MpEyebrow>
+            <h2 className="mp-title">{opponentName.toUpperCase()}</h2>
+            <MpOrnament />
+            <p>
+              You are playing as <strong>{myName}</strong>
+            </p>
+            <p className="mp-muted">
+              {g.dealerSeat === me ? "You hide the King first." : `${opponentName} hides the King first.`}
+            </p>
+            <button className="gold-button wide" onClick={() => setIntroSeen(true)}>
+              LET&apos;S PLAY
+            </button>
+          </section>
+        </MpFrame>
+      </div>
+    );
+  }
+
   // Match over.
   if (g.phase === "match-end") return <MatchEnd mp={mp} onLeave={onLeave} />;
   if (g.phase === "level-end")
@@ -203,7 +274,7 @@ function Header({ mp, activeSeconds }: { mp: MP; activeSeconds: number | null })
     <div className="mp-head">
       <header className="game-header">
         <MpLogo compact />
-        <RoundMedallion level={g.level + 1} round={shownRound} />
+        <RoundMedallion level={g.level + 1} round={shownRound} total={cfg.rounds} />
         <div className="header-controls">
           <MpLiveTimer seconds={activeSeconds} cfgSeconds={cfg.seconds} />
         </div>
@@ -320,7 +391,6 @@ function LiveRound({
   }
 
 const isGuess = g.phase === "guess";
-const actingSeconds = isGuess ? cfg.seconds : null;
 /**
  * The guesser's committed pick, shown to the OTHER player the moment it lands.
  * Read straight from the authoritative `pendingGuess` on the reveal beat, so
@@ -331,10 +401,14 @@ const opponentPick =
     ? (g.pendingGuess.calledBluff ? null : g.pendingGuess.cardIndex)
     : null;
 
+  // The deck stays in the perspective of the seat that hid the King, so locking
+  // the hiding place no longer turns it over. See `deckPerspective`.
+  const { opposite } = deckPerspective(g, me);
+
   return (
     <MpFrame>
       <HeaderActions onLeave={onRequestExit} label="Leave match" friendAction={friendAction} />
-      <Header mp={mp} activeSeconds={iAct && isGuess ? actingSeconds : null} />
+      <Header mp={mp} activeSeconds={iAct && (isGuess || isDealerRound) ? cfg.seconds : null} />
 
       {g.phase === "shuffle" ? <ShuffleStage mp={mp} /> : null}
       {isDealerRound && iAmDealer && iAct ? <HideStage mp={mp} /> : null}
@@ -356,22 +430,22 @@ const opponentPick =
         />
       ) : null}
       {opponentPick !== null ? (
-        <CardRow opposite>
+        <CardRow opposite={opposite}>
           {Array.from({ length: cfg.cards }, (_, i) => (
             <PlayingCard key={i} index={i} fanCount={cfg.cards} fanSlot={i} chosen={i === opponentPick} disabled />
           ))}
-          <SelectionHand index={opponentPick} cardCount={cfg.cards} opposite fromOpponent faint />
+          <SelectionHand index={opponentPick} cardCount={cfg.cards} opposite={opposite} fromOpponent faint />
         </CardRow>
       ) : null}
 
       {g.phase === "shuffle" || iAct ? null : (
-        <p className="mp-muted mp-waitsmall">Waiting for the other player. Do not close this tab.</p>
+        <p className="mp-muted mp-waitsmall">Waiting for the other player. Keep the game open.</p>
       )}
     </MpFrame>
   );
 }
 
-/** The opposite fan is idle during hiding. Only a guesser's public aim may
+/** The opponent's fan is idle while they act. Only a guesser's public aim may
  * lift a card and display the opponent's pointing hand. Stale hiding-phase
  * inspection data from older clients is deliberately ignored.
  */
@@ -379,9 +453,12 @@ function OpponentRow({ mp }: { mp: MP }) {
   const g = mp.game!;
   const cfg = levelConfig(g.level);
   const inspecting = visibleGuessInspection(g, cfg.cards);
+  // Their row follows the round's dealer too, so the fan keeps the same shape
+  // whether the opponent is hiding their King or hunting yours.
+  const { opposite } = deckPerspective(g, mp.mySeat ?? 0);
 
   return (
-    <CardRow opposite className="turn-idle">
+    <CardRow opposite={opposite} className="turn-idle">
       {Array.from({ length: cfg.cards }, (_, i) => (
         <PlayingCard
           key={i}
@@ -393,7 +470,7 @@ function OpponentRow({ mp }: { mp: MP }) {
         />
       ))}
       {inspecting !== null ? (
-        <InspectionVisual index={inspecting} cardCount={cfg.cards} opposite remote />
+        <InspectionVisual index={inspecting} cardCount={cfg.cards} opposite={opposite} remote />
       ) : null}
     </CardRow>
   );
@@ -407,6 +484,9 @@ function OpponentRow({ mp }: { mp: MP }) {
 function ShuffleStage({ mp }: { mp: MP }) {
   const g = mp.game!;
   const cfg = levelConfig(g.level);
+  // The deal is watched from the dealer's side: the hand comes in over their own
+  // edge and the cards land in the perspective their deck will keep for the round.
+  const { opposite, fromBottom } = deckPerspective(g, mp.mySeat ?? 0);
   // The deal cadence is driven by the shared pacing constant so both clients run
   // the identical animation window and leave the beat on the same frame.
   const deal = useMemo(() => dealTimings(cfg.cards, SHUFFLE_MS), [cfg.cards]);
@@ -431,7 +511,7 @@ function ShuffleStage({ mp }: { mp: MP }) {
         <h2 className="mp-title">FIND THE KING</h2>
         <p>Arranging the cards…</p>
       </div>
-      <DealerSwipe cards={cfg.cards} opposite />
+      <DealerSwipe cards={cfg.cards} opposite={opposite} fromBottom={fromBottom} />
     </section>
   );
 }
@@ -445,6 +525,30 @@ function HideStage({ mp }: { mp: MP }) {
   const [kingIndex, setKingIndex] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const canLock = isBluff || kingIndex !== null;
+  /** Hide clock — same seconds as the guess clock, like the local game. */
+  const [left, setLeft] = useState(cfg.seconds);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setLeft(cfg.seconds);
+  }, [cfg.seconds, g.round]);
+
+  useEffect(() => {
+    if (busy) return;
+    if (left <= 0) {
+      // Time's up: lock what they chose; if nothing, a random card (never a
+      // silent Bluff). Without this a dealer who walked away froze the match.
+      const autoKing = isBluff ? null : (kingIndex ?? Math.floor(Math.random() * cfg.cards));
+      const id = setTimeout(() => {
+        setBusy(true);
+        void mp.hideCard(autoKing, isBluff).finally(() => setBusy(false));
+      }, 0);
+      return () => clearTimeout(id);
+    }
+    const id = setTimeout(() => setLeft((v) => v - 1), 1000);
+    return () => clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [left, busy]);
 
   const lock = async () => {
     if (!canLock || busy) return;
@@ -459,8 +563,11 @@ function HideStage({ mp }: { mp: MP }) {
       <div className="stage-title">
         <MpEyebrow>YOUR TURN</MpEyebrow>
         <h2 className="mp-title">HIDE THE KING</h2>
-        <p>Tap a card to hide the King.</p>
+        <p>{left <= 5 ? `Hurry! ${left}s — tap a card, then press LOCK.` : "Tap a card, then press LOCK — or use your Bluff."}</p>
       </div>
+      {/* Place the King in the deck the way you hold it: this row is the one the
+          player handles directly, so it stays upright while the round's deck is
+          drawn from the dealer's side — which for this round is YOU. */}
       <div className="cards-row fanned dealer-choice turn-active">
         {Array.from({ length: cfg.cards }, (_, i) => (
           <PlayingCard
@@ -514,6 +621,7 @@ function GuessStage({
   bluffOpen: boolean;
 }) {
   const g = mp.game!;
+  const me = mp.mySeat ?? 0;
   const cfg = levelConfig(g.level);
   const seconds = cfg.seconds;
   const [picked, setPicked] = useState<number | null>(null);
@@ -528,7 +636,22 @@ function GuessStage({
    * card pulled the opposite way to seat 0.
    */
   const [pullCard, setPullCard] = useState<number | null>(null);
-  const done = busy || picked !== null || bluffOpen;
+  // This stage is only ever mounted for the GUESSER, so the round's dealer is
+  // necessarily the other seat: the deck is theirs and the fan keeps the shape
+  // their hiding stage and their serve gave it. See `deckPerspective`.
+  const { opposite, pullDir } = deckPerspective(g, me);
+  /**
+   * Did the dealer spend their Bluff in an EARLIER round of this court? Read from
+   * finished rounds only — `g.bluffsUsed` is already true during a bluff round
+   * itself, so showing that would give the bluff away.
+   */
+  const dealerBluffSpent = (g.history ?? []).some(
+    (h) => h.level === g.level && h.dealer === g.dealerSeat && h.wasBluff,
+  );
+  /** Pick committed: the turn is over. */
+  const locked = busy || picked !== null;
+  /** Cards can't be tapped while committed OR while the Bluff dialog is open. */
+  const done = locked || bluffOpen;
 
   /**
    * The aim IS the local inspection: aiming at card #2 (without confirming)
@@ -555,7 +678,9 @@ function GuessStage({
   }, [seconds, g.round]);
 
   useEffect(() => {
-    if (done) return;
+    // Only a committed pick stops the clock. Opening the Bluff dialog used to
+    // freeze it, so a player could stall the match forever.
+    if (locked) return;
     if (left <= 0) {
       void mp.guess(null, false);
       return;
@@ -563,7 +688,7 @@ function GuessStage({
     const id = setTimeout(() => setLeft((v) => v - 1), 1000);
     return () => clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [left, done]);
+  }, [left, locked]);
 
   /**
    * Two-step guess: the first tap aims at a card (pointer + highlight) and the
@@ -597,9 +722,11 @@ function GuessStage({
       <div className="stage-title">
         <MpEyebrow>YOUR TURN</MpEyebrow>
         <h2 className="mp-title">FIND THE KING</h2>
-        <p>{done ? "Revealing…" : "Tap a card, then confirm your pick."}</p>
+        <p>{locked ? "Revealing…" : dealerBluffSpent
+          ? "Tap a card, then confirm. (Their Bluff is used — the King is here.)"
+          : "Tap a card, then confirm. Think there's no King? Call Bluff."}</p>
       </div>
-      <CardRow opposite className="turn-active">
+      <CardRow opposite={opposite} className="turn-active" style={{ "--pull-dir": pullDir } as React.CSSProperties}>
         {Array.from({ length: cfg.cards }, (_, i) => (
           <PlayingCard
             key={i}
@@ -614,12 +741,12 @@ function GuessStage({
           />
         ))}
         {picked === null && (
-          <SelectionHand index={targetCard} cardCount={cfg.cards} opposite />
+          <SelectionHand index={targetCard} cardCount={cfg.cards} opposite={opposite} />
         )}
       </CardRow>
       <div className="guess-actions">
         <button className="gold-button" disabled={done || targetCard === null} onClick={() => { if (targetCard !== null) void pick(targetCard); }}>
-          {targetCard === null ? "CHOOSE A CARD" : `CONFIRM CARD ${targetCard + 1}`}
+          {targetCard === null ? "TAP A CARD" : `CONFIRM CARD ${opposite ? cfg.cards - targetCard : targetCard + 1}`}
         </button>
       </div>
     </section>
@@ -633,11 +760,10 @@ function Waiting({ title, text, row }: { title: string; text: string; row?: Reac
         <span className="turn-dot">●</span>
         <span className="turn-text">
           <b>{title}</b>
-          <small>Waiting for the other player…</small>
+          <small>Watch their hand move — your turn is next.</small>
         </span>
       </div>
       <div className="stage-title">
-        <MpEyebrow>OPPONENT’S TURN</MpEyebrow>
         <h2 className="mp-title">{text.includes("hiding") ? "HIDING THE KING" : "FINDING THE KING"}</h2>
         <p>{text}</p>
       </div>
@@ -652,8 +778,15 @@ function Reveal({ mp, onRequestExit, friendAction }: { mp: MP; onRequestExit: ()
   const g = mp.game!;
   const result = g.lastResult!;
   const cfg = levelConfig(g.level);
-  const copy = RESULT_COPY[result.kind];
   const meWon = result.winnerSeat === mp.mySeat;
+  const opponentName = mp.opponent ?? "Opponent";
+  // Told from MY side: who did what, and gold when I won / red when I lost.
+  const copy = roundVerdictCopy({
+    kind: result.kind,
+    guesserName: result.guesserSeat === mp.mySeat ? "You" : opponentName,
+    dealerName: result.dealerSeat === mp.mySeat ? "You" : opponentName,
+    viewerWon: meWon,
+  });
   const [busy, setBusy] = useState(false);
   // Classic: play "round" hides within a court, and each court has its own
   // length (14, 10, 6), so the boundary is read from the shared resolver rather
@@ -663,6 +796,9 @@ function Reveal({ mp, onRequestExit, friendAction }: { mp: MP; onRequestExit: ()
   const lastOfGame = lastOfLevel && g.level >= LEVEL_COUNT - 1;
   // Lives: when the hidden King was found, the Dealer lost a life.
   const lifeLost = mp.livesMode && result.kind === "king";
+  // The reveal keeps the perspective the round's dealer hid and served in, so the
+  // deck does not turn over one last time when the cards are shown.
+  const { opposite } = deckPerspective({ dealerSeat: result.dealerSeat }, mp.mySeat ?? 0);
 
   const next = async () => {
     if (busy) return;
@@ -683,7 +819,7 @@ function Reveal({ mp, onRequestExit, friendAction }: { mp: MP; onRequestExit: ()
           <p>{copy.subtitle}</p>
         </div>
         <div className="reveal-hand-wrap">
-          <CardRow opposite className="reveal-row mp-reveal">
+          <CardRow opposite={opposite} className="reveal-row mp-reveal">
             {Array.from({ length: cfg.cards }, (_, i) => (
               <PlayingCard
                 key={i}
@@ -697,12 +833,14 @@ function Reveal({ mp, onRequestExit, friendAction }: { mp: MP; onRequestExit: ()
                 wrong={(result.kind === "wrong" || result.kind === "bluff-worked") && i === result.pick}
                 disabled
                 flipDelay={(i * 70) / 1000}
+                number={opposite ? cfg.cards - i : i + 1}
               />
             ))}
             <MpRevealHand
               pick={result.pick}
               cards={cfg.cards}
               self={result.guesserSeat === mp.mySeat}
+              opposite={opposite}
             />
           </CardRow>
         </div>
@@ -733,12 +871,15 @@ function MpRevealHand({
   pick,
   cards,
   self,
+  opposite,
 }: {
   pick: number | null;
   cards: number;
   self: boolean;
+  /** The deck's perspective, so the hand points from its owner's side. */
+  opposite: boolean;
 }) {
-  return <SelectionHand index={pick} cardCount={cards} opposite fromOpponent={!self} settled faint={!self} />;
+  return <SelectionHand index={pick} cardCount={cards} opposite={opposite} fromOpponent={!self} settled faint={!self} />;
 }
 
 function LevelEnd({ mp, onRequestExit, friendAction }: { mp: MP; onRequestExit: () => void; friendAction?: ReactNode }) {
@@ -816,12 +957,12 @@ function MatchEnd({ mp, onLeave }: { mp: MP; onLeave: () => void }) {
               <p>
                 {meWon
                   ? `${mp.opponent ?? "Opponent"} lost all 5 Kings — you rule the board!`
-                  : "You lost all 5 Kings. The rival takes the crown."}
+                  : `You lost all 5 Kings. ${mp.opponent ?? "Your opponent"} takes the crown.`}
               </p>
             )}
           </>
         ) : (
-          <p>Twenty rounds. Three courts. One ruler.</p>
+          <p>{`${TOTAL_ROUNDS} rounds. Three courts. One ruler.`}</p>
         )}
         <div className="score-board large final">
           <div>

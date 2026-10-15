@@ -51,7 +51,10 @@ export function StrategyModal({
   levelName: string;
   onClose: () => void;
 }) {
-  const recordedTurns = entries.slice(0, GRID);
+  // A player guesses up to 7 times per court but the board has 5 rows: show the
+  // LATEST 5 guesses (the old code froze on the first 5 and ignored the rest).
+  const firstShown = Math.max(0, entries.length - GRID);
+  const recordedTurns = entries.slice(firstShown);
   const constellation = constellationPath(recordedTurns);
 
   return (
@@ -72,13 +75,14 @@ export function StrategyModal({
       </div>
 
       <p className="strategy-help">
-        Only cards picked while guessing are recorded. Hidden King positions are never included.
+        Where each player tapped when GUESSING this court. Use it to hide your King
+        away from your opponent&apos;s favourite card.
       </p>
 
       <div className="strategy-map">
         <div className="strategy-round-labels">
           {Array.from({ length: GRID }, (_, index) => (
-            <b key={index}>ROUND {index + 1}</b>
+            <b key={index}>GUESS {firstShown + index + 1}</b>
           ))}
         </div>
         <div className="strategy-card-field">

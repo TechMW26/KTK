@@ -111,8 +111,7 @@ export function FriendsScreen({
               aria-pressed={turnOrder === "complete"}
             >
               <b>Complete Turns</b>
-              <small>Each player hides 10 turns in a row. Default.</small>
-            </button>
+              <small>Each player hides 7 in a row (then 5, then 3). Default.</small>            </button>
             <button
               className={turnOrder === "alternate" ? "mp-rule-opt active" : "mp-rule-opt"}
               onClick={() => setTurnOrder("alternate")}
@@ -139,8 +138,8 @@ export function FriendsScreen({
               aria-pressed={livesOn}
             >
               <b>5 Lives</b>
-              <small>Find the King to cost a life. First to 0 loses.</small>
-            </button>
+              <small>Each time your King is found, you lose a life. First to 0 loses.</small>
+              </button>
           </div>
           {livesOn && turnOrder !== "alternate" ? (
             <p className="mp-note">5 Lives uses the continuous-turn court format.</p>

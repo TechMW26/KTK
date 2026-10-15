@@ -57,6 +57,11 @@ export interface PlayingCardProps {
    * rests. Presentation only — it is NOT a selection and never affects a rule.
    */
   inspected?: boolean;
+  /**
+   * The number PRINTED on the face (defaults to index + 1). A turned-around row
+   * passes the left-to-right screen number so the face matches "CONFIRM CARD n".
+   */
+  number?: number;
 }
 
 export function PlayingCard({
@@ -76,7 +81,9 @@ export function PlayingCard({
   kingPlacing,
   pulling,
   inspected,
+  number,
 }: PlayingCardProps) {
+  const shown = number ?? index + 1;
   const className = [
     "playing-card",
     faceUp ? "face-up" : "",
@@ -92,11 +99,11 @@ export function PlayingCard({
 
   const label = faceUp
     ? blank
-      ? `Empty card ${index + 1}`
+      ? `Empty card ${shown}`
       : king
-      ? `King in card ${index + 1}`
-      : `Card ${index + 1}`
-    : `Choose card ${index + 1}`;
+      ? `King in card ${shown}`
+      : `Card ${shown}`
+    : `Choose card ${shown}`;
 
   // The curve is opt-in: a call site that does not pass `fanCount` keeps the
   // original straight flex row exactly as before.
@@ -130,11 +137,11 @@ export function PlayingCard({
           ) : (
             <>
               <span className="corner-rank">
-                {king ? "K" : index + 1}
+                {king ? "K" : shown}
                 <small><Heart fill="currentColor" strokeWidth={1} /></small>
               </span>
               <span className="corner-rank corner-rank-bottom">
-                {king ? "K" : index + 1}
+                {king ? "K" : shown}
                 <small><Heart fill="currentColor" strokeWidth={1} /></small>
               </span>
               {king && <span className="card-face-label">THE KING</span>}

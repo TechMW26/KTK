@@ -250,3 +250,91 @@
   .game-screen:has(.result-stage) .power-dock button span { font-size: 18px; }
   .game-screen:has(.result-stage) .power-dock button b { font-size: 8px; }
 }
+
+/* ── Hide timer: urgent warning + "King auto-hidden" moment ── */
+
+/* Last seconds, nothing tapped yet: the hint pulses red... */
+.game-screen .stage-title p.stage-hint-urgent {
+  color: #ff8a73;
+  font-size: 15px;
+  font-weight: 700;
+  animation: hide-hint-pulse .8s ease-in-out infinite;
+}
+@keyframes hide-hint-pulse {
+  0%, 100% { opacity: 1; scale: 1; }
+  50% { opacity: .6; scale: 1.04; }
+}
+
+/* ...and every card wiggles, saying "tap me". (Animates .card-inner with the
+   separate `rotate`/`translate` properties so the fan position, which lives on
+   .playing-card's transform, is never disturbed.) */
+.cards-row.hide-urgent .playing-card .card-inner {
+  animation: card-pick-me .9s ease-in-out infinite;
+}
+.cards-row.hide-urgent .playing-card:nth-child(even) .card-inner { animation-delay: .15s; }
+@keyframes card-pick-me {
+  0%, 100% { rotate: 0deg; translate: 0 0; }
+  25% { rotate: -2.5deg; translate: 0 -4px; }
+  75% { rotate: 2.5deg; translate: 0 -4px; }
+}
+
+/* Last seconds, card tapped but not locked: the LOCK button pulses. */
+.gold-button.lock-urgent {
+  animation: lock-pulse .8s ease-in-out infinite;
+}
+@keyframes lock-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 196, 92, .7); scale: 1; }
+  50% { box-shadow: 0 0 0 10px rgba(255, 196, 92, 0); scale: 1.04; }
+}
+
+/* Time's up: the heading turns red... */
+.game-screen .stage-title.auto-hide-notice h2 { color: #ff8a73; }
+.game-screen .stage-title.auto-hide-notice p:last-child { color: #f3e2b4; font-weight: 600; }
+
+/* ...the card number is shown big and clear... */
+.auto-hide-card {
+  display: inline-block;
+  margin: 10px auto 2px;
+  padding: 8px 16px;
+  border: 1px solid #e9bf6a;
+  border-radius: 10px;
+  background: rgba(233, 191, 106, .12);
+  color: #f3e2b4;
+  font-size: 12px;
+  letter-spacing: .12em;
+  animation: auto-hide-pop .45s cubic-bezier(.2, 1.6, .4, 1) both;
+}
+.auto-hide-card b { display: block; margin-top: 2px; color: #ffd27a; font-size: 26px; letter-spacing: .08em; }
+@keyframes auto-hide-pop {
+  from { scale: .6; opacity: 0; }
+  to { scale: 1; opacity: 1; }
+}
+
+/* ...and the King's card shakes and glows gold. The other cards dim. */
+.cards-row.auto-hidden-row .playing-card:not(.chosen) { opacity: .45; }
+.cards-row.auto-hidden-row .playing-card.chosen .card-inner {
+  animation: king-shake .5s ease-in-out 3, king-glow 1.2s ease-in-out infinite;
+}
+.cards-row.auto-hidden-row .playing-card.chosen .card-back {
+  box-shadow: 0 0 0 2px #ffd27a, 0 0 22px 4px rgba(255, 196, 92, .65);
+}
+@keyframes king-shake {
+  0%, 100% { rotate: 0deg; translate: 0 -10px; }
+  20% { rotate: -5deg; translate: -3px -10px; }
+  40% { rotate: 5deg; translate: 3px -10px; }
+  60% { rotate: -4deg; translate: -2px -10px; }
+  80% { rotate: 4deg; translate: 2px -10px; }
+}
+@keyframes king-glow {
+  0%, 100% { filter: brightness(1); }
+  50% { filter: brightness(1.25); }
+}
+
+.game-screen .dealer-actions.auto-hide-actions { grid-template-columns: 1fr; }
+
+/* Card animations off: keep the colours and glow, drop the movement. */
+.reduced-motion .stage-hint-urgent,
+.reduced-motion .cards-row.hide-urgent .playing-card .card-inner,
+.reduced-motion .gold-button.lock-urgent,
+.reduced-motion .auto-hide-card,
+.reduced-motion .cards-row.auto-hidden-row .playing-card.chosen .card-inner { animation: none; }

@@ -21,7 +21,7 @@ export function RulesModal({ onClose }: { onClose: () => void }) {
       <Ornament />
       <ol className="rules-list">
         <li>
-          <b>Hide.</b> The Dealer secretly places the King—or uses their one Bluff.
+          <b>Hide.</b> The Dealer taps a card and presses Lock—or uses their one Bluff. If time runs out, the game locks it for them.
         </li>
         <li>
           <b>Shuffle.</b> Five cards are dealt. Later levels fall to three, then two.
@@ -33,8 +33,7 @@ export function RulesModal({ onClose }: { onClose: () => void }) {
           <b>Call it.</b> If you suspect no King was placed, call Bluff. Right wins; wrong loses.
         </li>
         <li>
-          <b>Rule.</b> Ten rounds per level. Each player hides five in a row before the table turns. Higher levels award more points.
-        </li>
+          <b>Turns.</b> You hide the King 7 times in a row, then your opponent hides 7 times. Later levels: 5 each, then 3 each. Higher levels award more points.        </li>
       </ol>
       <button className="gold-button wide" onClick={onClose}>
         ENTER THE KINGDOM
