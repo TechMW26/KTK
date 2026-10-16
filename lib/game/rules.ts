@@ -191,7 +191,7 @@ export function resolveGuess(
 export const RESULT_COPY: Record<ResultKind, { title: string; subtitle: string; tone: string }> = {
   king: { title: "KING FOUND!", subtitle: "The King was found", tone: "victory" },
   wrong: { title: "WRONG CARD", subtitle: "Not the King", tone: "danger" },
-  "bluff-caught": { title: "BLUFF GUESSED!", subtitle: "The accusation was correct", tone: "victory" },
+  "bluff-caught": { title: "BLUFF CAUGHT!", subtitle: "The accusation was correct", tone: "victory" },
   "bluff-missed": { title: "BLUFF MISSED", subtitle: "The accusation was wrong", tone: "danger" },
   "bluff-worked": { title: "DECEPTION!", subtitle: "The Dealer played a Bluff", tone: "danger" },
   timeout: { title: "TIME EXPIRED", subtitle: "The King stayed hidden", tone: "danger" },

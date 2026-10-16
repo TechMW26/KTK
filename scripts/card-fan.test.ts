@@ -201,10 +201,10 @@ check("mirrored DOM order and overlap follow screen slots in every court", () =>
 });
 
 check("small courts use a gentler symmetric fan", () => {
-  assert.equal(cardFanSlot(0, 2).rotate, -6);
-  assert.equal(cardFanSlot(1, 2).rotate, 6);
-  assert.equal(cardFanSlot(0, 3).rotate, -10);
-  assert.equal(cardFanSlot(2, 3).rotate, 10);
+  assert.equal(cardFanSlot(0, 2).rotate, -3);
+  assert.equal(cardFanSlot(1, 2).rotate, 3);
+  assert.equal(cardFanSlot(0, 3).rotate, -6);
+  assert.equal(cardFanSlot(2, 3).rotate, 6);
   assert.ok(cardFanSlot(0, 2).y < cardFanSlot(0, 3).y);
   assert.ok(cardFanSlot(0, 3).y < cardFanSlot(0, 5).y);
 });

@@ -14,10 +14,16 @@ import { MATCHMAKING_TIMEOUT_MS } from "@/lib/multiplayer/types";
 import type { MatchSettings } from "@/lib/game/flow";
 import { MpEyebrow, MpLogo, MpOrnament } from "./ui";
 import SearchMap from "./search-map";
+import { PlayerAvatar } from "@/components/ui/PlayerAvatar";
+import { pickBotPlayer, seatAgainstBot, type BotPlayer } from "@/features/game/constants/botPlayers";
+
+/** How long the "opponent found" card shows before a stand-in match opens. */
+const BOT_FOUND_HOLD_MS = 2200;
 
 type SearchState =
   | { kind: "searching" }
-  | { kind: "found" }
+  /** `bot` is set when nobody was online and a stand-in player was seated. */
+  | { kind: "found"; bot?: BotPlayer }
   | { kind: "no-player" }
   | { kind: "error"; message: string };
 
@@ -157,8 +163,14 @@ export default function SearchOnline({
     const timeout = window.setTimeout(async () => {
       if (stoppedRef.current || cancelled || enteredRef.current) return;
       stoppedRef.current = true;
-      if (myUid) await cancelSearch(myUid).catch(() => {});
-      setState({ kind: "no-player" });
+            if (myUid) await cancelSearch(myUid).catch(() => {});
+      // Nobody came: most of the time seat a stand-in player (see botPlayers.ts),
+      // otherwise offer RETRY.
+      if (seatAgainstBot(Math.random())) {
+        setState({ kind: "found", bot: pickBotPlayer(Math.random()) });
+      } else {
+        setState({ kind: "no-player" });
+      }
     }, MATCHMAKING_TIMEOUT_MS);
 
     return () => {
@@ -177,10 +189,20 @@ export default function SearchOnline({
     onBack();
   };
 
-  const playVsBot = () => {
+   const playVsBot = () => {
     stoppedRef.current = true;
     if (typeof window !== "undefined") window.location.assign("/?play=bot");
   };
+
+  // Stand-in seated: hold the "found" card for a beat, then open the match.
+  const seatedBot = state.kind === "found" ? state.bot : undefined;
+  useEffect(() => {
+    if (!seatedBot) return;
+    const id = window.setTimeout(() => {
+      window.location.assign(`/?play=bot&opp=${encodeURIComponent(seatedBot.id)}`);
+    }, BOT_FOUND_HOLD_MS);
+    return () => window.clearTimeout(id);
+  }, [seatedBot]);
 
   if (state.kind === "found") {
     return (
@@ -189,6 +211,13 @@ export default function SearchOnline({
           <MpEyebrow>MATCH FOUND</MpEyebrow>
           <h2 className="mp-title">OPPONENT FOUND!</h2>
           <MpOrnament />
+          {state.bot ? (
+            <div className="found-opponent">
+              <PlayerAvatar name={state.bot.name} hue={state.bot.hue} image={state.bot.image} size="lg" />
+              <b>{state.bot.name}</b>
+              <small>{state.bot.city}</small>
+            </div>
+          ) : null}
           <p>Entering the arena…</p>
         </div>
         <div className="waiting-dots big">

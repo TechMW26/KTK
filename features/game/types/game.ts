@@ -11,6 +11,8 @@ export type MatchPhase =
   | "home"
   | "dealer"
   | "pass"
+  /** Pass & Play: hand the phone BACK to the hider before the next hide. */
+  | "handover"
   | "shuffle"
   | "guess"
   /**

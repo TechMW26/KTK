@@ -562,6 +562,18 @@ function advanceOptional(cur: GameState, settings: MatchSettings): GameState {
   const dealer = dealerForHidingRound(nextRound, settings.turnOrder);
   const nextLevel = courtForHidingRound(nextRound);
   const resetBluffs = nextLevel !== cur.level;
+    // Court boundary: show the "court cleared" screen first (like the local game)
+  // instead of silently dropping from 5 cards to 3. The NEXT press (from
+  // level-end) falls through to the code below and starts the new court.
+  if (resetBluffs && cur.phase === "reveal") {
+    return {
+      ...cur,
+      phase: "level-end",
+      pendingGuess: null,
+      awaitingNext: true,
+      lastResult: null,
+    };
+  }
   return {
     ...cur,
     level: nextLevel,

@@ -59,8 +59,14 @@ export interface RoomData {
    * While false a joining guest stays on the settings screen instead of blind
    * entering play. Mirrors a pre-game lobby.
    */
-  ready?: boolean;
-}
+   ready?: boolean;
+  /**
+   * Latest sticker each player sent: uid -> { id, at }. The room subscription
+   * already delivers it; a new `at` means "show it". Room members may write the
+   * room, so no rules change is needed.
+   */
+  stickers?: Record<string, { id: string; at: number }>;
+} 
 
 /** Authoritative game "phase" of a round, mirroring the single-player flow. */
 export type GamePhase =

@@ -1,4 +1,5 @@
 import {
+  child,
   ref,
   get,
   set,
@@ -13,6 +14,7 @@ import {
   type DataSnapshot,
 } from "firebase/database";
 import { getRTDatabase } from "@/lib/firebase/database";
+import { nameOrUnknown } from "@/lib/multiplayer/displayName";
 import { roomRef, playersRef, playerRef, gameRef } from "@/lib/multiplayer/paths";
 import { generateRoomCode, normalizeRoomCode } from "@/lib/multiplayer/roomCode";
 import { emptyGame } from "@/services/multiplayerService";
@@ -68,7 +70,7 @@ export async function createRoom(
     const code = generateRoomCode();
     const now = Date.now();
     const host: PlayerEntry = {
-      name: name.trim() || "Player 1",
+      name: nameOrUnknown(name),
       joinedAt: now,
       connected: true,
       seat: 0,
@@ -177,8 +179,7 @@ export async function joinRoom(codeRaw: string, uid: string, name: string): Prom
     const hostPresent = Boolean(current!.hostId) && Boolean(current!.order?.[0]);
     const seat: Seat = hostPresent ? 1 : 0;
     const entry: PlayerEntry = {
-      name: name.trim() || (seat === 0 ? "Player 1" : "Player 2"),
-      joinedAt: Date.now(),
+      name: nameOrUnknown(name),      joinedAt: Date.now(),
       connected: true,
       seat,
       isHost: false,
@@ -319,4 +320,12 @@ export async function leaveRoom(code: string, uid: string, isHost: boolean): Pro
     // ignore — presence cleanup underneath is best-effort anyway
   }
   await set(playerRef(database, code, uid), null).catch(() => {});
+}
+
+/**
+ * Send a sticker to the room: overwrites this player's last sticker, so the
+ * node never grows. Best-effort — a lost sticker is not worth an error.
+ */
+export async function sendRoomSticker(code: string, uid: string, stickerId: string): Promise<void> {
+  await set(child(roomRef(db(), code), `stickers/${uid}`), { id: stickerId, at: Date.now() }).catch(() => {});
 }

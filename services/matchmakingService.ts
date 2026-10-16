@@ -12,6 +12,7 @@ import {
 import { getRTDatabase } from "@/lib/firebase/database";
 import { poolAllRef, poolEntryRef } from "@/lib/multiplayer/paths";
 import { createRoom } from "@/services/roomService";
+import { nameOrUnknown } from "@/lib/multiplayer/displayName";
 import {
   MATCHMAKING_STALE_MS,
   type MatchmakingEntry,
@@ -96,7 +97,7 @@ export async function announceSearch(uid: string, name: string): Promise<boolean
   const database = db();
   const now = Date.now();
   const entry: MatchmakingEntry = {
-    name: name.trim() || "Player",
+    name: nameOrUnknown(name),
     status: "searching",
     joinedAt: now,
     updatedAt: now,
